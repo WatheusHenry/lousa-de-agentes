@@ -1,0 +1,2401 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Agent Canvas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sidebar fina | canvas amplo | inspetor flutuante + toolbar flutuante. Tema claro proposital (único). */
+:root{
+  color-scheme:light;
+  --bg:#f2f2f4; --dot:#d6d6db; --surface:#ffffff; --subtle:#f7f7f8; --hover:#f0f0f2;
+  --fg:#1d1d1f; --muted:#6e6e73; --faint:#a1a1a6; --line:#e6e6e9; --line-strong:#d2d2d7;
+  --accent:#0a6cf0; --accent-soft:#e9f1fe;
+  --issue:#e2560b; --issue-soft:#fff0e5; --mr:#7a4ce0; --mr-soft:#f1ecfd; --repo:#0e7a6b; --repo-soft:#e2f4f0;
+  --ok:#0c7a43; --ok-soft:#dbf6e6; --warn:#8a5a00; --warn-soft:#fff3c4; --bad:#c4291c; --bad-soft:#fde7e5;
+  --edge:#c3c3c9;
+  --note:#9a6b00; --note-soft:#fff3c8; --note-bg:#fffcf2; --note-line:#e9c46a;
+  --r-xs:6px; --r-sm:9px; --r-md:12px; --r-lg:16px; --r-xl:20px;
+  --sh-card:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04),0 8px 24px -10px rgba(0,0,0,.12);
+  --sh-float:0 0 0 1px rgba(0,0,0,.06),0 2px 4px rgba(0,0,0,.04),0 18px 48px -16px rgba(0,0,0,.24);
+  --sans:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --track:-0.04em;
+  /* motion */
+  --ease-out:cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out:cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer:cubic-bezier(0.32, 0.72, 0, 1);
+}
+@supports (corner-shape: squircle){
+  :root{--r-xs:9px; --r-sm:14px; --r-md:20px; --r-lg:26px; --r-xl:32px}
+  .btn,.field,.card,.seg,.seg-ind,.badge,.insp,.side,.toolbar,.toast,.focus-sheet,.ico,.iss,.iss-ic,.composer,.f-comp,.l.ask,.l.user,.plan,.chipx,.ctx-add,pre.cmd,.appicon,.tree button,.opt,.opts,.links .lk,
+  .callout,.stat,.fx-note,.diff,.lst-item,.cpop,.cp-it,.cmenu,.tb-grp,.act-card,.rules,.chip-s{corner-shape:squircle}
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);letter-spacing:var(--track);font-size:14px;overflow:hidden;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+button,input,textarea,select{font:inherit;color:inherit;letter-spacing:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-size:12px}
+
+.app{position:relative;height:100%}
+.top{position:absolute;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;gap:10px 14px;padding:12px 16px;background:transparent;flex-wrap:wrap;pointer-events:none}
+.top>*{pointer-events:auto}
+.top>.spacer{pointer-events:none}
+.brand{display:flex;align-items:center;gap:10px}
+.appicon{width:28px;height:28px;border-radius:var(--r-sm);background:linear-gradient(160deg,#2c2c2e,#000);display:grid;place-items:center;color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+.brand b{font-weight:600;font-size:15px}
+.brand .ws{color:var(--muted);font-size:13px}
+.spacer{flex:1}
+.stats{display:flex;gap:6px;flex-wrap:wrap}
+
+.btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;padding:7px 12px;border-radius:var(--r-sm);border:0;background:var(--surface);color:var(--fg);cursor:pointer;white-space:nowrap;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.1),inset 0 -1px 0 rgba(0,0,0,.08),0 1px 1px rgba(0,0,0,.03);
+  transition:transform 160ms var(--ease-out),background-color 150ms ease,opacity 150ms ease}
+.btn:active:not(:disabled){transform:scale(0.97)}
+.btn.primary{background:#1d1d1f;background-image:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,0));color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 0 0 1px #111,0 1px 2px rgba(0,0,0,.25)}
+.btn.plain{box-shadow:none;background:transparent}
+.btn.sm{font-size:12px;padding:5px 10px}
+.btn.icon{padding:6px;width:30px;height:30px;justify-content:center}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.mob{display:none}
+
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:500;padding:2px 8px;border-radius:var(--r-xs);background:var(--hover);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;transition:background-color 200ms ease,color 200ms ease}
+.badge.info{background:var(--accent-soft);color:var(--accent)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.badge.issue{background:var(--issue-soft);color:var(--issue)}
+.badge.mrb{background:var(--mr-soft);color:var(--mr)}
+.badge.repo{background:var(--repo-soft);color:var(--repo);font-family:var(--mono);font-size:10.5px}
+.badge .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+.badge.live .d{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+.main{position:absolute;inset:0}
+/* barra lateral: mesmo cartão flutuante do inspetor */
+.side{position:absolute;top:60px;left:12px;bottom:12px;width:296px;z-index:5;background:var(--surface);border-radius:var(--r-xl);box-shadow:var(--sh-float);display:flex;flex-direction:column;min-height:0;overflow:hidden;transform-origin:0 50%;
+  transition:opacity 200ms var(--ease-out),transform 260ms var(--ease-out),visibility 0s}
+.main.side-hidden .side{opacity:0;transform:translateX(-16px) scale(0.98);visibility:hidden;pointer-events:none;
+  transition:opacity 180ms var(--ease-out),transform 240ms var(--ease-out),visibility 0s linear 240ms}
+.main.instant .side{transition:none}
+.side-h{padding:16px 14px 10px;display:flex;flex-direction:column;gap:10px}
+.seg{position:relative;display:grid;grid-template-columns:repeat(4,1fr);background:var(--hover);border-radius:var(--r-sm);padding:2px}
+.seg-ind{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px) / 4);border-radius:calc(var(--r-sm) - 2px);background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 .5px rgba(0,0,0,.06);transition:transform 220ms var(--ease-out)}
+.seg button{position:relative;border:0;background:transparent;padding:5px 0;font-size:12.5px;font-weight:500;color:var(--muted);cursor:pointer;transition:color 150ms ease}
+.seg button[aria-selected="true"]{color:var(--fg)}
+.field{width:100%;padding:8px 10px;border-radius:var(--r-sm);border:0;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line-strong);outline:0}
+.field:focus{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px var(--accent-soft)}
+.field.search{background:var(--hover);box-shadow:none}
+textarea.field{resize:vertical;min-height:72px;line-height:1.45}
+select.field{appearance:auto}
+.side-b{overflow:auto;padding:0 8px 12px;min-height:0;flex:1}
+.lst-item{display:flex;flex-direction:column;gap:5px;padding:10px;border-radius:var(--r-md);cursor:grab;transition:background-color 150ms ease}
+.lst-item .r1{display:flex;align-items:center;gap:6px}
+.lst-item .t{font-size:13.5px;line-height:1.35;font-weight:450}
+.lst-item.on .t{color:var(--muted)}
+.lst-item .r1 .btn{margin-left:auto}
+.num{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.tags{display:flex;gap:4px;flex-wrap:wrap}
+.tip{font-size:12px;color:var(--faint);padding:6px 10px 0;line-height:1.45}
+.feed{display:flex;flex-direction:column;gap:12px;padding:6px 6px}
+.feed .row{display:grid;grid-template-columns:40px 1fr;gap:6px;font-size:12.5px;line-height:1.45}
+.feed time{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:1px}
+
+/* canvas */
+.canvas{position:absolute;inset:0;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);cursor:grab;touch-action:none;min-width:0}
+.canvas.panning{cursor:grabbing}
+.canvas.drop{box-shadow:inset 0 0 0 2px var(--accent)}
+.world{position:absolute;left:0;top:0;transform-origin:0 0}
+svg.edges{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.edge{fill:none;stroke:var(--edge);stroke-width:1.5}
+.edge.spawn{stroke-dasharray:5 5}
+.edge.mrk{stroke:#c9b6f3}
+.edge.live{stroke:var(--accent);stroke-dasharray:5 5;animation:flow .9s linear infinite}
+.edge.note{stroke:var(--note-line);stroke-dasharray:1 5;stroke-linecap:round;stroke-width:2.4}
+.canvas.linking{cursor:crosshair}
+.node.linkt>.card{box-shadow:0 0 0 2px var(--note-line),0 0 0 7px var(--note-soft)}
+.note{width:270px;background:var(--note-bg);cursor:default;position:relative;gap:6px;box-shadow:0 0 0 1px rgba(154,107,0,.16),0 1px 2px rgba(0,0,0,.04),0 8px 24px -10px rgba(120,80,0,.18)}
+.note .nhead{cursor:grab}
+.ico.note{background:var(--note-soft);color:var(--note)}
+.note .ntitle-in{border:0;background:transparent;font-size:14.5px;font-weight:600;padding:2px 0;outline:0;width:100%}
+.note .nbody{border:0;background:transparent;resize:none;font-size:13px;line-height:1.5;color:#3a3a3c;outline:0;width:100%;min-height:96px;padding:0;font-family:var(--sans)}
+.note .ntitle-in:focus,.note .nbody:focus{background:rgba(255,255,255,.7);box-shadow:0 0 0 4px rgba(255,255,255,.7);border-radius:4px}
+.port{position:absolute;right:-13px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:50%;border:0;background:var(--surface);color:var(--note);font-size:16px;line-height:1;cursor:crosshair;box-shadow:0 0 0 1.5px var(--note-line),0 2px 6px rgba(0,0,0,.12);display:grid;place-items:center}
+.links{display:flex;flex-direction:column;gap:4px}
+.links .lk{display:flex;align-items:center;gap:8px;padding:7px 8px 7px 10px;border-radius:var(--r-sm);background:var(--subtle);font-size:12.5px}
+.links .lk .btn{margin-left:auto}
+@keyframes flow{to{stroke-dashoffset:-20}}
+
+.toolbar{position:absolute;left:50%;top:12px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;z-index:4}
+.tb-grp{display:flex;align-items:center;gap:2px;padding:4px;background:rgba(255,255,255,.9);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:var(--r-md);box-shadow:var(--sh-float)}
+.tb-grp .btn svg{flex:none}
+.toolbar output{font-family:var(--mono);font-size:11.5px;min-width:46px;text-align:center;color:var(--muted)}
+.toolbar .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+
+/* nós */
+.node{position:absolute;user-select:none;transform-origin:50% 0}
+.node.dragging{z-index:3}
+.card{background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--sh-card);transition:box-shadow 180ms var(--ease-out)}
+.node.dragging>.card{box-shadow:0 0 0 1px rgba(0,0,0,.06),0 24px 48px -16px rgba(0,0,0,.28)}
+.node.sel.dragging>.card{box-shadow:0 0 0 2px var(--accent),0 24px 48px -16px rgba(10,108,240,.4)}
+.node.sel>.card{box-shadow:0 0 0 2px var(--accent),0 8px 24px -10px rgba(10,108,240,.35)}
+.node.dropt>.card{box-shadow:0 0 0 2px var(--accent),0 0 0 6px var(--accent-soft)}
+.ncard{width:284px;padding:14px;display:flex;flex-direction:column;gap:10px;cursor:grab}
+.nhead{display:flex;align-items:center;gap:8px}
+.ico{width:26px;height:26px;border-radius:var(--r-xs);display:grid;place-items:center;flex:none}
+.ico.issue{background:var(--issue-soft);color:var(--issue)}
+.ico.mr{background:var(--mr-soft);color:var(--mr)}
+.ico.repo{background:var(--repo-soft);color:var(--repo)}
+.ico.agent{background:var(--accent-soft);color:var(--accent)}
+.ntitle{font-size:14.5px;font-weight:600;line-height:1.35;text-wrap:balance}
+.nfoot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.nmeta{font-size:12px;color:var(--muted)}
+.diffstat{font-family:var(--mono);font-size:11.5px}
+.diffstat .a{color:var(--ok)} .diffstat .r{color:var(--bad)}
+
+.win{width:400px;overflow:hidden}
+.wbar{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:grab;border-bottom:1px solid var(--line)}
+.lights{display:flex;gap:5px;margin-right:2px}
+.lights i{width:10px;height:10px;border-radius:50%;background:#e3e3e6;display:block}
+.lights i{transition:background-color 150ms ease}
+.wbar .expand{margin-left:2px}
+.wname{font-weight:600;font-size:13px;}
+.wsub{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.win.orch .wbar{background:linear-gradient(180deg,var(--accent-soft),var(--surface))}
+.tbody{height:230px;overflow:auto;padding:12px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.65;color:#3a3a3c;user-select:text;cursor:text;overscroll-behavior:contain;background:var(--surface)}
+.l{white-space:pre-wrap;word-break:break-word;transition:opacity 180ms var(--ease-out),translate 180ms var(--ease-out)}
+@starting-style{.l{opacity:0;translate:0 4px}}
+.l.sys{color:var(--fg);font-weight:500}
+.l.dim,.l.out{color:var(--faint)}
+.l.tool .g{color:var(--ok)}
+.l.tool b{font-weight:600;color:var(--fg)}
+.l.txt{font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--fg);margin:3px 0}
+.l.txt .g{color:var(--faint);font-family:var(--mono);font-size:10px;vertical-align:1px}
+.l.add{background:var(--ok-soft);color:var(--ok);padding:0 6px;border-radius:4px}
+.l.del{background:var(--bad-soft);color:var(--bad);padding:0 6px;border-radius:4px}
+.l.user{font-family:var(--sans);font-size:13px;margin:6px 0 6px auto;background:var(--hover);padding:6px 10px;border-radius:var(--r-md);width:fit-content;max-width:85%;color:var(--fg)}
+.l.user small{display:block;color:var(--muted);font-size:11px}
+.l.done{font-family:var(--sans);font-size:13px;color:var(--ok);font-weight:500;margin-top:4px}
+.l.ask{font-family:var(--sans);font-size:13px;background:var(--warn-soft);color:#5c3d00;border-radius:var(--r-md);padding:10px 12px;margin:8px 0;display:flex;flex-direction:column;gap:8px}
+.l.ask code{font-family:var(--mono);font-size:11.5px}
+.l.ask .acts{display:flex;gap:6px}
+.plan{font-family:var(--sans);font-size:12.5px;background:var(--subtle);border-radius:var(--r-md);padding:10px 12px;margin:6px 0;display:flex;flex-direction:column;gap:6px;box-shadow:inset 0 0 0 1px var(--line)}
+.plan b{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:600}
+.plan .it{display:flex;align-items:center;gap:8px}
+.plan .ck{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--line-strong);flex:none;display:grid;place-items:center;font-size:10px;color:#fff;transition:background-color 200ms ease,box-shadow 200ms ease}
+.plan .tx{transition:color 200ms ease}
+.plan .it.wip .ck{box-shadow:inset 0 0 0 1.5px var(--accent);background:radial-gradient(var(--accent) 35%,transparent 40%)}
+.plan .it.ok .ck{background:var(--ok);box-shadow:none}
+.plan .it.ok .tx{color:var(--muted)}
+.plan .who{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.composer{display:flex;align-items:center;gap:6px;margin:0 10px 10px;padding:4px 4px 4px 12px;border-radius:var(--r-md);background:var(--subtle);box-shadow:inset 0 0 0 1px var(--line)}
+.composer input{flex:1;min-width:0;border:0;outline:0;background:transparent;font-size:13px;padding:5px 0}
+.composer input::placeholder{color:var(--faint)}
+.composer .send{width:26px;height:26px;border-radius:50%;border:0;background:var(--fg);color:#fff;display:grid;place-items:center;cursor:pointer}
+.composer .send:disabled{background:var(--line-strong)}
+
+/* inspetor flutuante */
+.insp{position:absolute;top:60px;right:12px;bottom:12px;width:372px;background:var(--surface);border-radius:var(--r-xl);box-shadow:var(--sh-float);display:flex;flex-direction:column;z-index:5;overflow:hidden;
+  opacity:0;transform:translateX(16px) scale(0.98);transform-origin:100% 50%;visibility:hidden;pointer-events:none;
+  transition:opacity 180ms var(--ease-out),transform 240ms var(--ease-out),visibility 0s linear 240ms}
+.insp.open{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity 200ms var(--ease-out),transform 260ms var(--ease-out),visibility 0s}
+.btn.danger{color:var(--bad)}
+
+/* aviso com desfazer */
+.toast{position:absolute;left:50%;bottom:24px;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 16px;border-radius:var(--r-lg);background:#1d1d1f;color:#fff;font-size:13px;box-shadow:0 12px 32px -10px rgba(0,0,0,.45);z-index:8;
+  opacity:0;transform:translate(-50%,10px) scale(0.98);visibility:hidden;pointer-events:none;
+  transition:opacity 180ms var(--ease-out),transform 220ms var(--ease-out),visibility 0s linear 220ms}
+.toast.show{opacity:1;transform:translate(-50%,0);visibility:visible;pointer-events:auto;transition:opacity 200ms var(--ease-out),transform 240ms var(--ease-out),visibility 0s}
+.toast .btn{background:rgba(255,255,255,.12);color:#fff;box-shadow:none}
+.toast kbd{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.55)}
+
+/* barra lateral */
+.search-w{position:relative}
+.search-w svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--faint);pointer-events:none}
+.search-w .field{padding-left:32px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:0;font-size:12px;font-weight:500;padding:4px 10px;border-radius:999px;background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong);color:var(--muted);cursor:pointer;transition:background-color 150ms ease,color 150ms ease,transform 160ms var(--ease-out)}
+.chip:active{transform:scale(0.97)}
+.chip[aria-pressed="true"]{background:var(--fg);color:#fff;box-shadow:none}
+.grp-h{display:flex;align-items:center;gap:6px;padding:14px 10px 6px;font-size:12px;font-weight:600;color:var(--muted)}
+.grp-h:first-child{padding-top:4px}
+.cnt{font-variant-numeric:tabular-nums;background:var(--hover);border-radius:999px;padding:0 7px;font-size:11px;font-weight:500;line-height:18px}
+.iss{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px;border-radius:var(--r-md);cursor:grab;transition:background-color 150ms ease}
+.iss-ic{width:26px;height:26px;border-radius:var(--r-xs);display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.iss-ic.bug{background:var(--issue-soft);color:var(--issue)}
+.iss-ic.repo{background:var(--repo-soft);color:var(--repo)}
+.iss-t{font-size:13.5px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.iss-t.mono-t{font-family:var(--mono);font-size:12.5px}
+.iss-m{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.iss-m .badge{font-size:10.5px;padding:0 6px}
+.iss-repo{overflow:hidden;text-overflow:ellipsis}
+.iss-r{display:flex;align-items:center;gap:4px;min-height:26px}
+.btn.xs{width:26px;height:26px;padding:0;justify-content:center}
+.tip{display:flex;gap:8px;align-items:flex-start}
+.tip svg{flex:none;margin-top:2px}
+.side-f{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line);font-size:12px}
+.side-f .lab{font-size:12px}
+.dot-ok{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.empty-term{font-family:var(--sans);font-size:13px;line-height:1.55;color:var(--muted);display:flex;flex-direction:column;gap:10px;padding:4px 0}
+.empty-term b{color:var(--fg);font-weight:600;font-size:14px}
+.empty-term ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.tl{list-style:none;margin:0;padding:4px 8px 4px 10px;display:flex;flex-direction:column}
+.tl li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:8px;position:relative;padding-bottom:14px}
+.tl li::before{content:"";position:absolute;left:3.5px;top:14px;bottom:0;width:1.5px;background:var(--line)}
+.tl li:last-child::before{display:none}
+.tl-dot{width:8px;height:8px;border-radius:50%;background:var(--line-strong);margin-top:5px}
+.tl li:first-child .tl-dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tl p{margin:0;font-size:12.5px;line-height:1.45}
+.tl time{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+/* visões de documento no foco */
+.f-ico{display:flex}
+.f-body.doc{font-family:var(--sans);font-size:14px;line-height:1.6;color:var(--fg);padding:28px 32px 36px}
+.f-body.note-doc{background:var(--note-bg)}
+.fx{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:26px}
+.fx-head{display:flex;flex-direction:column;gap:10px}
+.fx-title{font-size:24px;font-weight:600;line-height:1.25;margin:0;text-wrap:balance}
+.fx-meta{margin:0;color:var(--muted);font-size:13px}
+.fx section{display:flex;flex-direction:column;gap:10px}
+.fx h4{font-size:12px;font-weight:600;color:var(--muted);margin:0}
+.fx-p{margin:0;font-size:14.5px;line-height:1.65;color:#3a3a3c;max-width:68ch}
+.checklist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.checklist li{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.45}
+.checklist .ck{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--line-strong);flex:none;display:grid;place-items:center;color:#fff;font-size:11px;transition:background-color 200ms ease}
+.checklist li.ok .ck{background:var(--ok);box-shadow:none}
+.fx-notes{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.fx-note{text-align:left;border:0;background:var(--note-bg);box-shadow:inset 0 0 0 1px rgba(154,107,0,.18);border-radius:var(--r-md);padding:12px;display:flex;flex-direction:column;gap:4px;cursor:pointer;transition:transform 160ms var(--ease-out)}
+.fx-note:active{transform:scale(0.98)}
+.fx-note b{font-size:13.5px;font-weight:600}
+.fx-note span{font-size:12.5px;color:var(--muted)}
+.thread{display:flex;flex-direction:column;gap:16px}
+.cm{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px}
+.av{width:30px;height:30px;border-radius:50%;background:var(--hover);display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--muted)}
+.av.bot{background:var(--accent-soft);color:var(--accent)}
+.cm-h{display:flex;gap:8px;align-items:center;font-size:13px}
+.cm-h time{font-size:12px;color:var(--faint)}
+.cm p{margin:3px 0 0;font-size:14px;line-height:1.55;color:#3a3a3c}
+.pipe{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.stage{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:12.5px;font-weight:500;background:var(--hover);color:var(--muted)}
+.stage.ok{background:var(--ok-soft);color:var(--ok)}
+.stage.run{background:var(--accent-soft);color:var(--accent)}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 1.4s ease-in-out infinite}
+.pipe .ln{width:18px;height:1.5px;background:var(--line-strong)}
+.diff{border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
+.diff-h{display:flex;justify-content:space-between;gap:10px;padding:8px 12px;background:var(--subtle);border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
+.diff-b{overflow-x:auto;padding:6px 0;font-family:var(--mono);font-size:12px;line-height:1.7}
+.dl{padding:0 14px;white-space:pre;min-width:max-content}
+.dl.add{background:var(--ok-soft);color:var(--ok)}
+.dl.del{background:var(--bad-soft);color:var(--bad)}
+.dl.ctx{color:var(--muted)}
+.dl.hunk{color:var(--accent);background:var(--accent-soft)}
+.note-ed{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:14px;min-height:100%}
+.note-ed input{border:0;outline:0;background:transparent;font-size:26px;font-weight:600;padding:0}
+.note-ed textarea{flex:1;border:0;outline:0;resize:none;background:transparent;font-size:15.5px;line-height:1.75;min-height:360px;padding:0;color:#3a3a3c}
+
+/* modo foco do agente */
+.focus{position:absolute;inset:0;z-index:4;visibility:hidden;pointer-events:none}
+.focus.open{visibility:visible;pointer-events:auto}
+.focus-bg{position:absolute;inset:0;background:rgba(242,242,244,.32);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);opacity:0;transition:opacity 220ms var(--ease-out)}
+.focus.open .focus-bg{opacity:1}
+.focus-sheet{position:absolute;top:60px;left:12px;right:12px;bottom:12px;display:flex;flex-direction:column;background:var(--surface);border-radius:var(--r-xl);box-shadow:var(--sh-float);overflow:hidden;transform-origin:0 0}
+.f-main{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1}
+.f-head{display:flex;align-items:center;gap:10px;padding:14px 16px 14px 18px;border-bottom:1px solid var(--line)}
+.f-head .wname{font-size:16px}
+.f-head .wsub{font-size:13px}
+.f-body{flex:1;min-height:0;overflow:auto;padding:20px 28px 12px;font-family:var(--mono);font-size:13px;line-height:1.7;color:#3a3a3c;overscroll-behavior:contain}
+.f-body .l.txt,.f-body .l.user,.f-body .l.done,.f-body .l.ask{font-size:14.5px;max-width:72ch}
+.f-body .l.user{max-width:60%}
+.f-foot{padding:10px 20px 18px;display:flex;flex-direction:column;gap:10px}
+.f-sugg{display:flex;gap:6px;flex-wrap:wrap}
+.f-sugg button{border:0;font-size:12.5px;padding:6px 11px;border-radius:999px;background:var(--hover);color:var(--fg);cursor:pointer;transition:background-color 150ms ease,transform 160ms var(--ease-out)}
+.f-sugg button:active{transform:scale(0.97)}
+.f-comp{display:flex;align-items:flex-end;gap:8px;padding:8px 8px 8px 16px;border-radius:var(--r-lg);background:var(--surface);box-shadow:inset 0 0 0 1px var(--line-strong),0 2px 8px -4px rgba(0,0,0,.08)}
+.f-comp:focus-within{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 4px var(--accent-soft)}
+.f-comp textarea{flex:1;min-width:0;border:0;outline:0;resize:none;background:transparent;font-size:14.5px;line-height:1.5;padding:6px 0;max-height:160px}
+.f-comp .send{width:34px;height:34px;border-radius:50%;border:0;background:var(--fg);color:#fff;cursor:pointer;display:grid;place-items:center;flex:none;transition:transform 160ms var(--ease-out),opacity 150ms ease}
+.f-comp .send:active{transform:scale(0.94)}
+.f-hint{font-size:11.5px;color:var(--faint);text-align:right}
+.insp-top{display:flex;align-items:center;gap:8px;padding:12px 12px 0 18px}
+.insp-top .k{font-size:12px;color:var(--muted);font-weight:500}
+.insp-top .btn{margin-left:auto}
+.insp-body{overflow:auto;padding:6px 18px 20px;display:flex;flex-direction:column;gap:20px}
+.insp h3{font-size:19px;font-weight:600;line-height:1.25;margin:0;text-wrap:balance}
+.insp h4{font-size:12px;font-weight:600;color:var(--muted);margin:0}
+.grp{display:flex;flex-direction:column;gap:10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.desc{font-size:13.5px;line-height:1.55;margin:0;color:#3a3a3c}
+.opts{display:flex;flex-direction:column;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
+.opt{display:flex;gap:10px;align-items:center;padding:10px 12px;font-size:13px;cursor:pointer;border-top:1px solid var(--line)}
+.opt:first-child{border-top:0}
+.opt small{margin-left:auto;color:var(--faint);font-size:11.5px}
+.opt input{accent-color:var(--fg);width:15px;height:15px}
+.row2{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.lab{font-size:12.5px;color:var(--muted)}
+.chipx{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px 4px 9px;border-radius:var(--r-sm);background:var(--hover);max-width:100%}
+.chipx svg{width:12px;height:12px;flex:none;color:var(--muted)}
+.chipx .x{border:0;background:transparent;color:var(--faint);cursor:pointer;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;padding:0;transition:background-color 150ms ease,color 150ms ease}
+/* menu do botão direito: material translúcido estilo macOS */
+.cmenu{position:fixed;z-index:31;min-width:236px;max-width:300px;padding:5px;background:rgba(255,255,255,.9);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);border-radius:var(--r-md);box-shadow:0 0 0 1px rgba(0,0,0,.08),0 12px 32px -8px rgba(0,0,0,.28);outline:0;
+  opacity:0;transform:scale(0.97);visibility:hidden;pointer-events:none;transition:opacity 120ms var(--ease-out),transform 150ms var(--ease-out),visibility 0s linear 150ms}
+.cmenu.open{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity 150ms var(--ease-out),transform 180ms var(--ease-out),visibility 0s}
+.cm-it{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;padding:6px 8px;border-radius:7px;font-size:13px;color:var(--fg);text-align:left;cursor:default}
+.cm-it.act{background:var(--accent);color:#fff}
+.cm-ic{width:16px;flex:none;display:grid;place-items:center;color:var(--muted)}
+.cm-it.act .cm-ic,.cm-it.act kbd{color:rgba(255,255,255,.85)}
+.cm-l{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm-it kbd{font-family:var(--sans);font-size:11.5px;color:var(--faint)}
+.cm-it.danger,.cm-it.danger .cm-ic{color:var(--bad)}
+.cm-it.danger.act{background:var(--bad);color:#fff}
+.cm-it.danger.act .cm-ic{color:#fff}
+.cm-sep{height:1px;background:var(--line);margin:5px 8px}
+.cm-h{font-size:11.5px;font-weight:600;color:var(--muted);padding:6px 8px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* aba Ações */
+.seg button .cnt{margin-left:4px;background:var(--bad);color:#fff;font-size:10px;line-height:16px;padding:0 5px}
+.act-card{display:flex;flex-direction:column;gap:8px;padding:12px;margin:0 2px 8px;border-radius:var(--r-md);background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)}
+.act-top{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}
+.act-top .lab{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-cmd{display:block;font-family:var(--mono);font-size:11.5px;background:var(--subtle);padding:6px 8px;border-radius:6px;overflow-x:auto;white-space:nowrap}
+.act-btns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.act-t{margin:0;font-size:13px;line-height:1.4}
+.ico.sm{width:22px;height:22px}
+.ico.sm svg{width:12px;height:12px}
+.empty-act{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:28px 16px 12px;font-size:12.5px;color:var(--muted)}
+.empty-act b{color:var(--fg);font-size:13.5px}
+.pol{display:flex;flex-wrap:wrap;gap:6px;padding:0 10px}
+.pol code,.tags code{font-family:var(--mono);font-size:11.5px}
+.badge-btn{border:0;cursor:pointer;font:inherit;font-size:11.5px;font-weight:500}
+/* medidor de contexto */
+.meter{display:flex;flex-direction:column;gap:6px}
+.meter-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
+.meter-top b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+.meter.over .meter-top b{color:var(--warn)}
+.stack{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden}
+.stack i{flex-basis:0;min-width:3px;border-radius:2px}
+.k-repo{background:#3fb39f} .k-issue{background:#f08a4b} .k-note{background:#e9c46a} .k-other{background:#b4b4ba} .k-sum{background:#8fb5f5} .k-free{background:var(--hover)}
+.chipx .tk{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.chipx em{font-style:normal;font-size:10.5px;color:var(--accent)}
+.chipx.sum{background:var(--accent-soft)}
+.chipx .mini{border:0;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line-strong);font-size:11px;padding:1px 8px;border-radius:999px;cursor:pointer;color:var(--fg);transition:transform 160ms var(--ease-out)}
+.chipx .mini:active{transform:scale(0.96)}
+.sugg{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sugg .lab{width:100%;font-size:12px}
+.chip-s{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line-strong);background:transparent;font-size:12px;padding:3px 9px;border-radius:var(--r-sm);color:var(--muted);cursor:pointer;max-width:100%;transition:background-color 150ms ease,color 150ms ease,transform 160ms var(--ease-out)}
+.chip-s:active{transform:scale(0.97)}
+.chip-s svg{width:11px;height:11px;flex:none}
+.tl-ag .tl-dot.k-ask{background:#e0a100}
+.tl-ag .tl-dot.k-done{background:var(--ok)}
+/* automações */
+.rules{display:flex;flex-direction:column;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--line);overflow:hidden}
+.rule{display:flex;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--line);cursor:pointer}
+.rule:first-child{border-top:0}
+.rule-tx{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.rule-when{font-size:13px;font-weight:600}
+.rule-then{font-size:13px;color:var(--accent)}
+.rule .lab{font-size:12px}
+.switch{position:relative;width:36px;height:22px;flex:none}
+.switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
+.switch i{position:absolute;inset:0;border-radius:999px;background:var(--line-strong);transition:background-color 200ms ease}
+.switch i::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform 200ms var(--ease-out)}
+.switch input:checked+i{background:var(--ok)}
+.switch input:checked+i::after{transform:translateX(14px)}
+.switch input:focus-visible+i{outline:2px solid var(--accent);outline-offset:2px}
+.stage.bad{background:var(--bad-soft);color:var(--bad)}
+.ctx-empty{font-size:12.5px;color:var(--faint);margin:0}
+.cpop{position:fixed;z-index:30;display:flex;flex-direction:column;max-height:min(480px,72vh);background:var(--surface);border-radius:var(--r-lg);box-shadow:0 0 0 1px rgba(0,0,0,.07),0 4px 8px rgba(0,0,0,.04),0 24px 56px -18px rgba(0,0,0,.3);overflow:hidden;
+  opacity:0;transform:scale(0.97);visibility:hidden;pointer-events:none;transition:opacity 140ms var(--ease-out),transform 180ms var(--ease-out),visibility 0s linear 180ms}
+.cpop.open{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity 160ms var(--ease-out),transform 200ms var(--ease-out),visibility 0s}
+.cpop.creating .cp-search,.cpop.creating .cp-list{display:none}
+.cp-search{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);color:var(--faint)}
+.cp-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;font-size:14px;color:var(--fg)}
+.cp-search input::placeholder{color:var(--faint)}
+.cp-list{overflow:auto;padding:4px 6px 8px;flex:1;min-height:0;overscroll-behavior:contain}
+.cp-h{font-size:11.5px;font-weight:600;color:var(--muted);padding:10px 8px 4px}
+.cp-it{display:grid;grid-template-columns:26px minmax(0,1fr) 20px;gap:10px;align-items:center;width:100%;border:0;background:transparent;text-align:left;padding:7px 8px;border-radius:var(--r-sm);cursor:pointer;color:var(--fg);transition:background-color 120ms ease}
+.cp-it.act{background:var(--hover)}
+.cp-it .tx{display:flex;flex-direction:column;min-width:0}
+.cp-it .t{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-it .d{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-it .ck{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;color:#fff;box-shadow:inset 0 0 0 1.5px var(--line-strong);transition:background-color 150ms ease,box-shadow 150ms ease}
+.cp-it.on .ck{background:var(--accent);box-shadow:none}
+.cp-it .ck.plus{box-shadow:none;color:var(--muted)}
+.ico.doc{background:var(--hover);color:var(--muted)}
+.cp-empty{margin:0;padding:18px 10px;font-size:13px;color:var(--muted);text-align:center}
+.cp-foot{border-top:1px solid var(--line);padding:6px;display:flex;flex-direction:column;gap:2px}
+.cp-new .t{color:var(--note)}
+.cp-hint{display:flex;justify-content:space-between;gap:8px;padding:6px 8px 4px;font-size:11px;color:var(--faint);flex-wrap:wrap}
+.cp-hint kbd{font-family:var(--mono);font-size:10.5px;padding:0 4px;border-radius:4px;background:var(--hover);color:var(--muted)}
+.cp-form{display:flex;flex-direction:column;gap:8px;padding:8px}
+.cp-form-h{display:flex;align-items:center;gap:6px;font-size:13px}
+.ctx-add{appearance:none;-webkit-appearance:none;border:0;font-size:12px;font-weight:500;padding:4px 10px;border-radius:var(--r-sm);background:var(--surface);box-shadow:inset 0 0 0 1px var(--line-strong);cursor:pointer;color:var(--fg)}
+
+/* painel do agente */
+.ag-head{display:flex;flex-direction:column;gap:4px}
+.ag-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ag-sub{font-size:13px;color:var(--muted);margin:0}
+.ag-actions{display:flex;gap:8px}
+.ag-actions .btn.primary{flex:1;justify-content:center;padding-block:9px}
+.callout.info{background:var(--accent-soft);color:#123a7a}
+.callout{display:flex;align-items:center;gap:10px;padding:10px 10px 10px 12px;border-radius:var(--r-md);background:var(--warn-soft);color:#5c3d00;font-size:13px;line-height:1.4}
+.callout .btn{margin-left:auto;flex:none}
+.prog{display:flex;flex-direction:column;gap:8px}
+.prog-meta{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted)}
+.prog-meta b{color:var(--fg);font-weight:500}
+.segs{display:flex;gap:4px;height:6px}
+.segs i{flex:1;border-radius:3px;background:var(--hover);transition:background-color 200ms ease}
+.segs i.done{background:var(--ok)} .segs i.running,.segs i.coordinating{background:var(--accent)} .segs i.waiting{background:#e0a100}
+.bar{height:6px;border-radius:3px;background:var(--hover);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);transform-origin:0 50%;transition:transform 300ms var(--ease-out)}
+.bar.done i{background:var(--ok)}
+.now{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stats3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{background:var(--subtle);border-radius:var(--r-md);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat b{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat span{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sec-h{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:26px}
+.foot-danger{border-top:1px solid var(--line);padding-top:14px}
+pre.cmd{margin:0;padding:12px 14px;background:var(--subtle);box-shadow:inset 0 0 0 1px var(--line);border-radius:var(--r-md);font-family:var(--mono);font-size:11px;line-height:1.65;overflow-x:auto;white-space:pre;color:#3a3a3c}
+pre.cmd .c{color:var(--faint)}
+.tree,.tree ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.tree ul{padding-left:12px;margin:4px 0 0 13px;border-left:1.5px solid var(--line)}
+.tree button{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:10px;row-gap:1px;text-align:left;padding:8px 10px;border-radius:var(--r-sm);border:0;background:var(--subtle);cursor:pointer}
+.tree button.cur{box-shadow:inset 0 0 0 1.5px var(--accent);background:var(--accent-soft)}
+.tree .sd{grid-column:1;grid-row:1 / 3}
+.tree .nm{grid-column:2;grid-row:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree .mt{grid-column:2;grid-row:2;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree .badge{grid-column:3;grid-row:1 / 3;font-size:11px}
+.sd{width:7px;height:7px;border-radius:50%;flex:none;background:var(--faint)}
+.sd.idle{background:var(--line-strong)}
+.sd.running,.sd.coordinating{background:var(--accent)} .sd.waiting{background:#e0a100} .sd.done{background:var(--ok)}
+.help-list{display:flex;flex-direction:column;gap:14px;margin:0;padding:0;list-style:none}
+.help-list li{display:grid;grid-template-columns:26px 1fr;gap:10px;font-size:13px;line-height:1.5;color:#3a3a3c}
+.help-list b{color:var(--fg);font-weight:600;display:block}
+
+@media (max-width:860px){
+  .side,.main.side-hidden .side{left:8px;width:min(320px,calc(100% - 16px));bottom:76px;z-index:7;opacity:0;transform:translateX(-16px) scale(0.98);visibility:hidden;pointer-events:none;
+    transition:opacity 180ms var(--ease-out),transform 240ms var(--ease-out),visibility 0s linear 240ms}
+  .side.open,.main.side-hidden .side.open{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity 200ms var(--ease-out),transform 260ms var(--ease-out),visibility 0s}
+  .btn.mob{display:inline-flex}
+  .stats{display:none}
+  .toolbar{top:auto;bottom:12px}
+  .toast{bottom:76px}
+  .insp{left:8px;right:8px;width:auto;top:auto;height:62%;bottom:76px;transform:translateY(16px) scale(0.98);transform-origin:50% 100%}
+  .f-body{padding:16px}
+}
+
+@media (max-width:1180px){ .tb-grp .lb{display:none} }
+@media (hover:hover) and (pointer:fine){
+  .btn:hover{background-color:var(--subtle)}
+  .btn.primary:hover{background-color:#2c2c2e}
+  .btn.plain:hover{background-color:var(--hover)}
+  .toast .btn:hover{background-color:rgba(255,255,255,.2)}
+  .lst-item:hover{background-color:var(--subtle)}
+  .lst-item .r1 .btn{opacity:0}
+  .lst-item:hover .r1 .btn,.lst-item .r1 .btn:focus-visible{opacity:1}
+  .tree button:hover{background-color:var(--hover)}
+  .opt:hover{background-color:var(--subtle)}
+  .port:hover{background-color:var(--note-soft)}
+  .f-sugg button:hover{background-color:var(--line)}
+  .iss:hover{background-color:var(--subtle)}
+  .chip-s:hover{background-color:var(--subtle);color:var(--fg)}
+  .iss .iss-r .btn{opacity:0}
+  .iss:hover .iss-r .btn,.iss .iss-r .btn:focus-visible{opacity:1}
+  .chip:not([aria-pressed="true"]):hover{background-color:var(--hover);color:var(--fg)}
+  .fx-note:hover{box-shadow:inset 0 0 0 1px rgba(154,107,0,.35)}
+  .chipx .x:hover{background-color:var(--line);color:var(--fg)}
+  .ctx-add:hover{background-color:var(--subtle)}
+  .win:hover .lights i:nth-child(1){background:#ff5f57}
+  .win:hover .lights i:nth-child(2){background:#febc2e}
+  .win:hover .lights i:nth-child(3){background:#28c840}
+}
+.lst-item,.tree button,.opt{transition:background-color 150ms ease}
+
+/* movimento reduzido: menos e mais suave, sem deslocamento */
+@media (prefers-reduced-motion:reduce){
+  .edge.live,.badge.live .d{animation:none}
+  .l{transition:opacity 180ms ease}
+  @starting-style{.l{translate:none}}
+  .btn:active:not(:disabled),.f-sugg button:active,.f-comp .send:active{transform:none}
+  .toast,.toast.show{transform:translate(-50%,0)}
+  .insp,.side,.main.side-hidden .side{transform:none}
+  .seg-ind{transition:none}
+  .cpop,.cmenu{transform:none}
+}
+</style>
+
+<div class="cmenu" id="cmenu" role="menu" aria-label="Ações rápidas" tabindex="-1" inert></div>
+<div class="cpop" id="cpop" role="dialog" aria-label="Adicionar contexto" inert>
+  <div class="cp-search"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3" stroke-linecap="round"/></svg><input id="cpQ" placeholder="Buscar repositórios, issues, notas…" autocomplete="off" aria-label="Buscar contexto"></div>
+  <div class="cp-list" id="cpList" role="listbox" aria-multiselectable="true"></div>
+  <div class="cp-foot" id="cpFoot"></div>
+</div>
+<div class="app">
+  <header class="top">
+    <button class="btn plain icon" id="tglSide" aria-label="Mostrar ou ocultar barra lateral" aria-pressed="true" title="Barra lateral (Ctrl/⌘ + B)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.5"/><path d="M6 2.75v10.5"/></svg></button>
+    <div class="brand">
+      <span class="appicon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l1.6 4.9 4.9 1.6-4.9 1.6L8 14.5l-1.6-4.9L1.5 8l4.9-1.6z"/></svg></span>
+      <b>Agent Canvas</b><span class="ws">grupo / payments</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="stats" id="stats"></div>
+    <button class="btn primary" data-act="new-agent">+ Novo agente</button>
+  </header>
+  <div class="main">
+    <aside class="side" id="side">
+      <div class="side-h">
+        <div class="seg" role="tablist" aria-label="Fontes">
+          <span class="seg-ind" id="segInd" aria-hidden="true"></span>
+          <button role="tab" id="tab-issues" aria-selected="true" data-tab="issues">Issues</button>
+          <button role="tab" id="tab-actions" aria-selected="false" data-tab="actions">Ações<span class="cnt" hidden>0</span></button>
+          <button role="tab" id="tab-repos" aria-selected="false" data-tab="repos">Repos</button>
+          <button role="tab" id="tab-feed" aria-selected="false" data-tab="feed">Atividade</button>
+        </div>
+        <div class="search-w" id="searchW"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3" stroke-linecap="round"/></svg><input class="field search" id="q" type="search" placeholder="Buscar" aria-label="Buscar"></div>
+        <div class="chips" id="chips" role="group" aria-label="Filtrar issues">
+          <button class="chip" data-filter="all" aria-pressed="true">Todas</button>
+          <button class="chip" data-filter="bug" aria-pressed="false">Bugs</button>
+          <button class="chip" data-filter="agents" aria-pressed="false">Com agentes</button>
+        </div>
+      </div>
+      <div class="side-b" id="sideb"></div>
+      <div class="side-f"><span class="dot-ok" aria-hidden="true"></span>GitLab conectado<span class="lab">· dados de exemplo</span></div>
+    </aside>
+
+    <section class="canvas" id="canvas" aria-label="Canvas de orquestração">
+      <div class="world" id="world">
+        <svg class="edges">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#c3c3c9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></marker>
+            <marker id="arrA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#0a6cf0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></marker>
+            <marker id="arrM" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#c9b6f3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></marker>
+            <marker id="arrN" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#e9c46a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></marker>
+          </defs>
+          <g id="edgeg"></g>
+          <path id="tmpEdge" class="edge note" d="" marker-end="url(#arrN)"></path>
+        </svg>
+      </div>
+      <div class="toolbar">
+        <div class="tb-grp" role="group" aria-label="Zoom">
+          <button class="btn plain icon" id="zOut" aria-label="Diminuir zoom" title="Diminuir zoom"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4"/></svg></button>
+          <output id="zLbl">100%</output>
+          <button class="btn plain icon" id="zIn" aria-label="Aumentar zoom" title="Aumentar zoom"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4M7 5v4"/></svg></button>
+          <button class="btn plain sm" id="zFit" title="Ajustar à tela"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/></svg><span class="lb">Ajustar</span></button>
+        </div>
+        <div class="tb-grp" role="group" aria-label="Criar">
+          <button class="btn plain sm" data-act="new-note" title="Nova nota"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 2.5h10v7l-4 4H3z"/><path d="M9 13.5v-4h4"/></svg><span class="lb">Nota</span></button>
+        </div>
+        <div class="tb-grp" role="group" aria-label="Painéis">
+          <button class="btn plain sm" data-act="auto" title="Automações"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z"/></svg><span class="lb">Automações</span></button>
+          <button class="btn plain sm" data-act="help" title="Como funciona"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M6.4 6.3a1.7 1.7 0 0 1 3.2.7c0 1.2-1.6 1.4-1.6 2.5"/><circle cx="8" cy="11.6" r=".4" fill="currentColor"/></svg><span class="lb">Como funciona</span></button>
+        </div>
+      </div>
+      <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMsg"></span><kbd>Ctrl/⌘ Z</kbd><button class="btn sm" id="toastUndo">Desfazer</button></div>
+      <div class="focus" id="focus" aria-hidden="true">
+        <div class="focus-bg" data-act="focus-close"></div>
+        <div class="focus-sheet" id="fSheet" role="dialog" aria-modal="true" aria-labelledby="fName">
+          <div class="f-main">
+            <div class="f-head"><span class="f-ico" id="fIcon"></span><span class="wname" id="fName"></span><span class="wsub" id="fSub"></span><span class="badge" id="fStatus"></span><button class="btn plain icon" data-act="focus-close" aria-label="Fechar modo foco">✕</button></div>
+            <div class="f-body" id="fBody"></div>
+            <div class="f-foot">
+              <div class="f-sugg" id="fSugg"></div>
+              <form class="f-comp" id="fComp"><textarea id="fInput" rows="1" placeholder="Converse com o agente" aria-label="Mensagem para o agente"></textarea><button class="send" aria-label="Enviar">↑</button></form>
+              <div class="f-hint">Enter envia · Shift + Enter quebra linha · Esc fecha</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="insp" id="insp">
+        <div class="insp-top"><span class="k" id="inspK"></span><button class="btn plain icon" data-act="close" aria-label="Fechar painel">✕</button></div>
+        <div class="insp-body" id="inspB"></div>
+      </aside>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const now = () => new Date().toTimeString().slice(0,5);
+const slug = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,'').split(' ').filter(w=>w.length>2).slice(0,3).join('-') || 'tarefa';
+const ICON = {
+  expand:'<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/></svg>',
+  locate:'<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15"/></svg>',
+  plus:'<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>',
+  drag:'<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="3.5" r="1.2"/><circle cx="10.5" cy="3.5" r="1.2"/><circle cx="5.5" cy="8" r="1.2"/><circle cx="10.5" cy="8" r="1.2"/><circle cx="5.5" cy="12.5" r="1.2"/><circle cx="10.5" cy="12.5" r="1.2"/></svg>',
+  note:'<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 2.5h10v7l-4 4H3z"/><path d="M9 13.5v-4h4M5.5 5.5h5M5.5 8h3"/></svg>',
+  issue:'<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/></svg>',
+  mr:'<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="4" cy="3.5" r="1.8"/><circle cx="4" cy="12.5" r="1.8"/><circle cx="12" cy="12.5" r="1.8"/><path d="M4 5.3v5.4M12 10.7V7a3 3 0 0 0-3-3H7.5"/></svg>',
+  repo:'<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 2.5h8.5A1.5 1.5 0 0 1 13 4v9.5H4.5A1.5 1.5 0 0 1 3 12z"/><path d="M3 12a1.5 1.5 0 0 1 1.5-1.5H13"/></svg>',
+  agent:'<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 1.5l1.6 4.9 4.9 1.6-4.9 1.6L8 14.5l-1.6-4.9L1.5 8l4.9-1.6z"/></svg>',
+};
+
+/* ---------- dados de exemplo (fictícios) ---------- */
+const REPOS = [
+  {id:'payments-api', desc:'API Node/TypeScript', sample:['src/app.ts','src/routes/index.ts','test/app.spec.ts'], test:'npm test', testOut:'✓ 214 passed (11s)'},
+  {id:'web-app', desc:'Front React + Vite', sample:['src/main.tsx','src/pages/Home.tsx','src/pages/Home.test.tsx'], test:'pnpm vitest run', testOut:'✓ 96 passed (6.4s)'},
+  {id:'shared-contracts', desc:'OpenAPI e tipos compartilhados', sample:['openapi.yaml','src/types.ts','test/schema.spec.ts'], test:'npm run build && npm test', testOut:'✓ build ok · 22 passed'},
+];
+const repoBy = id => REPOS.find(r => r.id === id);
+const T = (repo, files, grep, finding, diff, test, testOut, sub) => ({repo, files, grep, finding, diff, test, testOut, sub});
+const ISSUES = [
+  {iid:142, title:'Webhook de pagamento duplica cobrança quando o gateway reenvia', short:'idempotência no webhook', labels:['bug','P1'], author:'ana.ribeiro', comments:3,
+   desc:'Quando o gateway reenvia o webhook (timeout > 10s), o handler cria uma segunda cobrança. Aceite: o mesmo evento processado duas vezes gera uma só cobrança, com teste de retry.',
+   tasks:[T('payments-api',['src/webhooks/payment.ts','src/db/charges.repo.ts','test/webhooks/payment.spec.ts'],'"idempotency"','Causa: o handler não verifica o event_id antes de criar a cobrança. Vou usar a constraint única em charges.gateway_event_id.',
+     ['-  const charge = await charges.create(evt)','+  const existing = await charges.findByEventId(evt.id)','+  if (existing) return ack(existing)','+  const charge = await charges.create(evt)'],'npm test -- webhooks','✓ 31 passed (4.2s)','tests')]},
+  {iid:157, title:'Exportar extrato do cliente em CSV e PDF', short:'exportação de extrato', labels:['feature'], author:'lucas.m', comments:5,
+   desc:'O cliente precisa baixar o extrato filtrado por período. CSV para planilha, PDF com cabeçalho da empresa. Limite de 12 meses por exportação.',
+   tasks:[
+     T('shared-contracts',['openapi.yaml','src/types.ts','test/schema.spec.ts'],'"Statement"','Falta o endpoint /statements/export no contrato. Faço primeiro, para api e web usarem o mesmo tipo.',['+  /statements/export:','+    get:','+      parameters: [from, to, format]'],'npm run build && npm test','✓ build ok · 24 passed'),
+     T('payments-api',['src/statements/export.ts','src/statements/query.ts','test/statements/export.spec.ts'],'"StatementFilter"','Falta o endpoint GET /statements/export com format=csv|pdf e resposta em streaming.',['+router.get("/statements/export", auth, async (req, res) => {','+  const rows = await statements.query(req.filter)','+  return exporters[req.query.format](rows, res)','+})'],'npm test -- statements','✓ 18 passed (2.9s)','tests'),
+     T('web-app',['src/pages/Statement.tsx','src/api/statements.ts','src/pages/Statement.test.tsx'],'"downloadStatement"','A tela já tem o filtro de período. Falta o menu de exportação e o download do arquivo.',['+  <ExportMenu formats={["csv","pdf"]} onSelect={download} />','+  const download = f => api.statements.export({ ...filter, format: f })'],'pnpm vitest run Statement','✓ 7 passed (1.2s)')]},
+  {iid:161, title:'Migrar fila de e-mails transacionais para BullMQ', short:'fila de e-mails em BullMQ', labels:['tech-debt'], author:'ana.ribeiro', comments:1,
+   desc:'A fila caseira em setInterval perde jobs durante o deploy. Migrar para BullMQ com retries exponenciais.',
+   tasks:[T('payments-api',['src/mail/queue.ts','src/mail/worker.ts','test/mail/queue.spec.ts'],'"setInterval"','Há 3 produtores chamando queue.push direto. Vou criar um adapter com a mesma assinatura.',['-export const queue = new LegacyQueue()','+export const queue = new Queue("mail", { connection })'],'npm test -- mail','✓ 12 passed (1.8s)')]},
+  {iid:163, title:'Rate limit por tenant na API pública', short:'rate limit por tenant', labels:['feature'], author:'joao.p', comments:2,
+   desc:'Limitar 600 req/min por tenant com cabeçalhos X-RateLimit-*. Documentar no contrato público.',
+   tasks:[T('payments-api',['src/http/rate-limit.ts','src/tenants/plan.ts','test/http/rate-limit.spec.ts'],'"tenantId"','O middleware atual limita por IP. Vou trocar a chave para tenantId e ler o limite do plano.',['-  keyGenerator: req => req.ip,','+  keyGenerator: req => req.tenant.id,','+  max: req => req.tenant.plan.rateLimit ?? 600,'],'npm test -- rate-limit','✓ 9 passed (1.1s)'),
+     T('shared-contracts',['openapi.yaml','src/headers.ts','test/schema.spec.ts'],'"429"','A resposta 429 não está documentada. Vou adicionar os cabeçalhos X-RateLimit-*.',['+    "429":','+      headers: { X-RateLimit-Limit, X-RateLimit-Remaining }'],'npm run build && npm test','✓ build ok · 23 passed')]},
+  {iid:170, title:'Teste instável em checkout.spec.ts no CI', short:'flaky test do checkout', labels:['bug','ci'], author:'lucas.m', comments:4,
+   desc:'Falha cerca de 1 a cada 8 execuções com "timeout waiting for payment intent". Só acontece no runner compartilhado.',
+   tasks:[T('web-app',['e2e/checkout.spec.ts','e2e/helpers/clock.ts','e2e/fixtures.ts'],'"waitFor"','O teste depende do relógio real. Vou usar o clock fake que já existe em e2e/helpers.',['-  await waitFor(() => intent.status === "ok", 5000)','+  clock.tick(5000)','+  expect(intent.status).toBe("ok")'],'pnpm e2e checkout --repeat 20','✓ 20/20 execuções passaram')]},
+  {iid:171, title:'Atualizar Node 20 para 22 em todos os repositórios', short:'Node 22', labels:['infra','ci'], author:'joao.p', comments:0,
+   desc:'Node 20 entra em fim de suporte. Atualizar imagem do CI, .nvmrc e engines do package.json nos três repositórios.',
+   tasks:['payments-api','web-app','shared-contracts'].map(r => T(r,['.gitlab-ci.yml','.nvmrc','package.json'],'"node:20"','A imagem node:20-alpine aparece nos jobs de build e teste. Vou centralizar numa variável NODE_IMAGE.',['-image: node:20-alpine','+variables:','+  NODE_IMAGE: node:22-alpine','+image: $NODE_IMAGE'],repoBy(r).test,repoBy(r).testOut))},
+];
+// discussões e critérios de exemplo
+const THREADS = {
+  142:[{who:'ana.ribeiro', t:'há 2 dias', text:'Suporte reportou 4 clientes cobrados duas vezes ontem. Todos com timeout do gateway acima de 10s.'},
+       {who:'joao.p', t:'ontem', text:'O gateway manda o mesmo event_id no reenvio. Dá para usar como chave de idempotência.'}],
+  157:[{who:'lucas.m', t:'há 3 dias', text:'Produto confirmou: CSV e PDF na primeira versão, Excel fica para depois.'},
+       {who:'ana.ribeiro', t:'há 2 dias', text:'O contrato precisa sair antes, o web-app consome o tipo gerado do OpenAPI.'},
+       {who:'lucas.m', t:'ontem', text:'Deixei as decisões de produto numa nota no canvas.'}],
+};
+const CRITERIA = {
+  142:['O mesmo evento processado duas vezes gera uma só cobrança','O reenvio responde 200 com a cobrança existente','Teste cobrindo o retry do gateway'],
+  157:['Exportar o extrato filtrado por período em CSV e PDF','Limite de 12 meses validado na API e na tela','PDF com cabeçalho e logo da empresa','Testes na API e no web-app'],
+};
+ISSUES.forEach(i => { i.notes = []; i.criteria = CRITERIA[i.iid]; i.thread = THREADS[i.iid] || [{who:i.author, t:'há 3 dias', text:'Detalhes na descrição. Qualquer dúvida, comentem aqui.'}]; });
+const issueBy = iid => ISSUES.find(i => i.iid === iid);
+const MERGE_ORDER = ['shared-contracts','payments-api','web-app'];
+function genTask(repoId, prompt){
+  const r = repoBy(repoId), fn = slug(prompt).replace(/-(\w)/g,(_,c)=>c.toUpperCase());
+  return T(r.id, r.sample, `"${fn}"`, `Em ${r.id}, o ponto de entrada é ${r.sample[0]}. Vou seguir o padrão que já existe ali.`,
+    ['+  // '+prompt.slice(0,52), `+  export function ${fn}() {`, '+    …', '+  }'], r.test, r.testOut);
+}
+
+/* ---------- estado ---------- */
+const S = { filter:'all', nodes:[], edges:[], sel:null, panel:'help', tab:'issues', view:{x:40,y:30,k:1}, soloRepo:null };
+let nodeSeq = 0, agentSeq = 0, mrSeq = 88;
+const agents = [], feedItems = [];
+const F = { a:null, n:null };   // F.n: item em foco; F.a: o agente, quando o item é um terminal           // agente aberto no modo foco
+const liveAgents = () => agents.filter(a => !a.removed);
+const canvas = $('#canvas'), world = $('#world'), edgeg = $('#edgeg');
+const nodeBy = id => S.nodes.find(n => n.id === id);
+const issueNodeOf = i => i && S.nodes.find(n => n.type==='issue' && n.data===i);
+
+/* ---------- view ---------- */
+function applyView(){
+  const {x,y,k} = S.view;
+  world.style.transform = `translate(${x}px,${y}px) scale(${k})`;
+  canvas.style.backgroundSize = `${22*k}px ${22*k}px`;
+  canvas.style.backgroundPosition = `${x}px ${y}px`;
+  $('#zLbl').value = Math.round(k*100) + '%';
+}
+/* movimento: curvas da skill; câmera usa ease-in-out (movimento na tela) */
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+const EASE_OUT = 'cubic-bezier(0.23, 1, 0.32, 1)', EASE_IN_OUT = 'cubic-bezier(0.77, 0, 0.175, 1)';
+let glideT = 0, gliding = false;
+function glideTo(v, dur = 280){
+  if (RM.matches){ S.view = v; applyView(); return; }
+  world.style.transition = `transform ${dur}ms ${EASE_IN_OUT}`;
+  canvas.style.transition = `background-position ${dur}ms ${EASE_IN_OUT}, background-size ${dur}ms ${EASE_IN_OUT}`;
+  S.view = v; applyView(); gliding = true;
+  clearTimeout(glideT); glideT = setTimeout(() => stopGlide(false), dur + 30);
+}
+// interrompe a câmera onde ela está agora, para o arrasto continuar sem salto
+function stopGlide(freeze = true){
+  if (!gliding) return;
+  if (freeze){ const m = new DOMMatrix(getComputedStyle(world).transform); S.view = {x:m.e, y:m.f, k:m.a}; }
+  world.style.transition = canvas.style.transition = ''; gliding = false; clearTimeout(glideT);
+  if (freeze) applyView();
+}
+// área do canvas não coberta pelos painéis flutuantes
+function safeArea(){
+  const W = canvas.clientWidth, H = canvas.clientHeight, wide = W > 860;
+  const left = wide && !$('.main').classList.contains('side-hidden') ? 320 : 0;
+  const right = wide && $('#insp').classList.contains('open') ? 396 : 0;
+  return { x:left, y:56, w:W-left-right, h:H-56-(wide ? 16 : 70) };
+}
+function zoomAt(f, cx, cy, animate){
+  const v = S.view, k2 = Math.min(1.6, Math.max(.2, v.k*f));
+  const nv = { k:k2, x:cx - (cx - v.x) * k2 / v.k, y:cy - (cy - v.y) * k2 / v.k };
+  if (animate) glideTo(nv, 200); else { S.view = nv; applyView(); }
+}
+function fit(animate){
+  if (!S.nodes.length) return;
+  let a=1e9,b=1e9,c=-1e9,d=-1e9;
+  S.nodes.forEach(n => { const r = rect(n); a=Math.min(a,r.x); b=Math.min(b,r.y); c=Math.max(c,r.x+r.w); d=Math.max(d,r.y+r.h); });
+  const A = safeArea(), pad = 36;
+  const k = Math.min(1, (A.w-pad*2)/(c-a), (A.h-pad*2)/(d-b));
+  const nv = {k, x:A.x + (A.w-(c-a)*k)/2 - a*k, y:A.y + Math.max(pad*.4,(A.h-(d-b)*k)/2) - b*k};
+  if (animate) glideTo(nv, 300); else { S.view = nv; applyView(); }
+}
+const viewCenter = () => { const v = S.view, A = safeArea(); return { x:(A.x + A.w/2 - v.x)/v.k, y:(A.y + A.h/2 - v.y)/v.k }; };
+function enterEl(el){
+  if (S.quiet) return;
+  el.animate(RM.matches ? [{opacity:0},{opacity:1}] : [{opacity:0, transform:'translateY(8px) scale(0.97)'},{opacity:1, transform:'none'}],
+    {duration:280, easing:EASE_OUT});
+}
+function exitEl(el, animate){
+  el._gone = true;
+  if (!animate){ el.remove(); return; }
+  el.animate(RM.matches ? [{opacity:1},{opacity:0}] : [{opacity:1, transform:'none'},{opacity:0, transform:'translateY(8px) scale(0.97)'}],
+    {duration:180, easing:EASE_OUT}).onfinish = () => { if (el._gone) el.remove(); };
+}
+
+/* ---------- nós ---------- */
+function addNode(type, x, y, data){
+  const el = document.createElement('div');
+  const n = { id:'n'+(++nodeSeq), type, x, y, el, data };
+  el.className = 'node'; el.dataset.id = n.id;
+  world.appendChild(el); S.nodes.push(n);
+  renderNode(n); place(n); enterEl(el);
+  return n;
+}
+function place(n){ n.el.style.left = n.x+'px'; n.el.style.top = n.y+'px'; }
+function rect(n){ return {x:n.x, y:n.y, w:n.el.offsetWidth, h:n.el.offsetHeight}; }
+function free(x,y,w,h){
+  return !S.nodes.some(n => { const r = rect(n);
+    return x < r.x+r.w+30 && x+w+30 > r.x && y < r.y+r.h+30 && y+h+30 > r.y; });
+}
+function freeSpot(cands, w, h){
+  for (const c of cands) if (free(c.x,c.y,w,h)) return c;
+  let {x,y} = cands[0]; for (let i=0;i<60;i++){ y += 50; if (free(x,y,w,h)) return {x,y}; } return cands[0];
+}
+const statusLabel = s => ({idle:'Pronto', running:'Trabalhando', waiting:'Aguardando você', coordinating:'Coordenando', done:'Concluído', paused:'Pausado', stopped:'Parado'}[s]);
+const statusTone = s => ({idle:'', running:'info live', waiting:'warn', coordinating:'info', done:'ok', paused:'', stopped:''}[s]);
+const roleLabel = a => ({orch:'Orquestrador', sub:'Sub-agente', review:'Revisor', fix:'Correção', main: a.parent ? 'Agente' : a.issue ? 'Agente' : 'Solo'}[a.role]);
+
+function renderNode(n){
+  const el = n.el;
+  if (n.type === 'issue'){
+    const i = n.data, cnt = liveAgents().filter(a => a.issue===i && a.role!=='review').length, nn = activeNotes(i.notes).length;
+    const repos = [...new Set(i.tasks.map(t=>t.repo))];
+    el.innerHTML = `<div class="card ncard" data-drag>
+      <div class="nhead"><span class="ico issue">${ICON.issue}</span><span class="num">Issue #${i.iid}</span><span class="spacer" style="flex:1"></span>${i.labels.map(l=>`<span class="badge ${l==='bug'||l==='P1'?'issue':''}">${l}</span>`).join('')}<button class="btn plain icon xs expand" data-act="focus-node" data-nid="${n.id}" aria-label="Expandir" title="Expandir">${ICON.expand}</button></div>
+      <div class="ntitle">${esc(i.title)}</div>
+      <div class="tags">${repos.map(r=>`<span class="badge repo">${r}</span>`).join('')}</div>
+      <div class="nfoot"><span class="nmeta">${cnt ? cnt+(cnt>1?' agentes':' agente') : 'Sem agentes'} · ${i.comments} coment.${nn?` · ${nn} nota${nn>1?'s':''}`:''}</span>
+      <button class="btn sm" data-act="quick" data-iid="${i.iid}">Iniciar</button></div></div>`;
+  } else if (n.type === 'term'){
+    const a = n.data;
+    const sub = a.blank ? 'sem instrução ainda' : a.role==='orch' ? `${a.tasks.length} repositórios` : a.repo;
+    el.innerHTML = `<div class="card win ${a.role==='orch'?'orch':''}">
+      <div class="wbar" data-drag><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span class="wname">${a.name}</span><span class="wsub">${esc(roleLabel(a))} · ${esc(sub)}</span><span class="badge st"></span><button class="btn plain icon expand" data-act="focus-open" data-aid="${a.id}" aria-label="Abrir ${a.name} em tela grande" title="Abrir em foco"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/></svg></button></div>
+      <div class="tbody"></div>
+      <form class="composer"><input id="in-${a.id}" placeholder="${a.blank?'Primeira instrução para '+a.name:a.role==='orch'?'Instrução para todos os agentes':'Mensagem para '+a.name}" autocomplete="off"><button class="send" aria-label="Enviar">↑</button></form></div>`;
+    a.body = el.querySelector('.tbody');
+    a.lines.forEach(l => a.body.appendChild(l));
+    el.querySelector('form').addEventListener('submit', e => { e.preventDefault(); const inp = e.target.querySelector('input'); if (inp.value.trim()) tell(a, inp.value.trim()); inp.value=''; });
+    refreshChrome(a);
+  } else if (n.type === 'note'){
+    const nt = n.data;
+    el.innerHTML = `<div class="card ncard note">
+      <div class="nhead" data-drag><span class="ico note">${ICON.note}</span><span class="num">${nt.handoff ? 'Passagem' : 'Nota'}</span><span style="flex:1"></span><span class="nmeta nlinks"></span><button class="btn plain icon xs expand" data-act="focus-node" data-nid="${n.id}" aria-label="Expandir" title="Expandir">${ICON.expand}</button></div>
+      <input class="ntitle-in" id="nt-${nt.id}" value="${esc(nt.title)}" placeholder="Título da nota" aria-label="Título da nota">
+      <textarea class="nbody" id="nb-${nt.id}" placeholder="Escreva decisões, regras de negócio, links, trechos de log…" aria-label="Texto da nota">${esc(nt.body)}</textarea>
+      <button class="port" data-port aria-label="Vincular nota a um agente ou issue" title="Arraste até um agente ou issue">+</button></div>`;
+    const ti = el.querySelector('.ntitle-in'), bo = el.querySelector('.nbody');
+    ti.addEventListener('input', () => { renameNote(nt, ti.value.trim() || 'Sem título'); });
+    bo.addEventListener('input', () => { nt.body = bo.value; nt.dirty = true; });
+    bo.addEventListener('change', () => noteEdited(nt));
+    ti.addEventListener('change', () => noteEdited(nt));
+    noteMeta(nt, el);
+  } else if (n.type === 'mr'){
+    const m = n.data;
+    const pipe = mrBadge(m);
+    el.innerHTML = `<div class="card ncard" data-drag>
+      <div class="nhead"><span class="ico mr">${ICON.mr}</span><span class="num">MR !${m.iid}</span><span style="flex:1"></span><span class="badge repo">${m.repo}</span><button class="btn plain icon xs expand" data-act="focus-node" data-nid="${n.id}" aria-label="Expandir" title="Expandir">${ICON.expand}</button></div>
+      <div class="ntitle">${esc(m.title)}</div>
+      <div class="mono" style="color:var(--muted);font-size:11.5px">${esc(m.branch)} → main</div>
+      <div class="nfoot">${pipe}<span class="diffstat"><span class="a">+${m.add}</span> <span class="r">−${m.del}</span></span></div></div>`;
+  }
+  if (S.sel === n.id) el.classList.add('sel');
+}
+function refreshChrome(a){
+  const b = a.node && a.node.el.querySelector('.badge.st'); if (!b) return;
+  b.className = 'badge st ' + statusTone(a.status);
+  b.innerHTML = `<span class="d"></span>${statusLabel(a.status)}`;
+  if (F.a === a){ const f = $('#fStatus'); f.className = 'badge ' + statusTone(a.status); f.innerHTML = b.innerHTML; }
+}
+
+/* ---------- arestas ---------- */
+function link(from, to, kind){ S.edges.push({from, to, kind}); drawEdges(); }
+const LIVE = ['running','waiting','coordinating'];
+// cada aresta mantém o próprio <path>: só o "d" e a classe mudam, e a entrada pode ser animada uma vez
+function drawEdges(){
+  S.edges.forEach(e => {
+    if (!e.el){
+      e.el = document.createElementNS('http://www.w3.org/2000/svg', 'path'); edgeg.appendChild(e.el);
+      if (!S.quiet) e.el.animate([{opacity:0},{opacity:1}], {duration:320, delay:80, easing:EASE_OUT, fill:'backwards'});
+    }
+    const A = rect(e.from), B = rect(e.to);
+    let p;
+    if (B.y >= A.y + A.h - 10){
+      const x1=A.x+A.w/2, y1=A.y+A.h, x2=B.x+B.w/2, y2=B.y-3, m=(y2-y1)/2;
+      p = `M${x1},${y1} C${x1},${y1+m} ${x2},${y2-m} ${x2},${y2}`;
+    } else {
+      const lr = B.x > A.x, x1 = lr?A.x+A.w:A.x, y1=A.y+Math.min(A.h/2,60), x2 = lr?B.x-3:B.x+B.w+3, y2=B.y+Math.min(B.h/2,60), m=(x2-x1)/2;
+      p = `M${x1},${y1} C${x1+m},${y1} ${x2-m},${y2} ${x2},${y2}`;
+    }
+    const live = e.to.type==='term' && LIVE.includes(e.to.data.status);
+    const cls = e.kind==='note' ? 'edge note' : 'edge' + (e.kind==='spawn'?' spawn':'') + (e.kind==='mr'?' mrk':'') + (live?' live':'');
+    const mk = e.kind==='note' ? 'arrN' : live ? 'arrA' : e.kind==='mr' ? 'arrM' : 'arr';
+    e.el.setAttribute('d', p);
+    if (e.el.getAttribute('class') !== cls) e.el.setAttribute('class', cls);
+    e.el.setAttribute('marker-end', `url(#${mk})`);
+  });
+}
+function dropEdges(pred){
+  S.edges = S.edges.filter(e => { if (pred(e)){ e.el && e.el.remove(); e.el = null; return false; } return true; });
+}
+
+/* ---------- roteiros simulados ---------- */
+function buildScript(a){
+  const L = [], p = (...s) => L.push(s), i = a.issue, t = a.task;
+  const readNotes = () => (a.notes||[]).forEach(nt => { p('tool','Read',`nota “${nt.title}”`); p('out','⎿ '+firstLine(nt.body)); });
+  if (a.role === 'orch'){
+    p('sys', `${a.name} · orquestrador${i?' · issue #'+i.iid:''}`);
+    p('dim', 'contexto: ' + a.ctx.join(' · '));
+    if (a.extra) p('user', a.extra);
+    readNotes();
+    p('txt', i ? `Lendo a issue #${i.iid} e mapeando os repositórios afetados.` : 'Mapeando os repositórios escolhidos para esta tarefa.');
+    a.tasks.forEach(tk => { p('tool','Grep',`${tk.grep} em ${tk.repo}`); p('out',`⎿ ${tk.files[0]}`); });
+    p('txt', `A tarefa toca ${a.tasks.length} repositórios. Vou criar um agente para cada um${a.tasks.some(x=>x.repo==='shared-contracts')?', começando pelo contrato compartilhado':''}.`);
+    p('plan'); p('workers'); p('wait');
+    p('txt','Todos os agentes terminaram. Conferindo se os MRs usam o mesmo contrato.');
+    p('summary');
+    if (i){ p('tool','Bash',`glab issue note ${i.iid} -m "<resumo dos MRs>"`); p('out','⎿ resumo publicado na issue'); }
+    p('done', `Pronto. Ordem sugerida de merge: ${a.tasks.map(x=>x.repo).sort((x,y)=>MERGE_ORDER.indexOf(x)-MERGE_ORDER.indexOf(y)).join(' → ')}.`);
+    return L;
+  }
+  if (a.role === 'fix'){
+    const spec = t.files[t.files.length-1];
+    p('sys', `${a.name} · correção de pipeline · !${a.mr.iid}`);
+    p('dim', 'contexto: ' + a.ctx.join(' · '));
+    p('tool','Bash',`glab ci trace --branch ${a.branch}`); p('out','⎿ FAIL ' + spec + ' · expected 1, received 2');
+    p('txt','O teste quebrou porque o fixture ainda usa o formato antigo. Vou ajustar o fixture, não a regra.');
+    p('tool','Edit', spec); p('del','-  const rows = fixture.legacy()'); p('add','+  const rows = fixture.withFormat("csv")');
+    p('ask', t.test);
+    p('tool','Bash', t.test); p('out','⎿ ' + t.testOut);
+    p('tool','Bash','git push'); p('out',`⎿ commit enviado para !${a.mr.iid}`);
+    p('done', `Pipeline do !${a.mr.iid} corrigido.`);
+    return L;
+  }
+  if (a.role === 'review'){
+    p('sys', `${a.name} · revisão de !${a.mr.iid}`);
+    p('dim', 'contexto: ' + a.ctx.join(' · '));
+    p('tool','Bash',`glab mr diff ${a.mr.iid}`); p('out',`⎿ ${a.mr.add+a.mr.del} linhas em ${t.files.length} arquivos`);
+    p('txt','Revisando com foco em regressões e casos de borda.');
+    p('tool','Read',t.files[0]); p('out','⎿ ok');
+    p('txt','Deixei 2 sugestões: tratar erro de concorrência e cobrir o caso de lista vazia.');
+    p('tool','Bash',`glab mr note ${a.mr.iid} -m "<revisão>"`); p('out','⎿ 2 comentários publicados');
+    p('done',`Revisão concluída no MR !${a.mr.iid}.`);
+    return L;
+  }
+  if (a.role === 'sub'){
+    p('sys', `${a.name} · sub-agente de ${a.parent.name} · ${a.repo}`);
+    p('dim', 'contexto herdado: ' + a.ctx.join(' · '));
+    p('tool','Read',t.files[t.files.length-1]); p('out','⎿ 3 cenários existentes');
+    p('txt','Escrevendo cenários para os critérios de aceite.');
+    p('tool','Write',t.files[t.files.length-1]); p('add','+  it("cobre o caminho feliz", …)'); p('add','+  it("cobre reenvio e erro", …)');
+    p('tool','Bash',t.test); p('out','⎿ '+t.testOut);
+    p('done',`Testes commitados em ${a.branch}. Avisei ${a.parent.name}.`);
+    return L;
+  }
+  p('sys', `${a.name} · ${a.repo}${i?' · issue #'+i.iid:''}${a.parent?' · criado por '+a.parent.name:''}`);
+  p('dim', 'contexto: ' + a.ctx.join(' · '));
+  if (a.extra) p('user', a.extra);
+  readNotes();
+  p('txt', a.parent ? `Assumindo a parte de ${a.repo} do plano.` : 'Lendo o contexto e o código relacionado.');
+  p('tool','Read',t.files[0]); p('out',`⎿ ${120+(t.files[0].length*17)%180} linhas`);
+  p('tool','Grep',t.grep); p('out','⎿ 4 ocorrências em 3 arquivos');
+  if (t.sub && a.depth < a.maxDepth){ p('txt','A parte de testes é grande. Vou abrir um sub-agente para escrevê-los em paralelo.'); p('spawn'); }
+  p('txt', t.finding);
+  p('tool','Edit',t.files[0]); t.diff.forEach(d => p(d[0]==='-'?'del':'add', d));
+  p('ask', t.test);
+  p('tool','Bash',t.test); p('out','⎿ '+t.testOut);
+  p('tool','Bash',`git push -u origin ${a.branch}`); p('out','⎿ branch enviada');
+  if (a.openMr) p('mr');
+  p('done', a.openMr ? `MR aberto em ${a.repo}${i?' e vinculado à issue #'+i.iid:''}.` : 'Alterações enviadas para o branch.');
+  return L;
+}
+
+function line(a, cls, html){
+  const d = document.createElement('div'); d.className = 'l '+cls; d.innerHTML = html;
+  a.lines.push(d);
+  if (a.body){
+    const b = a.body, stick = b.scrollHeight - b.scrollTop - b.clientHeight < 64;
+    b.appendChild(d);
+    if (stick) b.scrollTo({ top:b.scrollHeight, behavior: RM.matches || S.quiet ? 'auto' : 'smooth' });
+  }
+  return d;
+}
+function exec(a, s, instant){
+  const [t, x, y] = s;
+  if (t==='tool'){ line(a,'tool',`<span class="g">●</span> <b>${x}</b>(${esc(y)})`); ev(a,'tool',`${x}(${y})`); a.tokens = (a.tokens||0) + 600 + (String(y).length*37 % 900); }
+  else if (t==='txt') line(a,'txt',`<span class="g">●</span> ${esc(x)}`);
+  else if (t==='user') line(a,'user',`<small>Você</small>${esc(x)}`);
+  else if (t==='spawn') spawnSub(a, instant);
+  else if (t==='mr') openMR(a, instant);
+  else if (t==='plan'){
+    const d = line(a,'plan-wrap',`<div class="plan"><b>Plano</b>${a.tasks.map((tk,j)=>`<div class="it" data-j="${j}"><span class="ck"></span><span class="tx">${tk.repo}</span><span class="who"></span></div>`).join('')}</div>`);
+    a.planEl = d;
+  }
+  else if (t==='workers') spawnWorkers(a, instant);
+  else if (t==='wait'){
+    if (a.children.filter(c=>c.role==='main').every(c => ['done','stopped'].includes(c.status))) return;
+    setStatus(a,'coordinating'); return 'pause';
+  }
+  else if (t==='summary'){
+    const mrs = a.children.filter(c=>c.mr).map(c=>`!${c.mr.iid} ${c.repo}`);
+    line(a,'txt',`<span class="g">●</span> MRs abertos: ${esc(mrs.join(', ') || 'nenhum')}.`);
+  }
+  else if (t==='ask'){
+    if (instant){ line(a,'out','⎿ permitido'); return; }
+    a.askCmd = x; ev(a,'ask','Pediu permissão: ' + x);
+    const rule = allowedByPolicy(x);
+    if (rule){ line(a,'out',`⎿ permitido pela regra "${esc(rule)}"`); return; }
+    a.askEl = line(a,'ask',`<div>Posso rodar <code>${esc(x)}</code>?</div><div class="acts"><button class="btn sm primary" data-act="approve" data-aid="${a.id}">Permitir</button><button class="btn sm" data-act="deny" data-aid="${a.id}">Negar</button></div>`);
+    setStatus(a,'waiting'); log(`${a.name} pede permissão para rodar ${x}`);
+    if (!S.quiet && F.a!==a && S.sel!==a.node.id) showToast(`${a.name} pede permissão para rodar ${x}`, { label:'Revisar', fn:() => openFocus(a) });
+    return 'pause';
+  }
+  else if (t==='done'){ ev(a,'done','Concluiu'); line(a,'done','✓ '+esc(x)); setStatus(a,'done'); log(`${a.name} concluiu`); return 'pause'; }
+  else line(a, t, esc(x));
+}
+function run(a){
+  clearTimeout(a.timer);
+  if (a.status !== 'running' || a.removed) return;
+  const s = a.script[a.step++];
+  if (!s){ setStatus(a,'done'); return; }
+  if (exec(a, s) === 'pause') return;
+  patchProgress(a);
+  const d = s[0]==='tool' ? 950 : (s[0]==='add'||s[0]==='del') ? 240 : 650;
+  a.timer = setTimeout(() => run(a), d + Math.random()*450);
+}
+// atualiza só a barra, o percentual e a etapa atual, sem redesenhar o painel
+function patchProgress(a){
+  if (a.role==='orch') return;
+  const boxes = [];
+  if (S.sel === a.node?.id) boxes.push($('#inspB'));
+  const pct = Math.min(1, a.step / a.script.length);
+  boxes.forEach(b => {
+    const bar = b.querySelector('.bar i'); if (!bar) return;
+    bar.style.transform = `scaleX(${pct.toFixed(3)})`;
+    b.querySelector('.prog-meta b').textContent = Math.round(pct*100) + '%';
+    const now = b.querySelector('.now'); if (now) now.textContent = currentStep(a);
+    const st = b.querySelectorAll('.stat b'); if (st[0]) st[0].textContent = `${Math.min(a.step,a.script.length)}/${a.script.length}`; if (st[1]) st[1].textContent = fmtK(a.tokens||0);
+  });
+}
+function runInstant(a){ while (a.step < a.script.length){ if (exec(a, a.script[a.step++], true) === 'pause' && a.status!=='done') break; } }
+function setStatus(a, st){
+  a.status = st; refreshChrome(a); drawEdges(); updateStats();
+  if (a.planIt){ a.planIt.className = 'it ' + (st==='done'?'ok':['stopped','paused'].includes(st)?'':'wip'); a.planIt.querySelector('.ck').textContent = st==='done'?'✓':''; }
+  if ((st==='done'||st==='stopped') && a.parent && a.parent.status==='coordinating' &&
+      a.parent.children.filter(c=>c.role==='main').every(c => ['done','stopped'].includes(c.status))){
+    setStatus(a.parent,'running'); setTimeout(()=>run(a.parent), 600);
+  }
+  if (st==='done' && !a.posted){
+    a.posted = true;
+    if (a.role==='fix' && a.mr){
+      const m = a.mr, mn = m.node; m.pipeline = 'running'; m.fixer = null; renderNode(mn);
+      setTimeout(() => { m.pipeline = 'passed'; if (S.nodes.includes(mn)) renderNode(mn); log(`Pipeline do !${m.iid} passou`); if (F.n===mn) refreshDoc(); updateStats(); }, 3500);
+    }
+    if (auto('handoff') && !S.quiet && !a.blank && (a.role==='orch' || (a.role==='main' && !a.parent))) setTimeout(() => createHandoff(a), 500);
+    if (a.role==='review' && a.mr) a.mr.thread.push({ who:a.name, bot:true, t:'agora', text:'Revisão: deixei 2 sugestões. Tratar o erro de concorrência e cobrir o caso de lista vazia.' });
+    if (a.role==='orch' && a.issue){
+      const mrs = a.children.filter(c => c.mr).map(c => `!${c.mr.iid} (${c.repo})`).join(', ');
+      a.issue.thread.push({ who:a.name, bot:true, t:'agora', text:`Resumo: ${mrs || 'nenhum MR'} abertos. Ordem sugerida de merge: ${a.tasks.map(x=>x.repo).sort((x,y)=>MERGE_ORDER.indexOf(x)-MERGE_ORDER.indexOf(y)).join(' → ')}.` });
+    }
+  }
+  if (F.n && (F.n.type==='issue' || F.n.type==='mr')) refreshDoc();
+  const sn = S.sel && nodeBy(S.sel);
+  if (sn && (sn.type==='issue' || (sn.type==='term' && rootOf(sn.data)===rootOf(a)))) renderInspector();
+}
+
+/* ---------- criação de agentes ---------- */
+function createAgent(o){
+  const a = Object.assign({ id:'a'+(++agentSeq), name:'agente-'+agentSeq, status:'running', lines:[], events:[], tokens:0, step:0, role:'main', depth:0, maxDepth:2, openMr:true, children:[], ctx:[] }, o);
+  if (!a.branch) a.branch = 'agent/' + (a.issue ? a.issue.iid+'-'+slug(a.issue.short) : 'solo-'+slug(a.title||'tarefa'));
+  if (a.parent) a.parent.children.push(a);
+  (a.notes||[]).forEach(nt => { nt.users.add(a); if (!a.ctx.includes(noteLabel(nt))) a.ctx.push(noteLabel(nt)); });
+  a.script = a.blank ? [] : buildScript(a);
+  a.tokens = ctxTotal(a);
+  agents.push(a);
+  return a;
+}
+function addTermNode(a, cands, from, kind){
+  const pos = freeSpot(cands, 400, 330);
+  const tn = addNode('term', pos.x, pos.y, a); a.node = tn;
+  if (from) link(from, tn, kind);
+  return tn;
+}
+function startRoot(o, anchorNode){
+  const a = createAgent(o);
+  let cands;
+  if (anchorNode){ const r = rect(anchorNode); cands = [{x:r.x+r.w/2-200, y:r.y+r.h+70},{x:r.x+r.w+60,y:r.y}]; }
+  else { const c = viewCenter(); cands = [{x:c.x-200, y:c.y-165}]; }
+  addTermNode(a, cands, anchorNode, 'issue');
+  log(`${a.name} iniciado${a.issue?' na issue #'+a.issue.iid:' (solo)'}`);
+  if (anchorNode) renderNode(anchorNode);
+  updateStats();
+  return a;
+}
+function spawnWorkers(o, instant){
+  const r = rect(o.node), n = o.tasks.length, W = 400, gap = 36, total = n*W+(n-1)*gap;
+  o.tasks.forEach((tk, j) => {
+    const w = createAgent({ issue:o.issue, task:tk, repo:tk.repo, parent:o, depth:o.depth+1, maxDepth:o.maxDepth, openMr:o.openMr, title:o.title,
+      notes:notes.filter(nt => nt.users.has(o) && !nt.removed),
+      ctx:[o.issue?'issue #'+o.issue.iid:'instrução do usuário', 'plano de '+o.name, 'repo '+tk.repo, 'CLAUDE.md'] });
+    addTermNode(w, [{x:r.x+r.w/2-total/2+j*(W+gap), y:r.y+r.h+80}], o.node, 'spawn');
+    w.planIt = o.planEl.querySelector(`[data-j="${j}"]`); w.planIt.querySelector('.who').textContent = w.name; w.planIt.className = 'it wip';
+    log(`${o.name} criou ${w.name} para ${tk.repo}`);
+    if (instant) runInstant(w); else setTimeout(() => run(w), 400 + j*350);
+  });
+  line(o,'out',`⎿ ${n} agentes criados`);
+  if (o.issue) renderNode(issueNodeOf(o.issue));
+  updateStats();
+}
+function spawnSub(p, instant){
+  const s = createAgent({ issue:p.issue, task:p.task, repo:p.repo, role:'sub', parent:p, depth:p.depth+1, maxDepth:p.maxDepth, branch:p.branch, ctx:['plano de '+p.name, 'repo '+p.repo] });
+  const r = rect(p.node);
+  addTermNode(s, [{x:r.x, y:r.y+r.h+70},{x:r.x+r.w+40, y:r.y+60}], p.node, 'spawn');
+  line(p,'out',`⎿ sub-agente ${s.name} criado`);
+  log(`${p.name} criou o sub-agente ${s.name}`);
+  if (p.issue) renderNode(issueNodeOf(p.issue));
+  updateStats();
+  if (instant) runInstant(s); else setTimeout(() => run(s), 400);
+  return s;
+}
+function openMR(a, instant){
+  const m = { iid:mrSeq++, title:(a.issue?`#${a.issue.iid} `:'')+(a.issue?a.issue.short:a.title), repo:a.repo, branch:a.branch,
+    add:30+(a.task.files[0].length*13)%150, del:4+(a.task.files[0].length*3)%30, pipeline: instant?'passed':'running', thread:[], issue:a.issue, agent:a, task:a.task };
+  a.mr = m;
+  const r = rect(a.node);
+  const pos = freeSpot([{x:r.x+r.w/2-142, y:r.y+r.h+70},{x:r.x+r.w+40,y:r.y+r.h-100}], 284, 150);
+  const mn = addNode('mr', pos.x, pos.y, m); m.node = mn;
+  link(a.node, mn, 'mr');
+  line(a,'tool',`<span class="g">●</span> <b>Bash</b>(glab mr create --fill${a.issue?' --related-issue '+a.issue.iid:''})`);
+  line(a,'out',`⎿ !${m.iid} criado em ${a.repo}`);
+  log(`MR !${m.iid} aberto em ${a.repo}`);
+  updateStats();
+  if (!instant) setTimeout(() => { m.pipeline='passed'; renderNode(mn); log(`Pipeline do !${m.iid} passou`); if (S.sel===mn.id) renderInspector(); if (F.n===mn) refreshDoc(); updateStats(); }, 7000);
+  if (!instant && auto('auto-review')) setTimeout(() => { if (S.nodes.includes(mn)) fire('review', { nid:mn.id }); }, 1500);
+}
+function tell(a, msg){
+  line(a,'user',`<small>Você</small>${esc(msg)}`);
+  if (a.blank){ startBlank(a, msg); return; }
+  log(`Você → ${a.name}: ${msg}`);
+  if (a.role === 'orch'){
+    const act = a.children.filter(c => !['done','stopped'].includes(c.status));
+    line(a,'txt',`<span class="g">●</span> Repassando a instrução para ${act.length} agente${act.length===1?'':'s'}.`);
+    act.forEach(c => { line(c,'user',`<small>Via ${a.name}</small>${esc(msg)}`); c.script.splice(c.step,0,['txt','Anotado, sigo com isso em mente.']); });
+    return;
+  }
+  const extra = [['txt','Entendido. Ajustando.'],['tool','Edit',a.task.files[0]],['add','+  // ajuste: '+msg.slice(0,40)],['tool','Bash','git push'],['out','⎿ commit enviado'+(a.mr?` para !${a.mr.iid}`:'')],['done','Ajuste aplicado.']];
+  if (['done','stopped'].includes(a.status)){ a.script.push(...extra); setStatus(a,'running'); setTimeout(()=>run(a),500); }
+  else a.script.splice(a.step, 0, ['txt','Anotado, vou considerar isso no próximo passo.']);
+}
+function addContext(a, label){
+  if (a.ctx.includes(label)) return;
+  a.ctx.push(label);
+  line(a,'dim',`+ contexto: ${label}`);
+  log(`Contexto "${label}" adicionado a ${a.name}`);
+  if (S.sel === a.node.id) renderInspector();
+}
+
+/* ---------- agente em branco: nasce no canvas, recebe contexto, começa na primeira instrução ---------- */
+function newBlankAgent(at, repo){
+  const a = createAgent({ blank:true, status:'idle', title:'Novo agente', ctx: repo ? ['repo '+repo] : [] });
+  const c = at || viewCenter();
+  addTermNode(a, [{x:c.x-200, y:c.y-165}]);
+  line(a, 'empty', `<div class="empty-term"><b>${a.name} pronto</b>
+    <span>Monte o contexto antes de começar:</span>
+    <ul><li>arraste repositórios ou issues da barra lateral para esta janela</li>
+    <li>arraste o + de uma nota até aqui</li><li>ou use "+ Adicionar" no painel ao lado</li></ul>
+    <span>Depois escreva a primeira instrução abaixo.</span></div>`);
+  if (repo) line(a,'dim',`+ contexto: repo ${esc(repo)}`);
+  log(`${a.name} criado. Aguardando contexto e instrução.`);
+  updateStats(); renderSide();
+  if (at) select(a.node.id); else focusNode(a.node);
+  return a;
+}
+function startBlank(a, msg){
+  const repos = a.ctx.filter(c => c.startsWith('repo ')).map(c => c.slice(5));
+  const iss = a.ctx.map(c => c.match(/^issue #(\d+)/)).filter(Boolean).map(m => issueBy(+m[1]))[0] || null;
+  if (!repos.length && iss) repos.push(...new Set(iss.tasks.map(t => t.repo)));
+  if (!repos.length){
+    line(a,'txt',`<span class="g">●</span> Antes de começar, preciso saber em qual repositório trabalhar. Arraste um repositório para esta janela ou adicione pelo painel.`);
+    return;
+  }
+  a.blank = false; a.extra = null; a.issue = iss;
+  a.title = msg.length > 60 ? msg.slice(0,58)+'…' : msg;
+  const tasks = repos.map(r => (iss && iss.tasks.find(t => t.repo===r)) || genTask(r, iss ? iss.short : msg));
+  if (repos.length > 1){ a.role = 'orch'; a.tasks = tasks; } else { a.task = tasks[0]; a.repo = repos[0]; }
+  a.branch = 'agent/' + (iss ? iss.iid+'-'+slug(iss.short) : 'solo-'+slug(msg));
+  a.notes = activeNotes(notes).filter(nt => nt.users.has(a));
+  a.script = buildScript(a).filter(st => st[0] !== 'sys');
+  a.step = 0;
+  const el = a.node.el;
+  el.querySelector('.wsub').textContent = `${roleLabel(a)} · ${a.role==='orch' ? a.tasks.length+' repositórios' : a.repo}`;
+  el.querySelector('.composer input').placeholder = a.role==='orch' ? 'Instrução para todos os agentes' : 'Mensagem para '+a.name;
+  el.querySelector('.win').classList.toggle('orch', a.role==='orch');
+  const iN = iss && issueNodeOf(iss);
+  if (iN){ link(iN, a.node, 'issue'); renderNode(iN); }
+  log(`${a.name} começou${repos.length>1 ? ' como orquestrador de '+repos.length+' repositórios' : ' em '+repos[0]}`);
+  setStatus(a,'running'); setTimeout(() => run(a), 300);
+}
+
+/* ---------- notas ---------- */
+const notes = [];
+let noteSeq = 0;
+const noteLabel = nt => 'nota: ' + nt.title;
+const noteById = id => notes.find(nt => nt.id === id);
+const firstLine = s => { const l = (s||'').split('\n').map(x=>x.trim()).filter(Boolean)[0] || '(nota vazia)'; return l.length>90 ? l.slice(0,88)+'…' : l; };
+function createNote(at, title, body){
+  const nt = { id:'t'+(++noteSeq), title:title || 'Nova nota', body:body || '', links:[], users:new Set() };
+  notes.push(nt);
+  const c = at || viewCenter();
+  const pos = freeSpot([{x:c.x-135, y:c.y-90}], 270, 200);
+  nt.node = addNode('note', pos.x, pos.y, nt);
+  log(`Nota "${nt.title}" criada`);
+  return nt;
+}
+function noteMeta(nt, el){
+  const s = (el || (nt.node && nt.node.el))?.querySelector('.nlinks');
+  if (s) s.textContent = nt.links.length ? `${nt.links.length} vínculo${nt.links.length>1?'s':''}` : 'Sem vínculos';
+}
+function giveNote(a, nt){
+  if (nt.users.has(a)) return;
+  nt.users.add(a);
+  if (!a.ctx.includes(noteLabel(nt))) a.ctx.push(noteLabel(nt));
+  if (['running','waiting','coordinating','paused'].includes(a.status)){
+    line(a,'tool',`<span class="g">●</span> <b>Read</b>(nota “${esc(nt.title)}”)`);
+    line(a,'txt',`<span class="g">●</span> Li a nota. Vou levar em conta: ${esc(firstLine(nt.body))}`);
+    if (a.role==='orch') a.children.forEach(c => giveNote(c, nt));
+  } else line(a,'dim',`+ contexto: ${esc(noteLabel(nt))}`);
+}
+function linkNote(nt, target){
+  if (!target || nt.links.includes(target) || !['term','issue'].includes(target.type)) return;
+  nt.links.push(target); link(nt.node, target, 'note');
+  if (target.type==='term') giveNote(target.data, nt);
+  else { target.data.notes.push(nt); renderNode(target); }
+  noteMeta(nt);
+  log(`Nota "${nt.title}" vinculada a ${target.type==='term' ? target.data.name : 'issue #'+target.data.iid}`);
+  renderInspector();
+}
+function unlinkNote(nt, target){
+  nt.links = nt.links.filter(x => x!==target);
+  dropEdges(e => e.from===nt.node && e.to===target);
+  if (target.type==='term'){ const a = target.data; a.ctx = a.ctx.filter(c => c!==noteLabel(nt)); nt.users.delete(a); line(a,'dim',`− contexto removido: ${esc(noteLabel(nt))}`); }
+  else { const i = target.data; i.notes = i.notes.filter(x => x!==nt); renderNode(target); }
+  noteMeta(nt); renderInspector();
+}
+function renameNote(nt, title){
+  const old = noteLabel(nt); nt.title = title; nt.dirty = true;
+  nt.users.forEach(a => { a.ctx = a.ctx.map(c => c===old ? noteLabel(nt) : c); });
+}
+function noteEdited(nt){
+  if (!nt.dirty) return; nt.dirty = false;
+  nt.users.forEach(a => { if (!['done','stopped'].includes(a.status)) line(a,'dim',`↻ nota “${esc(nt.title)}” atualizada, relendo`); });
+  log(`Nota "${nt.title}" editada`);
+}
+function newNoteAt(at, linkTo){
+  const nt = createNote(at);
+  if (linkTo) linkNote(nt, linkTo);
+  select(nt.node.id);
+  const ti = nt.node.el.querySelector('.ntitle-in'); ti.focus(); ti.select();
+  return nt;
+}
+
+/* ---------- remover com desfazer ---------- */
+const activeNotes = list => list.filter(nt => !nt.removed);
+// um agente leva junto os sub-agentes e os MRs que abriu (só no canvas; nada é apagado no GitLab)
+function removalSet(n){
+  const set = new Set([n]);
+  if (n.type==='term'){
+    const walk = a => { set.add(a.node); if (a.mr && a.mr.node) set.add(a.mr.node); a.children.forEach(walk); };
+    walk(n.data);
+  }
+  return [...set].filter(x => x && S.nodes.includes(x));
+}
+function removeLabel(n, count){
+  const base = n.type==='issue' ? `Issue #${n.data.iid}` : n.type==='mr' ? `MR !${n.data.iid}` : n.type==='note' ? `Nota "${n.data.title}"` : n.data.name;
+  const extra = count - 1;
+  return `${base}${extra ? ` e mais ${extra} ${extra>1?'itens':'item'}` : ''} ${n.type==='note'?'excluída':'removido do canvas'}`;
+}
+let pendingUndo = null, toastT = 0;
+function removeNode(n, animate = true){
+  if (!n) return;
+  const nodes = removalSet(n);
+  const edges = S.edges.filter(e => nodes.includes(e.from) || nodes.includes(e.to));
+  const agentState = nodes.filter(x => x.type==='term').map(x => ({ a:x.data, status:x.data.status }));
+  agentState.forEach(({a}) => { clearTimeout(a.timer); a.removed = true; if (!['done','stopped'].includes(a.status)) a.status = 'stopped'; });
+  nodes.forEach(x => { if (x.type==='note') x.data.removed = true; });
+  dropEdges(e => edges.includes(e));
+  S.nodes = S.nodes.filter(x => !nodes.includes(x));
+  nodes.forEach(x => exitEl(x.el, animate && !RM.matches));
+  if (F.n && nodes.includes(F.n)) closeFocus(false);
+  if (S.sel && nodes.some(x => x.id===S.sel)) S.sel = null;
+  afterStructureChange();
+  log(removeLabel(n, nodes.length));
+  pendingUndo = () => {
+    nodes.forEach(x => {
+      if (x.type==='issue' && issueNodeOf(x.data)) return;   // a issue já voltou por outro caminho
+      x.el._gone = false; x.el.getAnimations().forEach(an => an.cancel());
+      world.appendChild(x.el); S.nodes.push(x); enterEl(x.el);
+      if (x.type==='note') x.data.removed = false;
+    });
+    edges.forEach(e => { if (S.nodes.includes(e.from) && S.nodes.includes(e.to)){ e.el = null; S.edges.push(e); } });
+    agentState.forEach(({a, status}) => { a.removed = false; a.status = status; refreshChrome(a); if (status==='running') run(a); });
+    afterStructureChange(); log('Remoção desfeita');
+  };
+  showToast(removeLabel(n, nodes.length));
+}
+function afterStructureChange(){
+  S.nodes.filter(x => x.type==='issue').forEach(renderNode);
+  drawEdges(); updateStats(); renderSide(); renderInspector();
+}
+let toastAct = null;
+function showToast(msg, opt){
+  $('#toastMsg').textContent = msg;
+  $('#toastUndo').textContent = opt ? opt.label : 'Desfazer';
+  $('#toast kbd').hidden = !!opt;
+  toastAct = opt ? opt.fn : undo;
+  $('#toast').classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(hideToast, opt ? 7000 : 6000);
+}
+function hideToast(){ $('#toast').classList.remove('show'); pendingUndo = null; }
+function undo(){ if (!pendingUndo) return; const f = pendingUndo; hideToast(); f(); }
+
+/* ---------- modo foco do agente ---------- */
+const SUGGEST = {
+  orch:['Qual é o status de cada repositório?','Priorize o shared-contracts','Pause os agentes do front'],
+  main:['Explique o que você mudou','Rode os testes de novo','Adicione um teste para o caso de erro'],
+  sub:['Quais cenários faltam?','Rode só os testes novos'],
+  review:['Resuma os riscos do MR','O que bloqueia o merge?'],
+};
+function nodeScreenRect(n){
+  const r = n.el.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+  return { x:r.left - c.left, y:r.top - c.top, w:r.width, h:r.height };
+}
+// anima a folha a partir da janela do agente no canvas (e volta para ela ao fechar)
+function sheetFlip(n, opening){
+  const sheet = $('#fSheet'), from = nodeScreenRect(n);
+  const s = sheet.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+  const to = { x:s.left - c.left, y:s.top - c.top, w:s.width, h:s.height };
+  const tf = `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(${from.w / to.w}, ${from.h / to.h})`;
+  const frames = RM.matches ? [{opacity:0},{opacity:1}] : [{transform:tf, opacity:.4},{transform:'none', opacity:1}];
+  return sheet.animate(opening ? frames : frames.slice().reverse(), { duration: opening ? 340 : 240, easing: opening ? 'cubic-bezier(0.32, 0.72, 0, 1)' : EASE_OUT });
+}
+// qualquer item do canvas abre em foco: agente (terminal), issue, MR ou nota
+const F_KIND = { issue:['issue',ICON.issue], mr:['mr',ICON.mr], note:['note',ICON.note] };
+function openFocusNode(n){
+  if (!n || !S.nodes.includes(n) || F.n === n) return;
+  if (F.a) restoreBody(F.a);
+  if (F.n && F.n.type==='note') renderNode(F.n);
+  F.n = n; F.a = n.type==='term' ? n.data : null;
+  select(n.id);
+  const fb = $('#fBody');
+  fb.innerHTML = '';
+  fb.className = 'f-body' + (n.type==='term' ? '' : ' doc') + (n.type==='note' ? ' note-doc' : '');
+  $('#fIcon').innerHTML = n.type==='term' ? '<span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>'
+    : `<span class="ico ${F_KIND[n.type][0]}">${F_KIND[n.type][1]}</span>`;
+  $('.f-foot').hidden = n.type==='note';
+  if (F.a){
+    const a = F.a;
+    $('#fName').textContent = a.name;
+    $('#fSub').textContent = `${roleLabel(a)} · ${a.role==='orch' ? a.tasks.map(t=>t.repo).join(', ') : a.repo}`;
+    $('#fInput').placeholder = a.role==='orch' ? 'Instrução para todos os agentes deste orquestrador' : `Converse com ${a.name}`;
+    $('#fSugg').innerHTML = (SUGGEST[a.role] || SUGGEST.main).map(s => `<button type="button" data-act="suggest">${esc(s)}</button>`).join('');
+    S.quiet = true; a.lines.forEach(l => fb.appendChild(l)); S.quiet = false;   // as linhas mudam de lugar, não são recriadas
+    a.body = fb;
+    refreshChrome(a);
+  } else fillDoc(n);
+  layoutFocus();
+  const box = $('#focus'); box.classList.add('open'); box.setAttribute('aria-hidden','false');
+  fb.scrollTop = F.a ? fb.scrollHeight : 0;
+  sheetFlip(n, true);
+  if (F.a) setTimeout(() => $('#fInput').focus({preventScroll:true}), 60);
+}
+const openFocus = a => { if (a && !a.removed) openFocusNode(a.node); };
+function restoreBody(a){
+  const tb = a.node.el.querySelector('.tbody');
+  a.lines.forEach(l => tb.appendChild(l)); a.body = tb; tb.scrollTop = tb.scrollHeight;
+}
+function closeFocus(animate = true){
+  const n = F.n; if (!n) return;
+  const a = F.a, box = $('#focus');
+  const finish = () => {
+    box.classList.remove('open'); box.setAttribute('aria-hidden','true');
+    if (a) restoreBody(a);
+    if (n.type==='note' && S.nodes.includes(n)) renderNode(n);
+  };
+  F.n = null; F.a = null; renderInspector();
+  if (animate && S.nodes.includes(n)){
+    sheetFlip(n, false).onfinish = finish;
+    box.querySelector('.focus-bg').style.opacity = '0';
+    setTimeout(() => box.querySelector('.focus-bg').style.opacity = '', 260);
+  } else finish();
+}
+// o cartão em foco ocupa o espaço livre entre a barra lateral e o painel da direita
+function layoutFocus(){
+  if (!F.n) return;
+  const W = canvas.clientWidth, wide = W > 860, sh = $('#fSheet').style;
+  const left = wide && !$('.main').classList.contains('side-hidden') ? 320 : wide ? 12 : 8;
+  const right = wide && $('#insp').classList.contains('open') ? 396 : wide ? 12 : 8;
+  sh.left = left + 'px'; sh.right = right + 'px';
+  sh.top = '60px'; sh.bottom = wide ? '12px' : '76px';
+}
+const renderFocusSide = () => {};
+
+/* ---------- visões de documento: issue, MR, nota ---------- */
+const initials = w => w.replace(/[^a-zA-Z.]/g,'').split('.').map(x => x[0] || '').join('').slice(0,2).toUpperCase() || 'V';
+function threadHTML(list){
+  if (!list.length) return '<p class="lab" style="margin:0">Sem comentários ainda.</p>';
+  return `<div class="thread">${list.map(c => `<div class="cm"><span class="av ${c.bot?'bot':''}">${c.bot ? ICON.agent : initials(c.who)}</span>
+    <div><div class="cm-h"><b>${esc(c.who)}</b>${c.bot?'<span class="badge info">agente</span>':''}<time>${esc(c.t)}</time></div><p>${esc(c.text)}</p></div></div>`).join('')}</div>`;
+}
+function pipelineHTML(m){
+  const st = m.pipeline==='passed' ? ['ok','ok','ok'] : m.pipeline==='failed' ? ['ok','bad',''] : ['ok','run',''];
+  const names = ['Build','Testes','Lint'];
+  return `<div class="pipe">${names.map((nm,j) => `${j?'<span class="ln"></span>':''}<span class="stage ${st[j]}">${st[j]==='ok'?'✓':st[j]==='bad'?'✕':st[j]==='run'?'<span class="badge-dot"></span>':'○'} ${nm}</span>`).join('')}</div>`;
+}
+function diffFiles(m){
+  const f = m.task.files;
+  return f.map((file, j) => {
+    const lines = j===0 ? ['@@ -18,7 +18,9 @@', '   // ' + (m.issue ? m.issue.short : 'alteração'), ...m.task.diff]
+      : j===f.length-1 ? ['@@ -1,4 +1,12 @@', '+  it("cobre o caminho feliz", …)', '+  it("cobre o caso de erro", …)']
+      : ['@@ -40,3 +40,5 @@', '   export type Filtro = {', '+    format?: "csv" | "pdf"', '   }'];
+    const add = lines.filter(l => l[0]==='+').length, del = lines.filter(l => l[0]==='-').length;
+    return `<div class="diff"><div class="diff-h"><span>${esc(file)}</span><span class="diffstat"><span class="a">+${add}</span> <span class="r">−${del}</span></span></div>
+      <div class="diff-b">${lines.map(l => `<div class="dl ${l.startsWith('@@')?'hunk':l[0]==='+'?'add':l[0]==='-'?'del':'ctx'}">${esc(l)}</div>`).join('')}</div></div>`;
+  }).join('');
+}
+function docHTML(n){
+  if (n.type==='issue'){
+    const i = n.data, repos = [...new Set(i.tasks.map(t=>t.repo))];
+    const roots = liveAgents().filter(a => a.issue===i && !a.parent && a.role!=='review');
+    const mrsN = S.nodes.filter(x => x.type==='mr' && x.data.issue===i);
+    const nts = activeNotes(i.notes);
+    const crit = i.criteria || ['Comportamento descrito na issue implementado','Testes automatizados cobrindo o cenário','Pipeline verde em todos os repositórios afetados'];
+    const doneAll = mrsN.length && mrsN.every(x => x.data.pipeline==='passed');
+    return `<div class="fx">
+      <div class="fx-head"><div class="tags">${i.labels.map(l=>`<span class="badge ${l==='bug'||l==='P1'?'issue':''}">${l}</span>`).join('')}${repos.map(r=>`<span class="badge repo">${r}</span>`).join('')}</div>
+        <h2 class="fx-title">${esc(i.title)}</h2>
+        <p class="fx-meta">Aberta por @${i.author} · ${i.thread.length} comentário${i.thread.length===1?'':'s'}</p></div>
+      <section><h4>Descrição</h4><p class="fx-p">${esc(i.desc)}</p></section>
+      <section><h4>Critérios de aceite</h4><ul class="checklist">${crit.map(c => `<li class="${doneAll?'ok':''}"><span class="ck">${doneAll?'✓':''}</span>${esc(c)}</li>`).join('')}</ul></section>
+      ${nts.length ? `<section><h4>Notas vinculadas</h4><div class="fx-notes">${nts.map(nt => `<button class="fx-note" data-act="focus-node" data-nid="${nt.node.id}"><b>${esc(nt.title)}</b><span>${esc(firstLine(nt.body))}</span></button>`).join('')}</div></section>` : ''}
+      <section><h4>Agentes</h4>${roots.length ? `<ul class="tree">${roots.map(treeOf).join('')}</ul>` : '<p class="lab" style="margin:0">Nenhum agente ainda. Use "Iniciar agentes" abaixo.</p>'}</section>
+      ${mrsN.length ? `<section><h4>Merge requests</h4><div class="links">${mrsN.map(x => `<div class="lk"><span class="ico mr">${ICON.mr}</span><span><b>!${x.data.iid}</b> ${x.data.repo}</span>
+          ${mrBadge(x.data)}
+          <button class="btn sm plain" data-act="focus-node" data-nid="${x.id}">Abrir</button></div>`).join('')}</div></section>` : ''}
+      <section><h4>Discussão</h4>${threadHTML(i.thread)}</section></div>`;
+  }
+  if (n.type==='mr'){
+    const m = n.data, rev = liveAgents().filter(a => a.mr===m && a.role==='review');
+    return `<div class="fx">
+      <div class="fx-head"><div class="tags"><span class="badge repo">${m.repo}</span><span class="badge">${esc(m.branch)} → main</span></div>
+        <h2 class="fx-title">${esc(m.title)}</h2>
+        <p class="fx-meta">Aberto por ${m.agent.name}${m.issue ? ` · fecha #${m.issue.iid}` : ''} · <span class="diffstat"><span class="a">+${m.add}</span> <span class="r">−${m.del}</span></span></p></div>
+      <section><h4>Pipeline</h4>${pipelineHTML(m)}</section>
+      <section><h4>Mudanças · ${m.task.files.length} arquivos</h4>${diffFiles(m)}</section>
+      <section><h4>Revisão</h4>${rev.length ? `<ul class="tree">${rev.map(treeOf).join('')}</ul>` : '<p class="lab" style="margin:0">Ninguém revisou ainda. Peça a um agente abaixo.</p>'}</section>
+      <section><h4>Discussão</h4>${threadHTML(m.thread)}</section></div>`;
+  }
+  return '';
+}
+function fillDoc(n){
+  const fb = $('#fBody'), status = $('#fStatus');
+  if (n.type==='note'){
+    const nt = n.data, links = nt.links.filter(t => S.nodes.includes(t));
+    $('#fName').textContent = 'Nota';
+    $('#fSub').textContent = links.length ? `Vinculada a ${links.map(t => t.type==='issue' ? '#'+t.data.iid : t.data.name).join(', ')}` : 'Sem vínculos';
+    status.className = 'badge'; status.textContent = `${links.length} vínculo${links.length===1?'':'s'}`;
+    fb.innerHTML = `<div class="note-ed"><input id="fnTitle" value="${esc(nt.title)}" aria-label="Título da nota">
+      <textarea id="fnBody" aria-label="Texto da nota" placeholder="Escreva decisões, regras de negócio, links, trechos de log…">${esc(nt.body)}</textarea>
+      <p class="lab" style="margin:0">As alterações salvam na hora. Agentes vinculados leem de novo quando você sai do campo.</p></div>`;
+    const ti = $('#fnTitle'), bo = $('#fnBody');
+    ti.addEventListener('input', () => renameNote(nt, ti.value.trim() || 'Sem título'));
+    bo.addEventListener('input', () => { nt.body = bo.value; nt.dirty = true; });
+    ti.addEventListener('change', () => noteEdited(nt));
+    bo.addEventListener('change', () => noteEdited(nt));
+    setTimeout(() => bo.focus({preventScroll:true}), 60);
+    return;
+  }
+  if (n.type==='issue'){
+    const i = n.data;
+    $('#fName').textContent = `Issue #${i.iid}`;
+    $('#fSub').textContent = i.short;
+    status.className = 'badge ok'; status.innerHTML = '<span class="d"></span>Aberta';
+    $('#fInput').placeholder = `Comentar na issue #${i.iid}`;
+    $('#fSugg').innerHTML = `<button type="button" data-act="quick" data-iid="${i.iid}">Iniciar agentes</button><button type="button" data-act="note-for" data-nid="${n.id}">+ Nota para esta issue</button>`;
+  } else {
+    const m = n.data;
+    $('#fName').textContent = `MR !${m.iid}`;
+    $('#fSub').textContent = `${m.repo} · ${m.branch}`;
+    { const t = document.createElement('div'); t.innerHTML = mrBadge(m); status.className = t.firstChild.className; status.innerHTML = t.firstChild.innerHTML; }
+    $('#fInput').placeholder = `Comentar no MR !${m.iid}`;
+    $('#fSugg').innerHTML = `<button type="button" data-act="review" data-nid="${n.id}">Pedir revisão a um agente</button><button type="button" data-act="focus-node" data-nid="${m.agent.node.id}">Abrir ${m.agent.name}</button>`;
+  }
+  fb.innerHTML = docHTML(n);
+}
+function refreshDoc(){
+  if (!F.n || F.n.type==='term' || F.n.type==='note') return;
+  const fb = $('#fBody'), y = fb.scrollTop;
+  fillDoc(F.n); fb.scrollTop = y;
+}
+
+
+/* ---------- sidebar ---------- */
+function log(msg){
+  feedItems.unshift({t:now(), msg}); feedItems.length = Math.min(feedItems.length, 40);
+  if (S.tab==='feed') renderSide();
+}
+function updateStats(){
+  const act = liveAgents().filter(a=>['running','coordinating'].includes(a.status)).length, wait = liveAgents().filter(a=>a.status==='waiting').length;
+  const mrs = S.nodes.filter(n=>n.type==='mr').length;
+  $('#stats').innerHTML = `<span class="badge info live"><span class="d"></span>${act} ativos</span>`
+    + (wait ? `<button class="badge warn badge-btn" data-act="goto-actions" title="Ver ações pendentes"><span class="d"></span>${wait} aguardando você</button>` : '')
+    + `<span class="badge mrb">${mrs} MRs</span>`;
+  refreshActions();
+}
+function renderSide(){
+  const q = $('#q').value.toLowerCase(), box = $('#sideb');
+  $('#searchW').hidden = S.tab==='feed' || S.tab==='actions';
+  $('#chips').hidden = S.tab!=='issues';
+  if (S.tab==='issues'){
+    const activeOf = i => liveAgents().filter(a => a.issue===i && !['done','stopped'].includes(a.status));
+    const pass = i => S.filter==='bug' ? i.labels.includes('bug') : S.filter==='agents' ? activeOf(i).length > 0 : true;
+    const list = ISSUES.filter(i => (!q || (i.title+' '+i.iid+' '+i.labels.join(' ')).toLowerCase().includes(q)) && pass(i));
+    const row = i => {
+      const on = !!issueNodeOf(i), act = activeOf(i), waiting = act.some(a => a.status==='waiting');
+      const repos = [...new Set(i.tasks.map(t=>t.repo))];
+      const state = !on ? '' : waiting ? '<span class="badge warn" title="Algum agente aguarda você"><span class="d"></span>Você</span>'
+        : act.length ? `<span class="badge info live" title="${act.length} agentes ativos"><span class="d"></span>${act.length}</span>` : '';
+      return `<div class="iss" draggable="true" data-drag-src="issue:${i.iid}">
+        <span class="iss-ic ${i.labels.includes('bug')?'bug':''}">${ICON.issue}</span>
+        <div class="iss-b"><div class="iss-t">${esc(i.title)}</div>
+          <div class="iss-m"><span class="num">#${i.iid}</span>${i.labels.includes('P1')?'<span class="badge bad">P1</span>':''}<span class="iss-repo">${repos[0]}${repos.length>1?` +${repos.length-1}`:''}</span></div></div>
+        <div class="iss-r">${state}<button class="btn plain icon xs" data-act="add-issue" data-iid="${i.iid}" aria-label="${on?'Mostrar':'Adicionar'} issue #${i.iid} ${on?'no':'ao'} canvas" title="${on?'Mostrar no canvas':'Adicionar ao canvas'}">${on ? ICON.locate : ICON.plus}</button></div>
+      </div>`;
+    };
+    const on = list.filter(i => issueNodeOf(i)), off = list.filter(i => !issueNodeOf(i));
+    box.innerHTML = (on.length ? `<div class="grp-h"><span>No canvas</span><span class="cnt">${on.length}</span></div>${on.map(row).join('')}` : '')
+      + `<div class="grp-h"><span>Backlog</span><span class="cnt">${off.length}</span></div>`
+      + (off.map(row).join('') || `<p class="tip">${list.length ? 'Todas estas issues já estão no canvas.' : 'Nenhuma issue com esse filtro.'}</p>`)
+      + `<p class="tip">${ICON.drag} Arraste para o canvas, ou solte em cima de um agente para dar contexto.</p>`;
+  } else if (S.tab==='actions'){
+    box.innerHTML = actionsHTML();
+  } else if (S.tab==='repos'){
+    const list = REPOS.filter(r => !q || r.id.includes(q));
+    box.innerHTML = `<div class="grp-h"><span>Repositórios</span><span class="cnt">${list.length}</span></div>` + list.map(r => {
+      const act = liveAgents().filter(a => a.repo===r.id && !['done','stopped'].includes(a.status)).length;
+      return `<div class="iss" draggable="true" data-drag-src="repo:${r.id}">
+        <span class="iss-ic repo">${ICON.repo}</span>
+        <div class="iss-b"><div class="iss-t mono-t">${r.id}</div><div class="iss-m"><span>${esc(r.desc)}</span></div></div>
+        <div class="iss-r">${act ? `<span class="badge info live" title="${act} agentes ativos"><span class="d"></span>${act}</span>` : ''}<button class="btn plain icon xs" data-act="new-agent" data-repo="${r.id}" aria-label="Novo agente em ${r.id}" title="Novo agente">${ICON.agent}</button></div>
+      </div>`;
+    }).join('') + `<p class="tip">${ICON.drag} Solte um repositório em cima de um agente para ele ler esse código também.</p>`;
+  } else {
+    box.innerHTML = feedItems.length ? `<ol class="tl">${feedItems.map(f => `<li><span class="tl-dot"></span><div><p>${esc(f.msg)}</p><time>${f.t}</time></div></li>`).join('')}</ol>`
+      : '<p class="tip">Nada aconteceu ainda.</p>';
+  }
+}
+function setTab(t){
+  S.tab = t;
+  const tabs = [...document.querySelectorAll('.seg button')];
+  tabs.forEach(b => b.setAttribute('aria-selected', b.dataset.tab===t));
+  $('#segInd').style.transform = `translateX(${tabs.findIndex(b => b.dataset.tab===t)*100}%)`;
+  renderSide();
+}
+function addIssue(iid, at){
+  const i = issueBy(iid), ex = issueNodeOf(i);
+  if (ex){ focusNode(ex); return ex; }
+  const c = at || viewCenter();
+  const pos = freeSpot([{x:c.x-142, y:c.y-70}], 284, 160);
+  const n = addNode('issue', pos.x, pos.y, i);
+  log(`Issue #${iid} adicionada ao canvas`);
+  renderSide(); select(n.id);
+  return n;
+}
+function focusNode(n){
+  select(n.id);
+  const k = S.view.k, r = rect(n), A = safeArea();
+  glideTo({ k, x:A.x + A.w/2 - (r.x + r.w/2)*k, y:A.y + Math.min(A.h/2, (A.h - r.h*k)/2 + r.h*k/2) - (r.y + r.h/2)*k }, 300);
+}
+
+/* ---------- inspetor ---------- */
+function select(id){
+  if (S.sel){ const o = nodeBy(S.sel); o && o.el.classList.remove('sel'); }
+  S.sel = id; if (id) S.panel = null;
+  if (id) nodeBy(id).el.classList.add('sel');
+  renderInspector();
+}
+const statusShort = s => ({idle:'Pronto', running:'Trabalhando', waiting:'Aguardando', coordinating:'Coordenando', done:'Concluído', paused:'Pausado', stopped:'Parado'}[s]);
+function treeOf(a){
+  const kids = a.children.filter(c => !c.removed);
+  return `<li><button data-act="focus" data-nid="${a.node.id}" class="${S.sel===a.node.id?'cur':''}">
+    <span class="sd ${a.status}"></span><span class="nm">${a.name}</span>
+    <span class="badge ${statusTone(a.status)}">${statusShort(a.status)}</span>
+    <span class="mt">${esc(roleLabel(a))}${a.blank ? ' · sem instrução' : a.role!=='orch' ? ' · '+a.repo : ` · ${a.tasks.length} repos`}</span></button>
+    ${kids.length?`<ul>${kids.map(treeOf).join('')}</ul>`:''}</li>`;
+}
+const subtree = a => [a, ...a.children.filter(c => !c.removed).flatMap(subtree)];
+const ctxIcon = c => c.startsWith('repo ') ? ICON.repo : c.startsWith('issue') ? ICON.issue : c.startsWith('nota: ') ? ICON.note : ICON_DOC;
+function currentStep(a){
+  for (let j = Math.min(a.step, a.script.length) - 1; j >= 0; j--){ const s = a.script[j]; if (s[0]==='tool') return `${s[1]}(${s[2]})`; }
+  return 'Preparando o contexto';
+}
+// detalhes do agente: usados no painel lateral e no modo foco
+function agentDetails(a, inFocus){
+  const live = !['done','stopped'].includes(a.status);
+  const team = subtree(a).slice(1);
+  const waiting = subtree(a).filter(x => x.status==='waiting');
+  const workers = a.children.filter(c => c.role==='main' && !c.removed);
+  const mrs = subtree(a).filter(x => x.mr).length;
+  const sub = a.issue ? `Issue #${a.issue.iid} · ${esc(a.issue.short)}` : esc(a.title || 'Agente solo');
+  const canSpawn = !a.blank && a.role!=='orch' && a.role!=='review' && a.depth < a.maxDepth;
+
+  const ctl = a.status==='running' ? `<button class="btn" data-act="pause" data-aid="${a.id}">Pausar</button>`
+    : a.status==='paused' ? `<button class="btn" data-act="resume" data-aid="${a.id}">Retomar</button>` : '';
+  const stop = live ? `<button class="btn danger" data-act="stop" data-aid="${a.id}">Parar</button>` : '';
+
+  const callout = waiting.length ? `<div class="callout"><span>${waiting.length===1 && waiting[0]===a ? 'Este agente está aguardando sua permissão.'
+      : `${waiting.length} agente${waiting.length>1?'s aguardam':' aguarda'} sua permissão.`}</span>
+      <button class="btn sm" data-act="focus-open" data-aid="${waiting[0].id}">Revisar</button></div>` : '';
+
+  let progress;
+  if (a.blank){
+    progress = `<div class="callout info"><span>${a.ctx.some(c => c.startsWith('repo ') || c.startsWith('issue')) ? 'Contexto pronto. Envie a primeira instrução pela janela do agente.' : 'Adicione um repositório ou uma issue ao contexto e envie a primeira instrução.'}</span></div>`;
+  } else if (a.role==='orch'){
+    const done = workers.filter(w => w.status==='done').length;
+    progress = `<div class="prog"><div class="prog-meta"><span>Plano</span><span><b>${done} de ${a.tasks.length}</b> repositórios</span></div>
+      <div class="segs">${a.tasks.map((t,j) => `<i class="${workers[j] ? workers[j].status : ''}" title="${t.repo}"></i>`).join('')}</div></div>`;
+  } else {
+    const pct = Math.min(1, a.step / a.script.length);
+    progress = `<div class="prog"><div class="prog-meta"><span>Progresso</span><span><b>${Math.round(pct*100)}%</b></span></div>
+      <div class="bar ${a.status==='done'?'done':''}"><i style="transform:scaleX(${pct.toFixed(3)})"></i></div>
+      ${live ? `<div class="now">${esc(currentStep(a))}</div>` : ''}</div>`;
+  }
+  const stats = a.role==='orch'
+    ? [[workers.length,'Agentes'],[mrs,'MRs'],[fmtK(subtree(a).reduce((t, x) => t + (x.tokens||0), 0)),'Tokens']]
+    : [[a.blank ? '—' : `${Math.min(a.step,a.script.length)}/${a.script.length}`,'Etapas'],[fmtK(a.tokens||0),'Tokens'],[a.mr ? '!'+a.mr.iid : '—','MR']];
+
+  const repos = a.blank ? a.ctx.filter(c => c.startsWith('repo ')).map(c => c.slice(5)) : a.role==='orch' ? a.tasks.map(t=>t.repo) : [a.repo];
+  const issueN = a.issue && issueNodeOf(a.issue);
+  const hasTeam = rootOf(a).children.some(c => !c.removed);
+  const spawnBtn = canSpawn ? `<button class="btn sm plain" data-act="sub" data-aid="${a.id}">+ Sub-agente</button>` : '';
+
+  return `${inFocus ? '' : `<div class="ag-head"><div class="ag-title"><h3>${a.name}</h3><span class="badge ${statusTone(a.status)}"><span class="d"></span>${statusLabel(a.status)}</span></div>
+      <p class="ag-sub">${esc(roleLabel(a))} · ${sub}</p></div>
+    <div class="ag-actions">${F.a===a ? `<button class="btn" data-act="focus-close">Sair do foco</button>` : `<button class="btn primary" data-act="focus-open" data-aid="${a.id}">Abrir em foco</button>`}${ctl}${stop}</div>`}
+    ${inFocus && (ctl || stop) ? `<div class="ag-actions">${ctl}${stop}</div>` : ''}
+    ${callout}
+    ${progress}
+    <div class="stats3">${stats.map(([v,l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('')}</div>
+    ${hasTeam ? `<div class="grp"><div class="sec-h"><h4>Equipe</h4>${spawnBtn}</div><ul class="tree">${treeOf(rootOf(a))}</ul></div>`
+      : canSpawn ? `<div class="grp"><div class="sec-h"><h4>Equipe</h4>${spawnBtn}</div><p class="lab" style="margin:0">Sem sub-agentes. Pode criar até ${a.maxDepth-a.depth} nível${a.maxDepth-a.depth>1?'s':''}.</p></div>` : ''}
+    ${ctxSectionHTML(a)}
+    ${timelineHTML(a)}
+    <div class="grp"><h4>Detalhes</h4><dl class="kv">
+      <dt>Repositório${repos.length>1?'s':''}</dt><dd><span class="tags">${repos.map(r=>`<span class="badge repo">${r}</span>`).join('')}</span></dd>
+      ${a.role!=='orch' && !a.blank ? `<dt>Branch</dt><dd class="mono">${esc(a.branch)}</dd>` : ''}
+      ${a.issue ? `<dt>Issue</dt><dd>${issueN ? `<button class="btn sm" data-act="focus" data-nid="${issueN.id}">#${a.issue.iid}</button>` : '#'+a.issue.iid}</dd>` : ''}
+      ${a.mr ? `<dt>MR</dt><dd><button class="btn sm" data-act="focus" data-nid="${a.mr.node.id}">!${a.mr.iid}</button> <span class="lab">${a.mr.pipeline==='passed'?'pipeline passou':'pipeline rodando'}</span></dd>` : ''}
+      ${a.parent ? `<dt>Criado por</dt><dd>${a.parent.name}</dd>` : ''}
+    </dl>${!a.mr && a.role==='main' && !a.blank ? `<div><button class="btn sm" data-act="mr-now" data-aid="${a.id}">Abrir MR agora</button></div>` : ''}</div>
+    ${a.role==='orch' ? '<p class="lab" style="margin:0">Mensagens para o orquestrador são repassadas a todos os agentes dele.</p>' : ''}
+    <div class="foot-danger"><button class="btn plain danger sm" data-act="remove" data-nid="${a.node.id}">Remover do canvas${team.length ? ` com ${team.length} sub-agente${team.length>1?'s':''}` : ''}</button></div>`;
+}
+const rootOf = a => a.parent ? rootOf(a.parent) : a;
+function ctxOptions(){
+  return `<option value="">Adicionar contexto…</option><optgroup label="Repositórios">${REPOS.map(r=>`<option value="repo ${r.id}">${r.id}</option>`).join('')}</optgroup>
+    <optgroup label="Issues">${ISSUES.map(i=>`<option value="issue #${i.iid}">#${i.iid} ${esc(i.short)}</option>`).join('')}</optgroup>
+    ${activeNotes(notes).length?`<optgroup label="Notas">${activeNotes(notes).map(nt=>`<option value="note:${nt.id}">${esc(nt.title)}</option>`).join('')}</optgroup>`:''}
+    <optgroup label="Outros"><option value="docs/arquitetura.md">docs/arquitetura.md</option><option value="log do último pipeline">Log do último pipeline</option></optgroup>`;
+}
+function depthSelect(id){ return `<select class="field" id="${id}" style="width:auto"><option value="0">Sem sub-agentes</option><option value="1">Até 1 nível</option><option value="2" selected>Até 2 níveis</option><option value="3">Até 3 níveis</option></select>`; }
+
+function renderInspector(){
+  const box = $('#insp'), K = $('#inspK'), B = $('#inspB'), n = S.sel && nodeBy(S.sel);
+  if (!n && !S.panel){ box.classList.remove('open'); box.inert = true; layoutFocus(); return; }
+  box.classList.add('open'); box.inert = false; layoutFocus();
+  queueMicrotask(() => { if (CP.a){ const t = document.querySelector(`[data-act="ctx-pick"][data-aid="${CP.a.id}"]`); if (t){ CP.trigger = t; positionCP(); } else closeCP(); } });
+  if (S.panel === 'help'){
+    K.textContent = 'Como funciona';
+    B.innerHTML = `<h3>Orquestre agentes a partir do seu GitLab</h3>
+      <ul class="help-list">
+        <li><span class="ico issue">${ICON.issue}</span><div><b>Traga issues</b>Arraste uma issue da lista para o canvas. Ela vira o ponto de partida.</div></li>
+        <li><span class="ico agent">${ICON.agent}</span><div><b>Inicie agentes</b>Se a issue toca vários repositórios, um orquestrador cria um agente por repositório. Cada agente pode abrir sub-agentes até o limite que você definir.</div></li>
+        <li><span class="ico repo">${ICON.repo}</span><div><b>Dê contexto</b>Solte um repositório ou uma issue em cima de um agente, ou escreva no campo de mensagem dele.</div></li>
+        <li><span class="ico note">${ICON.note}</span><div><b>Escreva notas</b>Use + Nota ou dê dois cliques no fundo. Arraste o + da nota até um agente ou issue para usar o texto como contexto.</div></li>
+        <li><span class="ico doc">${ICON_FIT}</span><div><b>Atalhos rápidos</b>Clique com o botão direito no canvas ou num item para ver as ações mais usadas.</div></li>
+        <li><span class="ico mr">${ICON.mr}</span><div><b>Revise os MRs</b>Cada agente abre o MR no próprio repositório. Você pode pedir a outro agente para revisar.</div></li>
+      </ul>
+      <p class="desc" style="color:var(--muted);font-size:12.5px">Dados de exemplo. Os agentes são simulados neste protótipo.</p>`;
+    return;
+  }
+  if (S.panel === 'auto'){ K.textContent = 'Automações'; B.innerHTML = autosHTML(); return; }
+  if (S.panel === 'solo'){
+    K.textContent = 'Novo agente';
+    B.innerHTML = `<h3>O que você quer que seja feito?</h3>
+      <textarea class="field" id="s-prompt" rows="4">Gerar client TypeScript a partir do openapi.yaml e usar no web-app</textarea>
+      <div class="grp"><h4>Repositórios</h4><div class="opts">${REPOS.map(r=>`<label class="opt"><input type="checkbox" id="s-r-${r.id}" ${(S.soloRepo?S.soloRepo===r.id:r.id!=='payments-api')?'checked':''}> ${ICON.repo} ${r.id}<small>${esc(r.desc)}</small></label>`).join('')}</div>
+        <p class="lab" style="margin:0">Com mais de um repositório, um orquestrador divide o trabalho.</p></div>
+      <div class="grp"><h4>Contexto</h4><div class="opts">
+        <label class="opt"><input type="checkbox" id="s-md" checked> CLAUDE.md de cada repositório</label>
+        <label class="opt"><input type="checkbox" id="s-readme" checked> README e docs/</label>
+        <label class="opt"><input type="checkbox" id="s-open"> Issues abertas relacionadas</label></div></div>
+      <div class="grp"><h4>Autonomia</h4><div class="row2">${depthSelect('s-depth')}<label class="opt" style="border:0;padding:0"><input type="checkbox" id="s-mr" checked> Abrir MR ao final</label></div></div>
+      <button class="btn primary" data-act="start-solo" style="justify-content:center;padding:10px">Iniciar</button>`;
+    return;
+  }
+  if (n.type==='issue'){
+    const i = n.data, roots = liveAgents().filter(a => a.issue===i && !a.parent && a.role!=='review');
+    const repos = i.tasks.map(t=>t.repo);
+    K.innerHTML = `<span class="badge issue">Issue #${i.iid}</span>`;
+    B.innerHTML = `<div class="grp"><h3>${esc(i.title)}</h3><div><button class="btn primary" data-act="focus-node" data-nid="${n.id}">Expandir issue</button></div><p class="desc">${esc(i.desc)}</p>
+        <dl class="kv"><dt>Autor</dt><dd>@${i.author}</dd><dt>Comentários</dt><dd>${i.comments}</dd><dt>Labels</dt><dd><span class="tags">${i.labels.map(l=>`<span class="badge">${l}</span>`).join('')}</span></dd></dl></div>
+      ${roots.length?`<div class="grp"><h4>Agentes</h4><ul class="tree">${roots.map(treeOf).join('')}</ul></div>`:''}
+      <div class="grp"><h4>Repositórios afetados</h4><div class="opts">${REPOS.map(r=>`<label class="opt"><input type="checkbox" id="c-r-${r.id}" ${repos.includes(r.id)?'checked':''}> ${ICON.repo} ${r.id}${repos.includes(r.id)?'<small>detectado</small>':''}</label>`).join('')}</div></div>
+      <div class="grp"><h4>Contexto</h4><div class="opts">
+        <label class="opt"><input type="checkbox" id="c-desc" checked> Descrição e critérios de aceite</label>
+        <label class="opt"><input type="checkbox" id="c-com" checked> Comentários<small>${i.comments}</small></label>
+        <label class="opt"><input type="checkbox" id="c-md" checked> CLAUDE.md dos repositórios</label>
+        <label class="opt"><input type="checkbox" id="c-pipe"> Log do último pipeline</label></div>
+        <textarea class="field" id="c-extra" placeholder="Instruções extras, ex.: não alterar o schema do banco"></textarea></div>
+      <div class="grp"><h4>Notas</h4>${activeNotes(i.notes).length?`<div class="opts">${activeNotes(i.notes).map(nt=>`<label class="opt"><input type="checkbox" id="c-note-${nt.id}" checked> ${ICON.note} ${esc(nt.title)}<small>${esc(firstLine(nt.body).slice(0,28))}</small></label>`).join('')}</div>`:'<p class="lab" style="margin:0">Nenhuma nota vinculada a esta issue.</p>'}
+        <div><button class="btn sm" data-act="note-for" data-nid="${n.id}">+ Nota para esta issue</button></div></div>
+      <div class="grp"><h4>Autonomia</h4><div class="row2">${depthSelect('c-depth')}</div></div>
+      <button class="btn primary" data-act="start" data-nid="${n.id}" style="justify-content:center;padding:10px">Iniciar agentes</button>
+      <div class="grp"><h4>Equivalente no terminal</h4><pre class="cmd"><span class="c"># um worktree por agente</span>
+git worktree add ../wt/${i.iid} -b agent/${i.iid}-${slug(i.short)}
+glab issue view ${i.iid} --comments \\
+  | claude -p "Resolva esta issue e abra um MR"</pre></div>
+      <div class="row2"><button class="btn plain danger" data-act="remove" data-nid="${n.id}">Remover do canvas</button></div>`;
+  } else if (n.type==='term'){
+    const a = n.data;
+    K.textContent = a.role==='orch' ? 'Orquestrador' : a.role==='review' ? 'Revisor' : a.parent ? 'Sub-agente' : 'Agente';
+    B.innerHTML = agentDetails(a, false);
+  } else if (n.type==='note'){
+    const nt = n.data, targets = S.nodes.filter(x => ['term','issue'].includes(x.type) && !nt.links.includes(x));
+    K.innerHTML = `<span class="badge" style="background:var(--note-soft);color:var(--note)">Nota</span>`;
+    B.innerHTML = `<div class="grp"><h3>${esc(nt.title)}</h3><p class="desc" style="white-space:pre-wrap">${esc(nt.body || 'Sem texto ainda. Escreva direto no cartão.')}</p></div>
+      <div><button class="btn primary" data-act="focus-node" data-nid="${n.id}">Expandir nota</button></div>
+      <div class="grp"><h4>Vinculada a</h4>
+        ${nt.links.filter(t=>S.nodes.includes(t)).length?`<div class="links">${nt.links.filter(t=>S.nodes.includes(t)).map(t=>`<div class="lk"><span class="ico ${t.type==='issue'?'issue':'agent'}">${t.type==='issue'?ICON.issue:ICON.agent}</span>${t.type==='issue'?'Issue #'+t.data.iid:t.data.name}<button class="btn sm plain" data-act="unlink" data-note="${nt.id}" data-nid="${t.id}">Remover</button></div>`).join('')}</div>`:'<p class="lab" style="margin:0">Nenhum vínculo ainda.</p>'}
+        <select class="field" id="note-link" data-note="${nt.id}"><option value="">Vincular a…</option>${targets.map(t=>`<option value="${t.id}">${t.type==='issue'?'Issue #'+t.data.iid+' · '+esc(t.data.short):t.data.name+' · '+esc(roleLabel(t.data))}</option>`).join('')}</select>
+        <p class="lab" style="margin:0">Ou arraste o + da nota até um agente ou issue no canvas.</p></div>
+      <div class="grp"><h4>Como os agentes usam</h4><p class="desc" style="color:var(--muted);font-size:12.5px">Ligada a um agente, a nota entra no contexto dele na hora. Ligada a uma issue, entra no contexto dos próximos agentes iniciados por ela. Quando você edita a nota, os agentes ativos leem de novo.</p></div>
+      <div class="row2"><button class="btn plain danger" data-act="remove" data-nid="${n.id}">Excluir nota</button></div>`;
+  } else if (n.type==='mr'){
+    const m = n.data, rev = liveAgents().filter(a => a.mr===m && a.role==='review');
+    K.innerHTML = `<span class="badge mrb">MR !${m.iid}</span>`;
+    B.innerHTML = `<div class="grp"><h3>${esc(m.title)}</h3>
+        <dl class="kv"><dt>Repositório</dt><dd class="mono">${m.repo}</dd><dt>Branch</dt><dd class="mono">${esc(m.branch)} → main</dd>
+        <dt>Pipeline</dt><dd>${mrBadge(m)}</dd>
+        <dt>Mudanças</dt><dd class="diffstat"><span class="a">+${m.add}</span> <span class="r">−${m.del}</span></dd>
+        <dt>Aberto por</dt><dd><button class="btn sm" data-act="focus" data-nid="${m.agent.node.id}">${m.agent.name}</button></dd>
+        ${m.issue?`<dt>Fecha</dt><dd>#${m.issue.iid}</dd>`:''}</dl></div>
+      ${rev.length?`<div class="grp"><h4>Revisores</h4><ul class="tree">${rev.map(treeOf).join('')}</ul></div>`:''}
+      <div class="row2"><button class="btn primary" data-act="focus-node" data-nid="${n.id}">Expandir MR</button><button class="btn" data-act="review" data-nid="${n.id}">Pedir revisão a um agente</button>
+        <button class="btn" disabled title="Desativado no protótipo">Abrir no GitLab</button></div>
+      <div class="row2"><button class="btn plain danger" data-act="remove" data-nid="${n.id}">Remover do canvas</button></div>`;
+  }
+}
+
+/* ---------- ações ---------- */
+document.addEventListener('change', e => {
+  if ((e.target.id === 'ctx-add' || e.target.id === 'ctx-add-f') && e.target.value){
+    const a = agents.find(x => x.id===e.target.dataset.aid), v = e.target.value;
+    if (v.startsWith('note:')) linkNote(noteById(v.slice(5)), a.node); else addContext(a, v);
+  }
+  if (e.target.dataset && e.target.dataset.auto){ const r = AUTOS.find(x => x.id===e.target.dataset.auto); r.on = e.target.checked; log(`Automação "${r.when}" ${r.on ? 'ligada' : 'desligada'}`); }
+  if (e.target.id === 'note-link' && e.target.value) linkNote(noteById(e.target.dataset.note), nodeBy(e.target.value));
+});
+document.addEventListener('click', e => {
+  const tab = e.target.closest('[data-tab]'); if (tab){ setTab(tab.dataset.tab); return; }
+  const chip = e.target.closest('[data-filter]');
+  if (chip){ S.filter = chip.dataset.filter; document.querySelectorAll('[data-filter]').forEach(c => c.setAttribute('aria-pressed', c===chip)); renderSide(); return; }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act, a = b.dataset.aid && agents.find(x => x.id===b.dataset.aid);
+  const n = b.dataset.nid && nodeBy(b.dataset.nid);
+  if (act==='add-issue'){ addIssue(+b.dataset.iid); closeSide(); }
+  else if (act==='focus' && n){ if (F.n) openFocusNode(n); else focusNode(n); }
+  else if (act==='focus-node' && n) openFocusNode(n);
+  else if (act==='focus-open' && a) openFocus(a);
+  else if (act==='focus-close') closeFocus(true);
+  else if (act==='suggest' && F.a) tell(F.a, b.textContent);
+  else if (act==='ctx-remove' && a){ removeCtx(a, b.dataset.c); if (CP.a===a) renderCP(); }
+  else if (act==='ctx-pick' && a) openCP(a, b);
+  else if (act==='ctx-sum' && a) summarizeCtx(a, b.dataset.c);
+  else if (act==='ctx-add-sug' && a){ const c = b.dataset.c, nt = c.startsWith('nota: ') && activeNotes(notes).find(x => noteLabel(x)===c); if (nt) linkNote(nt, a.node); else addContext(a, c); renderInspector(); }
+  else if (act==='goto-actions'){ setTab('actions'); if (innerWidth <= 860) $('#side').classList.add('open'); else if ($('.main').classList.contains('side-hidden')) toggleSide(true); }
+  else if (act==='allow-always' && a){
+    const k = cmdKey(a.askCmd || ''); if (k && !POLICIES.includes(k)) POLICIES.push(k);
+    log(`Regra criada: sempre permitir "${k}"`);
+    liveAgents().filter(x => x.status==='waiting' && allowedByPolicy(x.askCmd || '')).forEach(x => fire('approve', { aid:x.id }));
+    renderSide(); if (S.panel==='auto') renderInspector();
+  }
+  else if (act==='approve-all'){ liveAgents().filter(x => x.status==='waiting').forEach(x => fire('approve', { aid:x.id })); log('Todas as permissões pendentes foram aprovadas'); }
+  else if (act==='policy-rm'){ const i = POLICIES.indexOf(b.dataset.c); if (i >= 0) POLICIES.splice(i, 1); renderSide(); if (S.panel==='auto') renderInspector(); }
+  else if (act==='merge' && n){
+    const m = n.data; m.merged = true; m.thread.push({ who:'você', t:'agora', text:'Aprovado e mergeado.' });
+    renderNode(n); log(`MR !${m.iid} aprovado e mergeado`); if (F.n===n) refreshDoc(); updateStats(); if (S.sel===n.id) renderInspector();
+  }
+  else if (act==='fix-pipe' && n) createFixAgent(n);
+  else if (act==='auto'){ select(null); S.panel = 'auto'; renderInspector(); }
+  else if (act==='sim-pipe') simPipe();
+  else if (act==='sim-review') simReview();
+  else if (act==='sim-label') simLabel();
+  else if (act==='remove' && n) removeNode(n, true);
+  else if (act==='close'){ select(null); S.panel = null; renderInspector(); }
+  else if (act==='help'){ select(null); S.panel = 'help'; renderInspector(); }
+  else if (act==='new-agent'){ const ag = newBlankAgent(null, b.dataset.repo); closeSide(); setTimeout(() => ag.node.el.querySelector('.composer input')?.focus({preventScroll:true}), 300); }
+  else if (act==='new-solo'){ select(null); S.soloRepo = b.dataset.repo || null; S.panel = 'solo'; renderInspector(); closeSide(); }
+  else if (act==='new-note') newNoteAt();
+  else if (act==='note-for' && n){ const r = rect(n), inFocus = !!F.n, nt = newNoteAt({x:r.x+r.w+60+135, y:r.y+90}, n); if (inFocus) openFocusNode(nt.node); }
+  else if (act==='unlink' && n) unlinkNote(noteById(b.dataset.note), n);
+  else if (act==='quick'){
+    const iN = issueNodeOf(issueBy(+b.dataset.iid));
+    launchIssue(iN, { repos:iN.data.tasks.map(t=>t.repo), ctx:['issue #'+iN.data.iid,'comentários','CLAUDE.md'], maxDepth:2, notes:activeNotes(iN.data.notes) });
+    select(iN.id);
+  }
+  else if (act==='start'){
+    const i = n.data, repos = REPOS.map(r=>r.id).filter(id => $('#c-r-'+id).checked);
+    if (!repos.length) return;
+    const ctx = [];
+    if ($('#c-desc').checked) ctx.push('issue #'+i.iid); if ($('#c-com').checked) ctx.push('comentários');
+    if ($('#c-md').checked) ctx.push('CLAUDE.md'); if ($('#c-pipe').checked) ctx.push('log do pipeline');
+    launchIssue(n, { repos, ctx, extra:$('#c-extra').value.trim(), maxDepth:+$('#c-depth').value, notes:i.notes.filter(nt => $('#c-note-'+nt.id)?.checked) });
+    renderInspector();
+  }
+  else if (act==='start-solo'){
+    const prompt = $('#s-prompt').value.trim(); if (!prompt) return;
+    const repos = REPOS.map(r=>r.id).filter(id => $('#s-r-'+id).checked); if (!repos.length) return;
+    const ctx = ['instrução do usuário'];
+    if ($('#s-md').checked) ctx.push('CLAUDE.md'); if ($('#s-readme').checked) ctx.push('README e docs/'); if ($('#s-open').checked) ctx.push('issues abertas');
+    const tasks = repos.map(r => genTask(r, prompt)), title = prompt.length>60 ? prompt.slice(0,58)+'…' : prompt;
+    const common = { title, extra:prompt, maxDepth:+$('#s-depth').value, openMr:$('#s-mr').checked };
+    const r = repos.length>1 ? startRoot({ ...common, role:'orch', tasks, ctx:[...ctx, ...repos.map(x=>'repo '+x)] })
+                             : startRoot({ ...common, task:tasks[0], repo:repos[0], ctx:[...ctx, 'repo '+repos[0]] });
+    focusNode(r.node); setTimeout(() => run(r), 300);
+  }
+  else if (act==='approve' && a && a.status==='waiting'){ a.askEl?.querySelector('.acts')?.remove(); line(a,'out','⎿ permitido por você'); setStatus(a,'running'); run(a); }
+  else if (act==='deny' && a && a.status==='waiting'){ a.askEl?.querySelector('.acts')?.remove(); line(a,'out','⎿ negado'); a.script.splice(a.step,2,['txt','Ok, não vou rodar os testes localmente. Eles ficam para o CI.']); setStatus(a,'running'); run(a); }
+  else if (act==='pause' && a){ clearTimeout(a.timer); setStatus(a,'paused'); line(a,'dim','— pausado por você —'); }
+  else if (act==='resume' && a){ setStatus(a,'running'); run(a); }
+  else if (act==='stop' && a){ clearTimeout(a.timer); setStatus(a,'stopped'); line(a,'dim','— parado por você —'); log(`${a.name} parado`); }
+  else if (act==='sub' && a){ spawnSub(a); renderInspector(); }
+  else if (act==='mr-now' && a){ openMR(a); renderInspector(); }
+  else if (act==='review' && n){
+    const m = n.data, r = createAgent({ issue:m.issue, role:'review', mr:m, task:m.task, repo:m.repo, branch:m.branch, depth:9, ctx:['diff do !'+m.iid, 'repo '+m.repo, 'CLAUDE.md'] });
+    const mr_ = rect(n); addTermNode(r, [{x:mr_.x+mr_.w+40,y:mr_.y-20},{x:mr_.x,y:mr_.y+mr_.h+60}], n, 'spawn');
+    log(`${r.name} revisando !${m.iid}`); updateStats(); setTimeout(()=>run(r),300); renderInspector();
+  }
+});
+function launchIssue(iN, {repos, ctx, extra, maxDepth, notes = []}){
+  const i = iN.data;
+  const tasks = repos.map(r => i.tasks.find(t=>t.repo===r) || genTask(r, i.short));
+  const a = repos.length > 1
+    ? startRoot({ issue:i, role:'orch', tasks, ctx:[...ctx], extra, maxDepth, notes }, iN)
+    : startRoot({ issue:i, task:tasks[0], repo:repos[0], ctx:[...ctx, 'repo '+repos[0]], extra, maxDepth, notes }, iN);
+  setTimeout(() => run(a), 300);
+  return a;
+}
+
+/* ---------- arrastar e navegar ---------- */
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  if (e.button === 2) return;   // botão direito abre o menu de atalhos
+  if (e.target.closest('.toolbar,.insp,.focus,.toast')) return;
+  stopGlide();
+  const nodeEl = e.target.closest('.node');
+  if (e.target.closest('[data-port]')){
+    const n = nodeBy(nodeEl.dataset.id); select(n.id);
+    drag = {mode:'link', n, hover:null}; canvas.classList.add('linking'); canvas.setPointerCapture(e.pointerId); e.preventDefault(); return;
+  }
+  if (e.target.closest('button,input,textarea,select,a,.tbody,form')){ if (nodeEl && S.sel!==nodeEl.dataset.id) select(nodeEl.dataset.id); return; }
+  if (nodeEl){
+    const n = nodeBy(nodeEl.dataset.id); select(n.id);
+    if (e.target.closest('[data-drag]')) drag = {mode:'node', n, px:e.clientX, py:e.clientY, sx:n.x, sy:n.y, moved:false, bar:!!e.target.closest('.wbar')};
+  } else {
+    drag = {mode:'pan', px:e.clientX, py:e.clientY, sx:S.view.x, sy:S.view.y, moved:false}; canvas.classList.add('panning');
+  }
+  if (drag) canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.px, dy = e.clientY - drag.py;
+  if (drag.mode==='link'){
+    const r = canvas.getBoundingClientRect(), v = S.view, px = (e.clientX-r.left-v.x)/v.k, py = (e.clientY-r.top-v.y)/v.k;
+    const A = rect(drag.n), x1 = A.x+A.w+13, y1 = A.y+A.h/2, m = Math.max(40, Math.abs(px-x1)/2);
+    $('#tmpEdge').setAttribute('d', `M${x1},${y1} C${x1+m},${y1} ${px-m},${py} ${px},${py}`);
+    const hitEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('.node'), hit = hitEl && nodeBy(hitEl.dataset.id);
+    const ok = hit && ['term','issue'].includes(hit.type) ? hitEl : null;
+    if (ok !== drag.hover){ drag.hover && drag.hover.classList.remove('linkt'); drag.hover = ok; ok && ok.classList.add('linkt'); }
+  }
+  else if (drag.mode==='pan'){ if (Math.abs(dx)+Math.abs(dy)>3) drag.moved = true; S.view.x = drag.sx + dx; S.view.y = drag.sy + dy; applyView(); }
+  else {
+    if (!drag.moved && Math.abs(dx)+Math.abs(dy) > 3){ drag.moved = true; drag.n.el.classList.add('dragging'); }
+    if (drag.moved){ drag.n.x = drag.sx + dx/S.view.k; drag.n.y = drag.sy + dy/S.view.k; place(drag.n); drawEdges(); }
+  }
+});
+const endDrag = () => {
+  if (drag && drag.mode==='link'){
+    $('#tmpEdge').setAttribute('d',''); canvas.classList.remove('linking');
+    if (drag.hover){ drag.hover.classList.remove('linkt'); linkNote(drag.n.data, nodeBy(drag.hover.dataset.id)); }
+  }
+  if (drag && drag.mode==='pan' && !drag.moved && S.sel) select(null);
+  if (drag && drag.mode==='node'){
+    drag.n.el.classList.remove('dragging');
+    // clique simples no título da janela abre o agente em foco
+    if (!drag.moved && drag.bar && drag.n.type==='term') openFocus(drag.n.data);
+  }
+  drag = null; canvas.classList.remove('panning');
+};
+canvas.addEventListener('dblclick', e => {
+  if (e.target.closest('.toolbar,.insp,.focus,.toast')) return;
+  const hitNode = e.target.closest('.node');
+  if (hitNode){ if (!e.target.closest('input,textarea,button,select,.tbody,form')) openFocusNode(nodeBy(hitNode.dataset.id)); return; }
+  const r = canvas.getBoundingClientRect(), v = S.view;
+  newNoteAt({ x:(e.clientX-r.left-v.x)/v.k, y:(e.clientY-r.top-v.y)/v.k });
+});
+canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('wheel', e => {
+  if (e.target.closest('.insp,.focus')) return;
+  stopGlide();
+  if (e.target.closest('.tbody') && !e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY*0.0022), e.clientX-r.left, e.clientY-r.top);
+  else { S.view.x -= e.deltaX; S.view.y -= e.deltaY; applyView(); }
+}, {passive:false});
+$('#zIn').onclick = () => { stopGlide(); zoomAt(1.2, canvas.clientWidth/2, canvas.clientHeight/2, true); };
+$('#zOut').onclick = () => { stopGlide(); zoomAt(1/1.2, canvas.clientWidth/2, canvas.clientHeight/2, true); };
+$('#zFit').onclick = () => { stopGlide(); fit(true); };
+
+/* modo foco: conversa e teclado */
+$('#fComp').addEventListener('submit', e => { e.preventDefault(); const t = $('#fInput'), v = t.value.trim(); if (!v || !F.n) return;
+  if (F.a) tell(F.a, v);
+  else if (F.n.type==='issue' || F.n.type==='mr'){
+    F.n.data.thread.push({ who:'você', t:'agora', text:v });
+    log(`Você comentou em ${F.n.type==='issue' ? 'issue #' : 'MR !'}${F.n.data.iid}`);
+    refreshDoc(); const fb = $('#fBody'); fb.scrollTo({ top:fb.scrollHeight, behavior: RM.matches ? 'auto' : 'smooth' });
+  }
+  t.value = ''; t.style.height = ''; });
+$('#fInput').addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); $('#fComp').requestSubmit(); } });
+$('#fInput').addEventListener('input', e => { const t = e.target; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 160) + 'px'; });
+$('#toastUndo').onclick = () => { const f = toastAct; if (f === undo) undo(); else { clearTimeout(toastT); $('#toast').classList.remove('show'); f && f(); } };
+addEventListener('keydown', e => {
+  if (e.key==='Escape' && CM.open){ e.preventDefault(); closeCM(); return; }
+  if (e.key==='Escape' && CP.a){ e.preventDefault(); closeCP(); CP.trigger?.isConnected && CP.trigger.focus(); return; }
+  const typing = e.target.closest && e.target.closest('input,textarea,select,[contenteditable]');
+  if (e.key==='Escape' && F.n){ e.preventDefault(); closeFocus(false); return; }          // atalho: sem animação
+  if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z' && pendingUndo && !typing){ e.preventDefault(); undo(); return; }
+  if ((e.key==='Delete'||e.key==='Backspace') && S.sel && !typing && !F.n){ e.preventDefault(); removeNode(nodeBy(S.sel), false); }
+});
+
+/* arrastar da sidebar: no fundo cria; em cima de um agente vira contexto */
+$('#sideb').addEventListener('dragstart', e => { const it = e.target.closest('[data-drag-src]'); if (it) e.dataTransfer.setData('text/plain', it.dataset.dragSrc); });
+let dropT = null;
+const clearDropT = () => { if (dropT){ dropT.classList.remove('dropt'); dropT = null; } };
+canvas.addEventListener('dragover', e => {
+  e.preventDefault();
+  const t = e.target.closest('.node'), term = t && nodeBy(t.dataset.id).type==='term' ? t : null;
+  if (term !== dropT){ clearDropT(); if (term){ dropT = term; term.classList.add('dropt'); } }
+  canvas.classList.toggle('drop', !term);
+});
+canvas.addEventListener('dragleave', e => { if (!canvas.contains(e.relatedTarget)){ canvas.classList.remove('drop'); clearDropT(); } });
+canvas.addEventListener('drop', e => {
+  e.preventDefault(); canvas.classList.remove('drop');
+  const [kind, val] = e.dataTransfer.getData('text/plain').split(':');
+  const target = dropT && nodeBy(dropT.dataset.id); clearDropT();
+  if (target){ addContext(target.data, kind==='repo' ? 'repo '+val : 'issue #'+val); select(target.id); return; }
+  const r = canvas.getBoundingClientRect(), v = S.view, at = { x:(e.clientX-r.left-v.x)/v.k, y:(e.clientY-r.top-v.y)/v.k };
+  if (kind==='issue' && issueBy(+val)) addIssue(+val, at);
+  if (kind==='repo') newBlankAgent(at, val);
+});
+$('#q').addEventListener('input', renderSide);
+const closeSide = () => $('#side').classList.remove('open');
+// pelo botão anima; pelo atalho Ctrl/⌘ + B é instantâneo (ação de teclado não anima)
+function toggleSide(animate = true){
+  if (innerWidth <= 860){ $('#side').classList.toggle('open'); return; }
+  const main = $('.main');
+  if (!animate){ main.classList.add('instant'); requestAnimationFrame(() => requestAnimationFrame(() => main.classList.remove('instant'))); }
+  const hid = main.classList.toggle('side-hidden');
+  layoutFocus();
+  $('#tglSide').setAttribute('aria-pressed', !hid);
+  try { localStorage.setItem('ac-side-hidden', hid ? '1' : '0'); } catch(_){}
+  requestAnimationFrame(drawEdges);
+}
+$('#tglSide').onclick = () => toggleSide(true);
+addEventListener('keydown', e => { if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='b' && !e.target.closest('input,textarea')){ e.preventDefault(); toggleSide(false); } });
+try { if (localStorage.getItem('ac-side-hidden')==='1' && innerWidth > 860){ $('.main').classList.add('side-hidden'); $('#tglSide').setAttribute('aria-pressed','false'); } } catch(_){}
+
+/* ---------- seletor de contexto (estilo paleta de comandos) ---------- */
+const ICON_DOC = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 1.5h5.5L12.5 4.5v10h-8.5z"/><path d="M9.5 1.5v3h3M6 8h4.5M6 10.5h4.5"/></svg>';
+const CP = { a:null, q:'', idx:0, creating:false, items:[], trigger:null };
+function removeCtx(a, c){
+  const nt = c.startsWith('nota: ') && activeNotes(notes).find(x => noteLabel(x)===c);
+  if (nt && nt.links.includes(a.node)) unlinkNote(nt, a.node);
+  else { a.ctx = a.ctx.filter(x => x!==c); if (nt) nt.users.delete(a); line(a,'dim',`− contexto removido: ${esc(c)}`); log(`Contexto "${c}" removido de ${a.name}`); }
+  renderInspector();
+}
+function cpGroups(a){
+  const q = CP.q.trim().toLowerCase(), m = s => !q || s.toLowerCase().includes(q);
+  const groups = [
+    ['Repositórios', REPOS.filter(r => m(r.id+' '+r.desc)).map(r => ({ kind:'repo', label:'repo '+r.id, t:r.id, d:r.desc, ico:['repo',ICON.repo] }))],
+    ['Issues', ISSUES.filter(i => m('#'+i.iid+' '+i.title+' '+i.short)).map(i => ({ kind:'issue', label:'issue #'+i.iid, t:`#${i.iid} · ${i.short}`, d:i.title, ico:['issue',ICON.issue] }))],
+    ['Notas', activeNotes(notes).filter(nt => m(nt.title+' '+nt.body)).map(nt => ({ kind:'note', nt, label:noteLabel(nt), t:nt.title, d:firstLine(nt.body), ico:['note',ICON.note] }))],
+    ['Arquivos e logs', ['CLAUDE.md','README e docs/','docs/arquitetura.md','log do último pipeline'].filter(m).map(x => ({ kind:'other', label:x, t:x, d:x.startsWith('log') ? 'Saída do último job que falhou' : 'Arquivo dos repositórios do agente', ico:['doc',ICON_DOC] }))],
+  ].filter(g => g[1].length);
+  groups.forEach(g => g[1].forEach(it => { it.on = a.ctx.includes(it.label); }));
+  return groups;
+}
+function renderCP(){
+  const a = CP.a; if (!a) return;
+  const list = $('#cpList'), y = list.scrollTop, groups = cpGroups(a);
+  CP.items = groups.flatMap(g => g[1]);
+  CP.idx = Math.max(0, Math.min(CP.idx, CP.items.length - 1));
+  let k = 0;
+  list.innerHTML = groups.length ? groups.map(([h, items]) => `<div class="cp-h">${h}</div>` + items.map(it => {
+    const i = k++;
+    return `<button type="button" class="cp-it ${it.on?'on':''} ${i===CP.idx?'act':''}" data-i="${i}" role="option" aria-selected="${it.on}">
+      <span class="ico ${it.ico[0]}">${it.ico[1]}</span><span class="tx"><span class="t">${esc(it.t)}</span><span class="d">${esc(it.d)} · ${fmtK(ctxTokens(it.label))} tokens</span></span>
+      <span class="ck" aria-hidden="true">${it.on ? '✓' : ''}</span></button>`;
+  }).join('')).join('') : `<p class="cp-empty">Nada encontrado para "${esc(CP.q)}".</p>`;
+  list.scrollTop = y;
+  $('#cpCount').textContent = a.ctx.length ? `${a.ctx.length} no contexto` : 'Nada no contexto';
+}
+function renderCPFoot(){
+  const pop = $('#cpop'), foot = $('#cpFoot');
+  pop.classList.toggle('creating', CP.creating);
+  foot.innerHTML = CP.creating
+    ? `<div class="cp-form"><div class="cp-form-h"><button type="button" class="btn plain icon xs" data-cp="cancel" aria-label="Voltar">←</button><b>Nova nota para ${CP.a.name}</b></div>
+        <input class="field" id="cpNT" placeholder="Título da nota" autocomplete="off">
+        <textarea class="field" id="cpNB" rows="5" placeholder="Decisões, regras de negócio, links, trechos de log…"></textarea>
+        <div class="row2" style="justify-content:flex-end"><button type="button" class="btn sm plain" data-cp="cancel">Cancelar</button><button type="button" class="btn sm primary" data-cp="create">Criar e adicionar</button></div></div>`
+    : `<button type="button" class="cp-it cp-new" data-cp="new"><span class="ico note">${ICON.note}</span><span class="tx"><span class="t">Nova nota</span><span class="d">Escreva um contexto do zero e ligue a este agente</span></span><span class="ck plus" aria-hidden="true">${ICON.plus}</span></button>
+       <div class="cp-hint"><span id="cpCount"></span><span><kbd>↑↓</kbd> navegar · <kbd>Enter</kbd> marcar · <kbd>Esc</kbd> fechar</span></div>`;
+  if (CP.creating) setTimeout(() => $('#cpNT').focus({preventScroll:true}), 30);
+  else renderCP();
+}
+function positionCP(){
+  const tr = CP.trigger; if (!tr || !tr.isConnected) return;
+  const r = tr.getBoundingClientRect(), pop = $('#cpop'), W = Math.min(352, innerWidth - 24), h = pop.offsetHeight;
+  const left = Math.min(Math.max(12, r.right - W), innerWidth - W - 12);
+  let top = r.bottom + 8, oy = 'top';
+  if (top + h > innerHeight - 12){ top = Math.max(12, r.top - 8 - h); oy = 'bottom'; }
+  Object.assign(pop.style, { width:W+'px', left:left+'px', top:top+'px', transformOrigin:`${r.left - left > W/2 ? 'right' : 'left'} ${oy}` });
+}
+function openCP(a, trigger){
+  if (CP.a === a){ closeCP(); return; }
+  Object.assign(CP, { a, q:'', idx:0, creating:false, trigger });
+  $('#cpQ').value = '';
+  renderCPFoot(); positionCP();
+  $('#cpop').classList.add('open'); $('#cpop').inert = false;
+  setTimeout(() => $('#cpQ').focus({preventScroll:true}), 30);
+}
+function closeCP(){
+  if (!CP.a) return;
+  CP.a = null; $('#cpop').classList.remove('open'); $('#cpop').inert = true;
+}
+function cpToggle(it){
+  const a = CP.a; if (!a || !it) return;
+  if (a.removed){ closeCP(); return; }
+  if (it.kind==='note'){
+    if (it.on){ if (it.nt.links.includes(a.node)) unlinkNote(it.nt, a.node); else removeCtx(a, it.label); }
+    else linkNote(it.nt, a.node);
+  } else if (it.on) removeCtx(a, it.label);
+  else addContext(a, it.label);
+  renderCP();
+}
+function cpCreate(){
+  const a = CP.a, title = $('#cpNT').value.trim() || 'Nova nota', body = $('#cpNB').value.trim();
+  const r = rect(a.node);
+  const nt = createNote({ x:r.x - 60 - 135, y:r.y + 100 }, title, body);
+  linkNote(nt, a.node);
+  CP.creating = false; CP.q = ''; $('#cpQ').value = '';
+  renderCPFoot(); positionCP();
+  setTimeout(() => $('#cpQ').focus({preventScroll:true}), 30);
+}
+function setCPActive(i){
+  CP.idx = i;
+  $('#cpList').querySelectorAll('.cp-it').forEach(b => b.classList.toggle('act', +b.dataset.i===i));
+}
+$('#cpList').addEventListener('click', e => { const b = e.target.closest('.cp-it'); if (b){ CP.idx = +b.dataset.i; cpToggle(CP.items[CP.idx]); } });
+$('#cpList').addEventListener('pointermove', e => { const b = e.target.closest('.cp-it'); if (b && +b.dataset.i !== CP.idx) setCPActive(+b.dataset.i); });
+$('#cpQ').addEventListener('input', e => { CP.q = e.target.value; CP.idx = 0; renderCP(); });
+$('#cpQ').addEventListener('keydown', e => {
+  if (e.key==='ArrowDown' || e.key==='ArrowUp'){
+    e.preventDefault();
+    const n = CP.items.length; if (!n) return;
+    setCPActive((CP.idx + (e.key==='ArrowDown' ? 1 : -1) + n) % n);
+    $('#cpList').querySelector('.cp-it.act')?.scrollIntoView({ block:'nearest' });
+  } else if (e.key==='Enter'){ e.preventDefault(); cpToggle(CP.items[CP.idx]); }
+});
+$('#cpFoot').addEventListener('click', e => {
+  const b = e.target.closest('[data-cp]'); if (!b) return;
+  if (b.dataset.cp==='new'){ CP.creating = true; renderCPFoot(); positionCP(); }
+  else if (b.dataset.cp==='cancel'){ CP.creating = false; renderCPFoot(); positionCP(); setTimeout(() => $('#cpQ').focus({preventScroll:true}), 30); }
+  else if (b.dataset.cp==='create') cpCreate();
+});
+$('#cpFoot').addEventListener('keydown', e => { if (e.key==='Enter' && (e.metaKey || e.ctrlKey)){ e.preventDefault(); cpCreate(); } });
+document.addEventListener('pointerdown', e => { if (CP.a && !e.target.closest('#cpop,[data-act="ctx-pick"]')) closeCP(); }, true);
+addEventListener('resize', () => { if (CP.a) positionCP(); });
+
+/* ---------- menu do botão direito ---------- */
+const CM = { open:false, items:[], idx:-1 };
+// reaproveita as ações dos botões: dispara o mesmo data-act que o painel usa
+function fire(act, ds = {}){
+  const b = document.createElement('button');
+  b.hidden = true; b.dataset.act = act; Object.assign(b.dataset, ds);
+  document.body.appendChild(b); b.click(); b.remove();
+}
+const ICON_FIT = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/></svg>';
+const ICON_SIDE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.5"/><path d="M6 2.75v10.5"/></svg>';
+const ICON_TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx="1"/><rect x="9.4" y="3" width="2.6" height="10" rx="1"/></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M5 3.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L5.9 2.7a.6.6 0 0 0-.9.5z"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>';
+const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M6.4 6.3a1.7 1.7 0 0 1 3.2.7c0 1.2-1.6 1.4-1.6 2.5"/><circle cx="8" cy="11.6" r=".4" fill="currentColor"/></svg>';
+
+function canvasMenu(at){
+  const backlog = ISSUES.filter(i => !issueNodeOf(i)).slice(0, 4);
+  const hidden = $('.main').classList.contains('side-hidden');
+  return [
+    { icon:ICON.agent, label:'Novo agente aqui', run:() => { const a = newBlankAgent(at); setTimeout(() => a.node.el.querySelector('.composer input')?.focus({preventScroll:true}), 300); } },
+    { icon:ICON.note, label:'Nova nota aqui', hint:'Duplo clique', run:() => newNoteAt(at) },
+    ...(backlog.length ? [{ sep:true }, { header:'Adicionar issue aqui' }, ...backlog.map(i => ({ icon:ICON.issue, label:`#${i.iid} ${i.short}`, run:() => addIssue(i.iid, at) }))] : []),
+    { sep:true },
+    { icon:ICON_FIT, label:'Ajustar à tela', run:() => { stopGlide(); fit(true); } },
+    ...(innerWidth > 860 ? [{ icon:ICON_SIDE, label: hidden ? 'Mostrar barra lateral' : 'Ocultar barra lateral', hint:'Ctrl B', run:() => toggleSide(true) }] : []),
+    { icon:ICON_HELP, label:'Como funciona', run:() => fire('help') },
+  ];
+}
+function nodeMenu(n){
+  const id = n.id, rm = { icon:ICON_TRASH, label: n.type==='note' ? 'Excluir nota' : 'Remover do canvas', hint:'Delete', danger:true, run:() => removeNode(n, true) };
+  if (n.type==='term'){
+    const a = n.data, live = !['done','stopped'].includes(a.status), canSpawn = !a.blank && a.role!=='orch' && a.role!=='review' && a.depth < a.maxDepth;
+    return [
+      { header:`${a.name} · ${roleLabel(a)}` },
+      { icon:ICON.expand, label:'Abrir em foco', run:() => openFocus(a) },
+      { icon:ICON.plus, label:'Adicionar contexto…', run:() => { select(id); requestAnimationFrame(() => { const t = document.querySelector(`[data-act="ctx-pick"][data-aid="${a.id}"]`); if (t) openCP(a, t); }); } },
+      ...(a.status==='running' ? [{ icon:ICON_PAUSE, label:'Pausar', run:() => fire('pause', {aid:a.id}) }] : a.status==='paused' ? [{ icon:ICON_PLAY, label:'Retomar', run:() => fire('resume', {aid:a.id}) }] : []),
+      ...(canSpawn ? [{ icon:ICON.agent, label:'Criar sub-agente', run:() => fire('sub', {aid:a.id}) }] : []),
+      { sep:true },
+      ...(live ? [{ icon:ICON_STOP, label:'Parar', danger:true, run:() => fire('stop', {aid:a.id}) }] : []),
+      rm,
+    ];
+  }
+  if (n.type==='issue'){
+    const i = n.data;
+    return [
+      { header:`Issue #${i.iid}` },
+      { icon:ICON.expand, label:'Expandir', hint:'Duplo clique', run:() => openFocusNode(n) },
+      { icon:ICON.agent, label:'Iniciar agentes', run:() => fire('quick', {iid:String(i.iid)}) },
+      { icon:ICON.note, label:'Nova nota ligada', run:() => fire('note-for', {nid:id}) },
+      { sep:true }, rm,
+    ];
+  }
+  if (n.type==='mr'){
+    const m = n.data;
+    return [
+      { header:`MR !${m.iid} · ${m.repo}` },
+      { icon:ICON.expand, label:'Expandir', hint:'Duplo clique', run:() => openFocusNode(n) },
+      { icon:ICON.agent, label:'Pedir revisão a um agente', run:() => fire('review', {nid:id}) },
+      { icon:ICON.locate, label:`Mostrar ${m.agent.name}`, run:() => focusNode(m.agent.node) },
+      { sep:true }, rm,
+    ];
+  }
+  return [
+    { header:`Nota · ${n.data.title}` },
+    { icon:ICON.expand, label:'Expandir', hint:'Duplo clique', run:() => openFocusNode(n) },
+    { sep:true }, rm,
+  ];
+}
+function openCM(e, n){
+  e.preventDefault();
+  closeCP();
+  const r = canvas.getBoundingClientRect(), v = S.view;
+  const at = { x:(e.clientX - r.left - v.x)/v.k, y:(e.clientY - r.top - v.y)/v.k };
+  if (n) select(n.id);
+  CM.items = n ? nodeMenu(n) : canvasMenu(at);
+  CM.idx = -1;
+  const menu = $('#cmenu');
+  let k = 0;
+  menu.innerHTML = CM.items.map(it => it.sep ? '<div class="cm-sep" role="separator"></div>'
+    : it.header ? `<div class="cm-h">${esc(it.header)}</div>`
+    : `<button type="button" class="cm-it ${it.danger?'danger':''}" role="menuitem" data-i="${CM.items.indexOf(it)}"><span class="cm-ic">${it.icon || ''}</span><span class="cm-l">${esc(it.label)}</span>${it.hint ? `<kbd>${it.hint}</kbd>` : ''}</button>`).join('');
+  // abre na posição do cursor; vira para o outro lado perto das bordas
+  menu.style.left = '0px'; menu.style.top = '0px';
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  let x = e.clientX, y = e.clientY, ox = 'left', oy = 'top';
+  if (x + w > innerWidth - 8){ x = Math.max(8, x - w); ox = 'right'; }
+  if (y + h > innerHeight - 8){ y = Math.max(8, y - h); oy = 'bottom'; }
+  Object.assign(menu.style, { left:x+'px', top:y+'px', transformOrigin:`${ox} ${oy}` });
+  menu.classList.add('open'); menu.inert = false; CM.open = true;
+  menu.focus({preventScroll:true});
+}
+function closeCM(){
+  if (!CM.open) return;
+  CM.open = false; const menu = $('#cmenu'); menu.classList.remove('open'); menu.inert = true;
+}
+function cmActive(i){
+  CM.idx = i;
+  $('#cmenu').querySelectorAll('.cm-it').forEach(b => b.classList.toggle('act', +b.dataset.i===i));
+}
+function cmRun(i){ const it = CM.items[i]; if (!it || !it.run) return; closeCM(); it.run(); }
+canvas.addEventListener('contextmenu', e => {
+  if (e.target.closest('.insp,.toolbar,.toast,.focus,input,textarea,.tbody')) return;   // texto mantém o menu do navegador
+  const el = e.target.closest('.node');
+  openCM(e, el ? nodeBy(el.dataset.id) : null);
+});
+$('#cmenu').addEventListener('pointermove', e => { const b = e.target.closest('.cm-it'); if (b && +b.dataset.i !== CM.idx) cmActive(+b.dataset.i); });
+$('#cmenu').addEventListener('pointerleave', () => cmActive(-1));
+$('#cmenu').addEventListener('click', e => { const b = e.target.closest('.cm-it'); if (b) cmRun(+b.dataset.i); });
+$('#cmenu').addEventListener('contextmenu', e => e.preventDefault());
+$('#cmenu').addEventListener('keydown', e => {
+  const idxs = CM.items.map((it, i) => it.run ? i : -1).filter(i => i >= 0);
+  if (e.key==='ArrowDown' || e.key==='ArrowUp'){
+    e.preventDefault();
+    const p = idxs.indexOf(CM.idx), d = e.key==='ArrowDown' ? 1 : -1;
+    cmActive(idxs[p < 0 ? (d > 0 ? 0 : idxs.length - 1) : (p + d + idxs.length) % idxs.length]);
+  } else if (e.key==='Enter' || e.key===' '){ e.preventDefault(); if (CM.idx >= 0) cmRun(CM.idx); }
+  else if (e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); closeCM(); }
+});
+document.addEventListener('pointerdown', e => { if (CM.open && !e.target.closest('#cmenu')) closeCM(); }, true);
+canvas.addEventListener('wheel', closeCM, { passive:true });
+addEventListener('resize', closeCM);
+addEventListener('blur', closeCM);
+
+/* ---------- qualidade do contexto: medidor, resumo, sugestões ---------- */
+const CTX_BUDGET = 60000;
+const fmtK = n => n >= 1000 ? (n/1000).toFixed(n >= 10000 ? 0 : 1).replace('.0','') + 'k' : String(n);
+const ev = (a, k, label) => (a.events || (a.events = [])).push({ t:Date.now(), k, label });
+function ctxTokens(c){
+  if (c.startsWith('resumo: ')) return 1800;
+  if (c.startsWith('repo ')) return 8200;
+  if (c.startsWith('issue #')){ const i = issueBy(+c.slice(7)); return i ? 1200 + i.desc.length + i.thread.length*380 : 2000; }
+  if (c.startsWith('nota: ')){ const nt = activeNotes(notes).find(x => noteLabel(x)===c); return nt ? Math.max(150, Math.round((nt.title.length + nt.body.length)/3.6)) : 400; }
+  if (c.startsWith('arquivo ')) return 2600;
+  if (c.startsWith('plano de')) return 1500;
+  if (c.startsWith('diff do')) return 5200;
+  return { 'comentários':2600, 'CLAUDE.md':3200, 'README e docs/':9400, 'docs/arquitetura.md':6100, 'log do último pipeline':24800, 'log do pipeline':24800, 'instrução do usuário':300, 'issues abertas':7200 }[c] ?? 1200;
+}
+const ctxKind = c => c.startsWith('repo ') ? 'repo' : c.startsWith('issue') ? 'issue' : c.startsWith('nota: ') ? 'note' : c.startsWith('resumo: ') ? 'sum' : 'other';
+const ctxTotal = a => a.ctx.reduce((s, c) => s + ctxTokens(c), 0);
+function summarizeCtx(a, c){
+  const before = ctxTokens(c), lbl = 'resumo: ' + c;
+  a.ctx = a.ctx.map(x => x===c ? lbl : x);
+  line(a,'tool',`<span class="g">●</span> <b>Resumir</b>(${esc(c)})`);
+  line(a,'out',`⎿ ${fmtK(before)} → ${fmtK(ctxTokens(lbl))} tokens`);
+  log(`"${c}" resumido para ${a.name} (−${fmtK(before - ctxTokens(lbl))} tokens)`);
+  renderInspector();
+}
+function ctxSuggestions(a){
+  const out = [], has = c => a.ctx.includes(c) || a.ctx.includes('resumo: ' + c);
+  const push = (label, why) => { if (!has(label) && !out.some(o => o.label===label) && out.length < 4) out.push({ label, why }); };
+  const iss = a.issue || a.ctx.map(c => c.match(/^issue #(\d+)/)).filter(Boolean).map(m => issueBy(+m[1]))[0];
+  if (iss) activeNotes(iss.notes).forEach(nt => push(noteLabel(nt), `Nota ligada à issue #${iss.iid}`));
+  const repos = a.role==='orch' ? a.tasks.map(t => t.repo) : (!a.blank && a.repo) ? [a.repo] : a.ctx.filter(c => c.startsWith('repo ')).map(c => c.slice(5));
+  const files = a.task ? a.task.files : repos.flatMap(r => (repoBy(r)?.sample || []).slice(0,1));
+  files.slice(0,2).forEach(f => push('arquivo ' + f, 'Arquivo citado na tarefa'));
+  push('CLAUDE.md', 'Convenções do repositório');
+  ISSUES.filter(i => i!==iss && i.tasks.some(t => repos.includes(t.repo))).slice(0,1)
+    .forEach(i => push('issue #' + i.iid, `Também mexe em ${i.tasks.find(t => repos.includes(t.repo)).repo}`));
+  if (a.role==='orch') push('docs/arquitetura.md', 'Visão geral entre repositórios');
+  return out;
+}
+function ctxSectionHTML(a){
+  const total = ctxTotal(a), over = total > CTX_BUDGET, sugg = ctxSuggestions(a);
+  const heavy = c => ctxTokens(c) >= 8000 && !c.startsWith('repo ') && !c.startsWith('resumo: ');
+  const short = c => c.replace(/^repo /,'').replace(/^nota: /,'').replace(/^arquivo /,'');
+  return `<div class="grp"><div class="sec-h"><h4>Contexto</h4>
+      <button type="button" class="btn sm" data-act="ctx-pick" data-aid="${a.id}" aria-haspopup="dialog">${ICON.plus} Adicionar</button></div>
+    <div class="meter ${over ? 'over' : ''}"><div class="meter-top"><span><b>${fmtK(total)}</b> tokens</span><span>recomendado até ${fmtK(CTX_BUDGET)}</span></div>
+      <div class="stack" role="img" aria-label="${fmtK(total)} de ${fmtK(CTX_BUDGET)} tokens recomendados">${a.ctx.map(c => `<i class="k-${ctxKind(c)}" style="flex-grow:${ctxTokens(c)}" title="${esc(short(c))} · ${fmtK(ctxTokens(c))}"></i>`).join('')}<i class="k-free" style="flex-grow:${Math.max(0, CTX_BUDGET - total)}"></i></div></div>
+    ${over ? '<div class="callout"><span>Contexto acima do recomendado. Resuma os itens maiores para o agente focar no que importa.</span></div>' : ''}
+    ${a.ctx.length ? '' : '<p class="ctx-empty">Nenhum contexto ainda.</p>'}
+    <div class="tags">${a.ctx.map(c => {
+      const sum = c.startsWith('resumo: '), base = sum ? c.slice(8) : c;
+      return `<span class="chipx ${sum ? 'sum' : ''}">${ctxIcon(base)}${esc(short(base))}${sum ? '<em>resumo</em>' : ''}<span class="tk">${fmtK(ctxTokens(c))}</span>${heavy(c) ? `<button class="mini" data-act="ctx-sum" data-aid="${a.id}" data-c="${esc(c)}">Resumir</button>` : ''}<button class="x" data-act="ctx-remove" data-aid="${a.id}" data-c="${esc(c)}" aria-label="Remover ${esc(base)} do contexto">✕</button></span>`;
+    }).join('')}</div>
+    ${sugg.length ? `<div class="sugg"><span class="lab">Sugeridos para esta tarefa</span>${sugg.map(s => `<button type="button" class="chip-s" data-act="ctx-add-sug" data-aid="${a.id}" data-c="${esc(s.label)}" title="${esc(s.why)}">${ICON.plus}${esc(short(s.label))}<span class="tk">${fmtK(ctxTokens(s.label))}</span></button>`).join('')}</div>` : ''}
+  </div>`;
+}
+const ago = t => { const s = Math.max(1, Math.round((Date.now() - t)/1000)); return s < 60 ? `há ${s}s` : `há ${Math.floor(s/60)} min`; };
+function timelineHTML(a){
+  if (!a.events || !a.events.length) return '';
+  return `<div class="grp"><h4>Linha do tempo</h4><ol class="tl tl-ag">${a.events.slice(-8).reverse().map(e => `<li><span class="tl-dot k-${e.k}"></span><div><p>${esc(e.label)}</p><time>${ago(e.t)}</time></div></li>`).join('')}</ol></div>`;
+}
+
+/* ---------- nota de passagem ---------- */
+function createHandoff(a){
+  if (a.removed || !S.nodes.includes(a.node)) return;
+  const r = rect(a.node);
+  const kids = a.role==='orch' ? a.children.filter(c => c.task && !c.removed) : [a];
+  const decisions = kids.map(c => '• ' + (a.role==='orch' ? c.repo + ': ' : '') + c.task.finding);
+  const files = kids.flatMap(c => c.task.files.slice(0,2).map(f => '• ' + (a.role==='orch' ? c.repo + '/' : '') + f));
+  const mrs = subtree(a).filter(x => x.mr).map(x => `!${x.mr.iid} (${x.repo})`);
+  const body = `Decisões\n${decisions.join('\n')}\n\nArquivos tocados\n${files.join('\n')}\n\nMRs: ${mrs.join(', ') || 'nenhum'}\nTestes: passaram\nPendências: revisar e mergear na ordem sugerida.`;
+  const nt = createNote({ x:r.x + r.w + 60 + 135, y:r.y + 120 }, `Passagem · ${a.name}`, body);
+  nt.handoff = true; renderNode(nt.node);
+  link(a.node, nt.node, 'note');
+  const iN = a.issue && issueNodeOf(a.issue);
+  if (iN) linkNote(nt, iN);
+  log(`${a.name} deixou uma nota de passagem${iN ? ' na issue #' + a.issue.iid : ''}`);
+}
+
+/* ---------- ações pendentes e regras de permissão ---------- */
+const POLICIES = [];
+const cmdKey = cmd => cmd.split(' ').slice(0,2).join(' ');
+const allowedByPolicy = cmd => POLICIES.find(p => cmd.startsWith(p));
+function mrBadge(m){
+  return m.merged ? '<span class="badge mrb">Mergeado</span>'
+    : m.pipeline==='failed' ? '<span class="badge bad"><span class="d"></span>Pipeline falhou</span>'
+    : m.pipeline==='passed' ? '<span class="badge ok"><span class="d"></span>Pipeline passou</span>'
+    : '<span class="badge info live"><span class="d"></span>Pipeline rodando</span>';
+}
+function pendingActions(){
+  const mrs = S.nodes.filter(n => n.type==='mr');
+  return {
+    asks: liveAgents().filter(a => a.status==='waiting'),
+    ready: mrs.filter(n => n.data.pipeline==='passed' && !n.data.merged),
+    failed: mrs.filter(n => n.data.pipeline==='failed' && !(n.data.fixer && !n.data.fixer.removed)),
+    idle: liveAgents().filter(a => a.status==='idle'),
+  };
+}
+function policiesHTML(){
+  return `<div class="grp-h"><span>Sempre permitidos</span><span class="cnt">${POLICIES.length}</span></div>` + (POLICIES.length
+    ? `<div class="pol">${POLICIES.map(p => `<span class="chipx"><code>${esc(p)}</code><button class="x" data-act="policy-rm" data-c="${esc(p)}" aria-label="Remover regra ${esc(p)}">✕</button></span>`).join('')}</div>`
+    : '<p class="tip">Use "Sempre permitir" num pedido para liberar aquele comando para todos os agentes.</p>');
+}
+function actionsHTML(){
+  const p = pendingActions(), total = p.asks.length + p.ready.length + p.failed.length + p.idle.length;
+  if (!total) return `<div class="empty-act"><span class="ico agent">${ICON.agent}</span><b>Nada esperando você</b><span>Quando um agente pedir permissão ou um MR ficar pronto, aparece aqui.</span></div>${policiesHTML()}`;
+  const sec = (title, n, body, extra = '') => n ? `<div class="grp-h"><span>${title}</span><span class="cnt">${n}</span>${extra}</div>${body}` : '';
+  return sec('Permissões', p.asks.length, p.asks.map(a => `<div class="act-card">
+        <div class="act-top"><span class="sd waiting"></span><b>${a.name}</b><span class="lab">${a.role==='orch' ? 'orquestrador' : esc(a.repo || '')}</span>
+          <button class="btn plain icon xs" data-act="focus-open" data-aid="${a.id}" aria-label="Abrir ${a.name}" title="Abrir agente" style="margin-left:auto">${ICON.expand}</button></div>
+        <code class="act-cmd">${esc(a.askCmd || '')}</code>
+        <div class="act-btns"><button class="btn sm primary" data-act="approve" data-aid="${a.id}">Permitir</button><button class="btn sm" data-act="deny" data-aid="${a.id}">Negar</button>
+          <button class="btn sm plain" data-act="allow-always" data-aid="${a.id}" title="Libera este comando para todos os agentes">Sempre permitir</button></div></div>`).join(''),
+      p.asks.length > 1 ? '<button class="btn sm plain" style="margin-left:auto" data-act="approve-all">Permitir todos</button>' : '')
+    + sec('Merge requests prontos', p.ready.length, p.ready.map(n => `<div class="act-card">
+        <div class="act-top"><span class="ico mr sm">${ICON.mr}</span><b>!${n.data.iid}</b><span class="lab">${n.data.repo}</span></div>
+        <p class="act-t">${esc(n.data.title)}</p>
+        <div class="act-btns"><button class="btn sm primary" data-act="merge" data-nid="${n.id}">Aprovar e mergear</button><button class="btn sm" data-act="focus-node" data-nid="${n.id}">Ver diff</button></div></div>`).join(''))
+    + sec('Pipelines com falha', p.failed.length, p.failed.map(n => `<div class="act-card">
+        <div class="act-top"><span class="ico mr sm">${ICON.mr}</span><b>!${n.data.iid}</b><span class="lab">${n.data.repo}</span><span class="badge bad" style="margin-left:auto">Falhou</span></div>
+        <div class="act-btns"><button class="btn sm primary" data-act="fix-pipe" data-nid="${n.id}">Criar agente para corrigir</button><button class="btn sm" data-act="focus-node" data-nid="${n.id}">Ver</button></div></div>`).join(''))
+    + sec('Aguardando instrução', p.idle.length, p.idle.map(a => `<div class="act-card">
+        <div class="act-top"><span class="sd idle"></span><b>${a.name}</b><span class="lab">${a.ctx.length} itens de contexto</span></div>
+        <div class="act-btns"><button class="btn sm" data-act="focus-open" data-aid="${a.id}">Escrever instrução</button></div></div>`).join(''))
+    + policiesHTML();
+}
+function refreshActions(){
+  const p = pendingActions(), n = p.asks.length + p.ready.length + p.failed.length + p.idle.length, c = $('#tab-actions .cnt');
+  c.textContent = n; c.hidden = !n;
+  if (S.tab==='actions') renderSide();
+}
+
+/* ---------- automações ---------- */
+const AUTOS = [
+  { id:'pipe-fail', on:true, when:'Pipeline falhou', then:'Criar agente para corrigir', desc:'Lê o log do job e corrige no mesmo branch.' },
+  { id:'review-comment', on:true, when:'Comentário de revisão no MR', then:'Enviar ao agente autor', desc:'O agente que abriu o MR ajusta e responde.' },
+  { id:'auto-review', on:false, when:'MR aberto por agente', then:'Pedir revisão automática', desc:'Um agente revisor comenta antes de você olhar.' },
+  { id:'handoff', on:true, when:'Agente concluiu', then:'Escrever nota de passagem', desc:'Decisões e arquivos viram contexto para os próximos agentes.' },
+  { id:'label-ready', on:false, when:'Label agent-ready na issue', then:'Iniciar agentes', desc:'A issue entra no canvas e os agentes começam sozinhos.' },
+];
+const auto = id => AUTOS.find(x => x.id===id).on;
+function autosHTML(){
+  return `<h3>Quando acontecer…</h3><p class="desc" style="color:var(--muted);margin:0">Regras que reagem a eventos do GitLab e colocam agentes para trabalhar.</p>
+    <div class="rules">${AUTOS.map(r => `<label class="rule" for="auto-${r.id}"><span class="rule-tx"><span class="rule-when">${r.when}</span><span class="rule-then">→ ${r.then}</span><span class="lab">${r.desc}</span></span>
+      <span class="switch"><input type="checkbox" id="auto-${r.id}" data-auto="${r.id}" ${r.on ? 'checked' : ''}><i></i></span></label>`).join('')}</div>
+    <div class="grp"><h4>Testar com um evento</h4><div class="row2">
+      <button class="btn" data-act="sim-pipe">Simular pipeline falhando</button>
+      <button class="btn" data-act="sim-review">Simular comentário de revisão</button>
+      <button class="btn" data-act="sim-label">Simular label agent-ready</button></div>
+      <p class="lab" style="margin:0">Usa o MR mais recente do canvas, ou a próxima issue do backlog.</p></div>
+    <div class="grp"><h4>Permissões</h4>${POLICIES.length ? `<div class="tags">${POLICIES.map(p => `<span class="chipx"><code>${esc(p)}</code><button class="x" data-act="policy-rm" data-c="${esc(p)}" aria-label="Remover regra ${esc(p)}">✕</button></span>`).join('')}</div>` : '<p class="lab" style="margin:0">Nenhum comando liberado de vez. Crie regras pela aba Ações.</p>'}</div>`;
+}
+const latestMR = () => [...S.nodes].reverse().find(n => n.type==='mr' && !n.data.merged);
+const notice = msg => showToast(msg, { label:'Ok', fn:() => {} });
+function createFixAgent(n){
+  const m = n.data;
+  if (m.fixer && !m.fixer.removed && !['done','stopped'].includes(m.fixer.status)){ focusNode(m.fixer.node); return; }
+  const f = createAgent({ issue:m.issue, role:'fix', mr:m, task:m.task, repo:m.repo, branch:m.branch, depth:9, title:'Corrigir pipeline de !' + m.iid,
+    ctx:['log do último pipeline', 'diff do !' + m.iid, 'repo ' + m.repo, 'CLAUDE.md'] });
+  m.fixer = f;
+  const r = rect(n);
+  addTermNode(f, [{ x:r.x + r.w + 40, y:r.y - 20 }, { x:r.x, y:r.y + r.h + 60 }], n, 'spawn');
+  log(`${f.name} criado para corrigir o pipeline de !${m.iid}`);
+  updateStats(); setTimeout(() => run(f), 300);
+}
+function simPipe(){
+  const n = latestMR(); if (!n){ notice('Nenhum MR aberto no canvas para simular.'); return; }
+  const m = n.data; m.pipeline = 'failed'; renderNode(n);
+  log(`Pipeline do !${m.iid} falhou no job de testes`);
+  if (F.n===n) refreshDoc();
+  if (auto('pipe-fail')) createFixAgent(n); else { updateStats(); notice(`Pipeline do !${m.iid} falhou. Veja na aba Ações.`); }
+}
+function simReview(){
+  const n = latestMR(); if (!n){ notice('Nenhum MR aberto no canvas para simular.'); return; }
+  const m = n.data, text = 'Faltou tratar o caso de lista vazia.';
+  m.thread.push({ who:'joao.p', t:'agora', text });
+  log(`joao.p comentou no MR !${m.iid}`);
+  if (F.n===n) refreshDoc();
+  if (auto('review-comment') && !m.agent.removed) tell(m.agent, `Comentário de revisão no !${m.iid} (joao.p): ${text}`);
+}
+function simLabel(){
+  const i = ISSUES.find(x => !issueNodeOf(x)); if (!i){ notice('Todas as issues já estão no canvas.'); return; }
+  const n = addIssue(i.iid);
+  log(`Label agent-ready adicionada na issue #${i.iid}`);
+  if (auto('label-ready')) launchIssue(n, { repos:[...new Set(i.tasks.map(t => t.repo))], ctx:['issue #' + i.iid, 'comentários', 'CLAUDE.md'], maxDepth:2, notes:activeNotes(i.notes) });
+  else notice(`Issue #${i.iid} trazida. Ligue a regra "Label agent-ready" para iniciar sozinha.`);
+}
+
+/* ---------- cena inicial de exemplo ---------- */
+function boot(){
+  S.quiet = true;   // a cena inicial aparece pronta, sem animação de entrada
+  setTab('issues');
+  log('Canvas aberto com dados de exemplo');
+  const i142 = addNode('issue', 40, 40, issueBy(142));
+  const i157 = addNode('issue', 1180, 40, issueBy(157));
+  const solo = createAgent({ title:'Gerar client TypeScript a partir do openapi.yaml', extra:'Gerar client TypeScript a partir do openapi.yaml', task:genTask('shared-contracts','client TypeScript openapi'), repo:'shared-contracts', ctx:['instrução do usuário','CLAUDE.md','repo shared-contracts'] });
+  addTermNode(solo, [{x:40, y:1060}]);
+  runInstant(solo);
+  const a1 = startRoot({ issue:i142.data, task:i142.data.tasks[0], repo:'payments-api', ctx:['issue #142','comentários','CLAUDE.md','repo payments-api'] }, i142);
+  const nt = createNote({x:1180+284+80+135, y:40+100}, 'Decisões de produto',
+    'CSV com separador ; para abrir certo no Excel BR\nPDF usa o logo novo (assets/brand/logo-2026.svg)\nDatas no formato dd/mm/aaaa\nNão incluir transações estornadas');
+  linkNote(nt, i157);
+  const o = startRoot({ issue:i157.data, role:'orch', tasks:i157.data.tasks, ctx:['issue #157','comentários','CLAUDE.md'], notes:i157.data.notes }, i157);
+  linkNote(nt, o.node);
+  renderSide(); updateStats(); renderInspector();
+  requestAnimationFrame(() => { fit(); drawEdges(); S.quiet = false; });
+  setTimeout(() => run(a1), 600);
+  setTimeout(() => run(o), 1100);
+  addEventListener('resize', () => { drawEdges(); layoutFocus(); });
+}
+applyView();
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(boot);
+})();
+</script>
+
+</body></html>
