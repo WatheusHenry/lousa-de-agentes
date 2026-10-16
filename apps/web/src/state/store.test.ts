@@ -158,4 +158,52 @@ describe('store do canvas', () => {
     st.applyServer({ type: 'thread.changed', target: 'mr', ref: mr.ref });
     expect(useStore.getState().threadVersion[mr.ref]).toBe(1);
   });
+
+  it('contexto: chega pelo servidor, remover some na hora e resumir marca o item como em andamento', () => {
+    const st = useStore.getState();
+    st.applyServer({
+      type: 'context.updated',
+      context: {
+        agentId: 'a1',
+        items: [
+          {
+            id: 'note:t1',
+            kind: 'note',
+            ref: 't1',
+            label: 'Regra',
+            source: 'link',
+            tokens: 20,
+            fullTokens: 20,
+            summarized: false,
+            removable: true,
+            error: null,
+          },
+          {
+            id: 'pipeline_log:101!88',
+            kind: 'pipeline_log',
+            ref: '101!88',
+            label: 'log',
+            source: 'added',
+            tokens: 9000,
+            fullTokens: 9000,
+            summarized: false,
+            removable: true,
+            error: null,
+          },
+        ],
+        totalTokens: 9100,
+        budget: 60000,
+        suggestions: [],
+        summarizing: [],
+      },
+    });
+    st.contextRemove('a1', 'note:t1');
+    expect(useStore.getState().contexts.a1!.items.map((i) => i.id)).toEqual(['pipeline_log:101!88']);
+    st.contextSummarize('a1', 'pipeline_log:101!88');
+    expect(useStore.getState().contexts.a1!.summarizing).toEqual(['pipeline_log:101!88']);
+    expect(sent.slice(-2)).toEqual([
+      { type: 'context.remove', agentId: 'a1', itemId: 'note:t1' },
+      { type: 'context.summarize', agentId: 'a1', itemId: 'pipeline_log:101!88' },
+    ]);
+  });
 });

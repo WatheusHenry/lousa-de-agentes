@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type {
   Agent,
+  AgentContext,
+  ContextKind,
   AgentEvent,
   Approval,
   Policy,
@@ -51,6 +53,8 @@ export interface CanvasState {
   policies: Policy[];
   /** MRs do canvas, por ref (`<projectId>!<iid>`). */
   mergeRequests: Record<string, MergeRequest>;
+  /** Contexto de cada agente (itens, tokens, sugestões), conforme o bridge manda. */
+  contexts: Record<string, AgentContext>;
   /** Muda quando a discussão de um MR ou issue muda no GitLab (para recarregar). */
   threadVersion: Record<string, number>;
 
@@ -108,6 +112,10 @@ export interface CanvasState {
   stopAgent(agentId: string): void;
   decideApproval(approvalId: string, decision: 'allow' | 'deny', remember?: boolean): void;
   removePolicy(policyId: string): void;
+  contextAdd(agentId: string, kind: ContextKind, ref: string): void;
+  contextRemove(agentId: string, itemId: string): void;
+  contextSummarize(agentId: string, itemId: string): void;
+  contextUnsummarize(agentId: string, itemId: string): void;
   mergeMr(ref: string): void;
   refreshMr(ref: string): void;
   commentMr(ref: string, body: string): void;
@@ -182,6 +190,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   approvals: {},
   policies: [],
   mergeRequests: {},
+  contexts: {},
   threadVersion: {},
   openIssueRefs: [],
   issuesLoading: false,
@@ -295,6 +304,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set((s) => ({ policies: s.policies.filter((p) => p.id !== m.policyId) }));
       case 'mr.upsert':
         return set((s) => ({ mergeRequests: { ...s.mergeRequests, [m.mr.ref]: m.mr } }));
+      case 'context.updated':
+        return set((s) => ({ contexts: { ...s.contexts, [m.context.agentId]: m.context } }));
       case 'thread.changed':
         return set((s) => ({
           threadVersion: { ...s.threadVersion, [m.ref]: (s.threadVersion[m.ref] ?? 0) + 1 },
@@ -478,6 +489,27 @@ export const useStore = create<CanvasState>()((set, get) => ({
     set((s) => ({ policies: s.policies.filter((p) => p.id !== policyId) }));
     send({ type: 'policy.remove', policyId });
   },
+  contextAdd: (agentId, kind, ref) => send({ type: 'context.add', agentId, kind, ref }),
+  contextRemove(agentId, itemId) {
+    // some da lista na hora; o bridge manda a visão nova logo em seguida
+    set((s) => {
+      const c = s.contexts[agentId];
+      return c
+        ? { contexts: { ...s.contexts, [agentId]: { ...c, items: c.items.filter((i) => i.id !== itemId) } } }
+        : s;
+    });
+    send({ type: 'context.remove', agentId, itemId });
+  },
+  contextSummarize(agentId, itemId) {
+    set((s) => {
+      const c = s.contexts[agentId];
+      return c
+        ? { contexts: { ...s.contexts, [agentId]: { ...c, summarizing: [...c.summarizing, itemId] } } }
+        : s;
+    });
+    send({ type: 'context.summarize', agentId, itemId });
+  },
+  contextUnsummarize: (agentId, itemId) => send({ type: 'context.unsummarize', agentId, itemId }),
   mergeMr: (ref) => send({ type: 'mr.merge', mrRef: ref }),
   refreshMr: (ref) => send({ type: 'mr.refresh', mrRef: ref }),
   commentMr: (ref, body) => send({ type: 'mr.comment', mrRef: ref, body }),

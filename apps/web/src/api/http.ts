@@ -1,6 +1,8 @@
 import {
   SESSION_HEADER,
   SESSION_META,
+  type AgentContext,
+  type Automations,
   type GitLabProject,
   type GitLabSettingsInput,
   type Issue,
@@ -71,6 +73,11 @@ export const api = {
     call<DirListing>(`/api/fs/dirs?path=${encodeURIComponent(path ?? '')}${hidden ? '&hidden=1' : ''}`),
   pickNative: (title: string, start?: string) =>
     call<{ path: string | null }>('/api/fs/pick', { method: 'POST', body: JSON.stringify({ title, start }) }),
+  agentContext: (agentId: string) => call<AgentContext>(`/api/agents/${encodeURIComponent(agentId)}/context`),
+  agentFiles: (agentId: string, q: string) =>
+    call<string[]>(`/api/agents/${encodeURIComponent(agentId)}/files?q=${encodeURIComponent(q)}`),
+  setAutomations: (patch: Partial<Automations>) =>
+    call<SettingsView>('/api/settings/automations', { method: 'PUT', body: JSON.stringify(patch) }),
   rescanRepos: () => call<SettingsView>('/api/repos/rescan', { method: 'POST' }),
   setRepoPath: (projectId: number, path: string | null) =>
     call<SettingsView>(`/api/repos/${projectId}/path`, { method: 'PUT', body: JSON.stringify({ path }) }),

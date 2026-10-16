@@ -270,3 +270,19 @@ export const IconStop = ({ size = 14 }: P) => (
     <rect x="3.5" y="3.5" width="9" height="9" rx="2" />
   </svg>
 );
+export const IconDoc = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 1.75h5.25L12.5 5v9.25H4z" />
+    <path d="M9 1.75V5.25h3.5M6 8.25h4.25M6 10.75h4.25" />
+  </svg>
+);

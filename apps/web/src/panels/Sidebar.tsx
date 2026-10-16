@@ -83,7 +83,7 @@ export function Sidebar() {
             />
           </div>
         )}
-        {tab === 'issues' && <ProjectPicker />}
+        {tab === 'issues' && (settings?.projects.length ?? 0) > 1 && <ProjectPicker />}
         {tab === 'issues' && (
           <div className="chips" role="group" aria-label="Filtrar issues">
             {(
@@ -97,6 +97,7 @@ export function Sidebar() {
                 {label}
               </button>
             ))}
+            <RefreshIssues />
           </div>
         )}
       </div>
@@ -220,12 +221,28 @@ function IssuesTab() {
   );
 }
 
-/** Escolhe de qual projeto a aba Issues mostra as issues, e atualiza a lista na hora. */
+/** Busca as issues no GitLab na hora, sem esperar a atualização automática. */
+function RefreshIssues() {
+  const loading = useStore((s) => s.issuesLoading);
+  return (
+    <button
+      className="btn plain icon xs"
+      style={{ marginLeft: 'auto' }}
+      aria-label="Atualizar issues"
+      title="Buscar as issues no GitLab agora"
+      disabled={loading}
+      onClick={() => void refreshIssues()}
+    >
+      <span className={loading ? 'spin' : ''}>↻</span>
+    </button>
+  );
+}
+
+/** Escolhe de qual projeto a aba Issues mostra as issues. */
 function ProjectPicker() {
   const projects = useStore((s) => s.settings?.projects ?? []);
   const project = useStore((s) => s.issueProject);
   const setProject = useStore((s) => s.setIssueProject);
-  const loading = useStore((s) => s.issuesLoading);
   const refs = useStore((s) => s.openIssueRefs);
   const issues = useStore((s) => s.issues);
   const byProject = useMemo(() => {
@@ -255,15 +272,6 @@ function ProjectPicker() {
           ))}
         </select>
       )}
-      <button
-        className="btn plain icon"
-        aria-label="Atualizar issues"
-        title="Buscar as issues no GitLab agora"
-        disabled={loading}
-        onClick={() => void refreshIssues()}
-      >
-        <span className={loading ? 'spin' : ''}>↻</span>
-      </button>
     </div>
   );
 }

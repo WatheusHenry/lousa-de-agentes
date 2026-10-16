@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { api, ApiError } from '../api/http.ts';
 import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { Markdown } from '../components/Markdown.tsx';
@@ -451,6 +452,7 @@ const AUTOS = [
     desc: 'Um agente revisor comenta antes de você olhar.',
   },
   {
+    key: 'handoff',
     when: 'Agente concluiu',
     then: 'Escrever nota de passagem',
     desc: 'Decisões e arquivos viram contexto para os próximos agentes.',
@@ -463,27 +465,44 @@ const AUTOS = [
 ];
 
 function Automations() {
+  const automations = useStore((s) => s.settings?.automations);
+  const toggle = async (on: boolean) => {
+    try {
+      useStore.getState().setSettings(await api.setAutomations({ handoff: on }));
+    } catch (e) {
+      useStore.getState().showToast(e instanceof ApiError ? e.message : 'Falha ao salvar a automação.');
+    }
+  };
   return (
     <>
       <h3>Quando acontecer…</h3>
       <p className="desc" style={{ color: 'var(--muted)', margin: 0 }}>
-        Regras que reagem a eventos do GitLab e colocam agentes para trabalhar. Elas passam a funcionar junto
-        com os agentes, nas próximas fases.
+        Regras que reagem a eventos e colocam agentes para trabalhar. A nota de passagem já funciona; as
+        outras chegam na Fase 6.
       </p>
       <div className="rules">
-        {AUTOS.map((r) => (
-          <label className="rule" key={r.when} style={{ cursor: 'default' }}>
-            <span className="rule-tx">
-              <span className="rule-when">{r.when}</span>
-              <span className="rule-then">→ {r.then}</span>
-              <span className="lab">{r.desc}</span>
-            </span>
-            <span className="switch">
-              <input type="checkbox" disabled aria-label={r.when} />
-              <i />
-            </span>
-          </label>
-        ))}
+        {AUTOS.map((r) => {
+          const live = r.key === 'handoff';
+          return (
+            <label className="rule" key={r.when} style={live ? undefined : { cursor: 'default' }}>
+              <span className="rule-tx">
+                <span className="rule-when">{r.when}</span>
+                <span className="rule-then">→ {r.then}</span>
+                <span className="lab">{r.desc}</span>
+              </span>
+              <span className="switch">
+                <input
+                  type="checkbox"
+                  disabled={!live}
+                  checked={live ? !!automations?.handoff : false}
+                  onChange={(e) => live && void toggle(e.target.checked)}
+                  aria-label={r.when}
+                />
+                <i />
+              </span>
+            </label>
+          );
+        })}
       </div>
     </>
   );

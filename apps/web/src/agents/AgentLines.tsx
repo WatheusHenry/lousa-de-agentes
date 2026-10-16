@@ -48,6 +48,14 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
           </div>,
         );
         break;
+      case 'context':
+        out.push(
+          <div key={k} className="l dim">
+            ↻ contexto atualizado: {b.labels.join(' · ')}
+            {b.notified ? ' · pedi para reler o context.md' : ''}
+          </div>,
+        );
+        break;
       case 'tool_use':
         out.push(
           <div key={k} className="l tool">

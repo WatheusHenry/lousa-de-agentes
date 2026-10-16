@@ -1,6 +1,7 @@
 import type { Agent } from '@agent-canvas/shared';
 import { focusNode } from '../canvas/viewport.ts';
 import { askOpenMr } from '../actions.ts';
+import { ContextSection } from '../context/ContextSection.tsx';
 import { MrBadge } from '../mrs/mr-ui.tsx';
 import { agentNodeOf, issueNodeOf, mrNodeOf, mrOfAgent, useStore } from '../state/store.ts';
 import {
@@ -167,6 +168,8 @@ export function AgentPanel({
           <span>Turnos</span>
         </div>
       </div>
+
+      <ContextSection agent={a} />
 
       <div className="grp">
         <h4>Detalhes</h4>
