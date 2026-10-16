@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AgentEventBody } from '@agent-canvas/shared';
 import { parseLine, summarizeTool } from './stream-parser.ts';
 
 const fixture = (name: string) =>
@@ -75,6 +76,26 @@ describe('stream-parser com saídas reais', () => {
         '{"type":"assistant","message":{"content":[{"type":"bloco_novo"},{"type":"text","text":"oi"}]}}',
       ).events,
     ).toEqual([{ kind: 'text', text: 'oi' }]);
+  });
+
+  it('todas as linhas reais, inteiras, cortadas ou com campos trocados, viram eventos válidos ou nada', () => {
+    const lines = ['resume', 'interrupt', 'tools-permission'].flatMap(fixture);
+    expect(lines.length).toBeGreaterThan(20);
+    for (const l of lines) {
+      // inteira: nunca lança e todo evento passa no contrato compartilhado
+      for (const e of parseLine(l).events) expect(AgentEventBody.safeParse(e).success).toBe(true);
+      // cortada em vários pontos (processo morto no meio da escrita)
+      for (const cut of [1, 7, Math.floor(l.length / 3), Math.floor(l.length / 2), l.length - 1])
+        expect(() => parseLine(l.slice(0, cut))).not.toThrow();
+      // tipos trocados nos campos (versão nova do claude)
+      const obj = JSON.parse(l) as Record<string, unknown>;
+      for (const k of Object.keys(obj)) {
+        for (const v of [null, 42, 'x', [], {}]) {
+          const out = parseLine(JSON.stringify({ ...obj, [k]: v }));
+          for (const e of out.events) expect(AgentEventBody.safeParse(e).success).toBe(true);
+        }
+      }
+    }
   });
 
   it('ignora mensagens de sub-agentes internos', () => {

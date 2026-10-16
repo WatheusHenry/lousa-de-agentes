@@ -131,6 +131,8 @@ export class Supervisor {
   private waiters: { callerId: string; ids: string[]; done: (cancelled: string | null) => void }[] = [];
   private readonly limits: SupervisorLimits;
   private closed = false;
+  /** Agentes começando (worktree e contexto sendo preparados): já ocupam vaga no limite. */
+  private starting = new Set<string>();
   /** Agentes que trabalhavam quando o bridge parou (crash ou desligamento): `recover()` decide. */
   private interrupted: string[] = [];
 
@@ -446,6 +448,7 @@ export class Supervisor {
   private runningCount(): number {
     let n = 0;
     for (const id of this.live.keys()) if (this.get(id)?.status !== 'coordinating') n++;
+    for (const id of this.starting) if (!this.live.has(id)) n++;
     return n;
   }
 
@@ -520,6 +523,7 @@ export class Supervisor {
         this.setStatus(agentId, 'queued', `na fila: ${this.limits.maxRunning} agentes já estão rodando`);
         return;
       }
+      this.starting.add(agentId);
       const repos = a.repos.map((id) => this.repoRow(id));
       const r = repos[0]!;
 
@@ -612,10 +616,13 @@ export class Supervisor {
         afterExit: null,
         timer,
       });
+      this.starting.delete(agentId);
       this.save(agentId, { error: null });
       this.setStatus(agentId, 'running');
       proc.send(started ? text : `${text}\n\nLeia .agent-canvas/context.md antes de começar.`);
     } catch (err) {
+      this.starting.delete(agentId);
+      queueMicrotask(() => this.drainQueue());
       const message = err instanceof Error ? err.message : String(err);
       this.event(agentId, { kind: 'error', message });
       this.save(agentId, { error: message });
