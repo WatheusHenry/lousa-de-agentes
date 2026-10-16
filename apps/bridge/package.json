@@ -8,7 +8,8 @@
     "start": "tsx src/main.ts --serve-web",
     "typecheck": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
     "@agent-canvas/shared": "workspace:*",

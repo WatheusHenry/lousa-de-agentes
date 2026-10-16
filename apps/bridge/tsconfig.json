@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src", "drizzle.config.ts", "vitest.config.ts"]
+  "include": ["src", "drizzle.config.ts", "vitest.config.ts", "e2e", "vitest.e2e.config.ts"]
 }
