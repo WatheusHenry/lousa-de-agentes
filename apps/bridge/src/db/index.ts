@@ -9,13 +9,13 @@ export type Db = BetterSQLite3Database<typeof schema>;
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url));
 
 /** Abre (ou cria) o banco e aplica as migrações. Use ':memory:' nos testes. */
-export function openDb(file: string): { db: Db; close: () => void } {
+export function openDb(file: string): { db: Db; sqlite: Database.Database; close: () => void } {
   const sqlite = new Database(file);
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder });
-  return { db, close: () => sqlite.close() };
+  return { db, sqlite, close: () => sqlite.close() };
 }
 
 export { schema };

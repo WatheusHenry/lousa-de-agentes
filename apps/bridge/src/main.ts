@@ -27,7 +27,7 @@ const unpublish = session.publish(config.home, config.port);
 
 const url = config.webDist
   ? `http://127.0.0.1:${config.port}`
-  : `http://localhost:${process.env.AGENT_CANVAS_WEB_PORT || 5173}`;
+  : `http://127.0.0.1:${process.env.AGENT_CANVAS_WEB_PORT || 5173}`;
 console.log(`\n  Agent Canvas bridge em http://${config.host}:${config.port}`);
 console.log(`  Dados em ${config.home}`);
 console.log(`  Abra ${url}\n`);

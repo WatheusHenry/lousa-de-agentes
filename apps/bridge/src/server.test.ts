@@ -104,9 +104,7 @@ describe('configuração do GitLab', () => {
     expect(b.secrets.gitlabToken()?.token).toBe('glpat-secret-value');
     expect(readFileSync(join(b.home, 'secrets.json'), 'utf8')).toContain('glpat-secret-value');
     // o banco não tem o token em nenhuma tabela
-    const dump = (b.db.$client as import('better-sqlite3').Database)
-      .prepare('select group_concat(value) as v from setting')
-      .get() as { v: string };
+    const dump = b.sqlite.prepare('select group_concat(value) as v from setting').get() as { v: string };
     expect(dump.v).not.toContain('glpat-secret-value');
   });
 

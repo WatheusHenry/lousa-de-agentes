@@ -37,9 +37,18 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const clients = new Set<WebSocket>();
 
   const app = Fastify({
-    // nada de log de requisição: a URL do WebSocket leva o token de sessão
-    logger: deps.logger ? { level: 'info' } : false,
-    disableRequestLogging: true,
+    // a URL do WebSocket leva o token de sessão: o log grava só o caminho
+    logger: deps.logger
+      ? {
+          level: 'info',
+          serializers: {
+            req: (req: { method: string; url: string }) => ({
+              method: req.method,
+              url: req.url.split('?')[0],
+            }),
+          },
+        }
+      : false,
     bodyLimit: 1_000_000,
     forceCloseConnections: true,
   });

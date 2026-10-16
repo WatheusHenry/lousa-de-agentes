@@ -16,7 +16,7 @@ export async function makeBridge(
   makeClient: (url: string, token: string) => GitLabClient = () => new MockGitLabClient(),
 ) {
   const home = mkdtempSync(join(tmpdir(), 'agent-canvas-test-'));
-  const { db, close } = openDb(':memory:');
+  const { db, sqlite, close } = openDb(':memory:');
   const session = new Session();
   const secrets = new SecretStore(home, {});
   const settings = new SettingsService(db, secrets, makeClient);
@@ -30,6 +30,7 @@ export async function makeBridge(
   return {
     app,
     db,
+    sqlite,
     home,
     session,
     secrets,
