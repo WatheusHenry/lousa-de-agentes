@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClientMessage, Issue, MergeRequest, StateSnapshot } from '@agent-canvas/shared';
+import {
+  DEFAULT_AUTOMATIONS,
+  type ClientMessage,
+  type Issue,
+  type MergeRequest,
+  type StateSnapshot,
+} from '@agent-canvas/shared';
 import { hasPendingUndo, liveMrs, mrOfAgent, useStore } from './store.ts';
 import { actionsCount } from '../panels/Sidebar.tsx';
 
@@ -28,7 +34,7 @@ const empty: StateSnapshot = {
     user: null,
     projects: [],
     clones: [],
-    automations: { handoff: true },
+    automations: DEFAULT_AUTOMATIONS,
     configured: true,
   },
   nodes: [],

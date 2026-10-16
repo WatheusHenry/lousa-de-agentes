@@ -98,7 +98,10 @@ export class MrService {
    * Ferramenta open_merge_request: envia o branch do agente e abre o MR com "Closes #iid".
    * Se o agente já tem um MR aberto, só envia os commits novos e devolve o mesmo MR.
    */
-  async openForAgent(agentId: string, opts: { title: string; description?: string }): Promise<MergeRequest> {
+  async openForAgent(
+    agentId: string,
+    opts: { title: string; description?: string },
+  ): Promise<{ mr: MergeRequest; created: boolean }> {
     const a = this.db.select().from(agentT).where(eq(agentT.id, agentId)).get();
     if (!a?.worktreePath || !a.branch) throw new MrError('O agente ainda não tem worktree.');
     if (a.role === 'reviewer')
@@ -145,7 +148,7 @@ export class MrService {
     if (a.mrRef && !existing) throw new MrError('O MR desta tarefa não está mais aberto.');
     if (existing) {
       await this.refresh(mrRef(existing.projectId, existing.iid), true);
-      return this.get(mrRef(existing.projectId, existing.iid))!;
+      return { mr: this.get(mrRef(existing.projectId, existing.iid))!, created: false };
     }
 
     const issue = a.issueRef ? parseIssueRef(a.issueRef) : null;
@@ -186,7 +189,7 @@ export class MrService {
     this.placeNode(agentId, mr);
     this.hub.broadcast(this.store.logActivity(`${a.name} abriu o MR !${mr.iid} em ${r.name}`));
     this.onOpened(mr);
-    return mr;
+    return { mr, created: true };
   }
 
   /** Cria o nó do MR ao lado do agente, com a aresta agente → MR. */

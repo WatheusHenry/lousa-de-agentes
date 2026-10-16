@@ -29,8 +29,9 @@ export function timeline(events: AgentEvent[]): Mark[] {
         push(e, 'msg', `Mensagem: ${cut(b.text)}`);
         break;
       case 'permission':
+        // o pedido é o marco; só a recusa muda o rumo do agente
         if (b.status === 'pending') push(e, 'ask', `Pediu permissão: ${b.toolName}(${cut(b.summary, 50)})`);
-        else push(e, '', `${b.status === 'allowed' ? 'Permitido' : 'Negado'}: ${cut(b.summary, 60)}`);
+        else if (b.status === 'denied') push(e, 'bad', `Negado: ${cut(b.summary, 60)}`);
         break;
       case 'question':
         push(
@@ -78,7 +79,8 @@ export function timeline(events: AgentEvent[]): Mark[] {
 }
 
 const ago = (ts: string, now: number) => {
-  const s = Math.max(1, Math.round((now - Date.parse(ts)) / 1000));
+  const s = Math.round((now - Date.parse(ts)) / 1000);
+  if (s < 5) return 'agora';
   if (s < 60) return `há ${s}s`;
   if (s < 3600) return `há ${Math.floor(s / 60)} min`;
   if (s < 86_400) return `há ${Math.floor(s / 3600)} h`;
@@ -90,7 +92,7 @@ export function AgentTimeline({ agentId }: { agentId: string }) {
   const events = useStore((s) => s.agentEvents[agentId] ?? EMPTY);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
+    const t = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(t);
   }, []);
   const marks = timeline(events).slice(-8).reverse();

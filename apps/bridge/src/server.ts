@@ -372,8 +372,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     },
     gitlab: {
       async openMergeRequest(agentId, opts) {
-        const mr = await mrs.openForAgent(agentId, opts);
-        return `MR !${mr.iid} aberto: ${mr.webUrl} (${mr.sourceBranch} → ${mr.targetBranch}). O pipeline é acompanhado pelo canvas; o merge é do usuário.`;
+        const { mr, created } = await mrs.openForAgent(agentId, opts);
+        return created
+          ? `MR !${mr.iid} aberto: ${mr.webUrl} (${mr.sourceBranch} → ${mr.targetBranch}). O pipeline é acompanhado pelo canvas; o merge é do usuário.`
+          : `Commits enviados ao MR !${mr.iid} (${mr.webUrl}); o pipeline roda de novo e é acompanhado pelo canvas. O merge é do usuário.`;
       },
       async commentIssue(agentId, body) {
         const a = supervisor.get(agentId);

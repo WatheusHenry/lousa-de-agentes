@@ -238,7 +238,7 @@ export function AgentPanel({
 
       <ContextSection agent={a} />
 
-      <AgentTimeline agentId={a.id} />
+      <AgentTimeline key={a.id} agentId={a.id} />
 
       <div className="grp">
         <h4>Detalhes</h4>

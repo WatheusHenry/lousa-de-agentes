@@ -220,7 +220,7 @@ describe('automações', () => {
 
     await until(() => fixTool, 'fix enviar os commits');
     expect(fixTool).toMatchObject({ isError: false });
-    expect(fixTool!.text).toContain(`!${mr.iid}`);
+    expect(fixTool!.text).toContain(`Commits enviados ao MR !${mr.iid}`);
     expect(fixContext).toContain(`Log do pipeline do MR !${mr.iid} (dados)`);
     expect(fixContext).toContain('AssertionError');
     expect(fixContext).toContain(`Você corrige o MR !${mr.iid}`);

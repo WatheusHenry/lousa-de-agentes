@@ -15,7 +15,8 @@ Canvas para orquestrar agentes do Claude Code a partir de issues e repositórios
 | 3 · MRs e pipelines | Agente abre o MR, nó no canvas com pipeline ao vivo, diff, discussão, merge humano   | pronta    |
 | 4 · Contexto        | Itens de contexto, medidor de tokens, resumo, sugestões, releitura ao vivo, passagem | pronta    |
 | 5 · Orquestração    | Orquestrador para issues com vários repositórios, sub-agentes, plano, perguntas      | pronta    |
-| 6 em diante         | Automações, linha do tempo, robustez                                                 | ainda não |
+| 6 · Automações      | Poller, agentes de correção e revisão, comentários ao autor, label agent-ready       | pronta    |
+| 7 · Robustez        | Retomada depois de reiniciar, limpeza de worktrees, testes ponta a ponta             | ainda não |
 
 ## Requisitos
 
@@ -157,6 +158,24 @@ Para regravar as saídas reais usadas nos testes do parser (por exemplo, depois 
 
 ![Orquestrador com dois agentes e dois MRs](docs/screenshots/fase-5/final.png)
 
+## Automações (Fase 6)
+
+O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado e comentários novos) e a cada minuto (issues dos projetos escolhidos). Cada regra liga e desliga no painel **Automações**, na barra do topo:
+
+| Quando                          | O que acontece                                                                                                                                                                                           | Padrão    |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| Pipeline de MR de agente falhou | Um agente de **Correção** nasce ao lado do MR, no worktree e no branch do autor, com o log dos jobs que falharam no contexto. Corrige, faz commit e envia ao mesmo MR. Se falhar de novo, ele retoma.    | ligada    |
+| Comentário de revisão no MR     | O comentário (de uma pessoa ou do agente revisor) vai para a sessão do agente autor, marcado como dado do GitLab. O autor ajusta, envia e responde no MR. Comentários feitos pelo canvas chegam na hora. | ligada    |
+| MR aberto por agente            | Um agente **Revisor** num worktree próprio (branch `<branch do MR>-review`) lê o diff, roda os testes e comenta os achados no MR. Não abre MR nem faz merge.                                             | desligada |
+| Agente concluiu                 | Nota de passagem (Fase 4).                                                                                                                                                                               | ligada    |
+| Label `agent-ready` na issue    | A issue entra no canvas e um agente (ou orquestrador, se ela cita outros projetos) começa com **Abrir MR ao final**. Cada issue dispara uma vez só.                                                      | desligada |
+
+- A correção automática para depois de 3 tentativas no mesmo MR; aí o MR fica em **Pipelines com falha**, na aba Ações, com o botão **Criar agente para corrigir** (que também funciona com a regra desligada). Se o autor ainda está trabalhando, o aviso e o log vão para ele em vez de criar outro agente.
+- Agentes criados por automação pedem permissão como qualquer outro, e o merge continua sendo seu.
+- **Visibilidade**: o painel do agente ganhou a **Linha do tempo** (tarefa, pedidos de permissão, commits, envio do MR, fim do turno, erros) e o total de tokens e custo da árvore de agentes. Quando um agente espera você, o título da aba do navegador mostra `(N) Aguardando você`, além do aviso no topo.
+
+![Agente de correção deixando o pipeline verde](docs/screenshots/fase-6/agente-de-correcao.png)
+
 ## Scripts
 
 | Comando                                          | O que faz                                                                                 |
@@ -212,7 +231,6 @@ docs/         plano e protótipo
 | Diff do MR pelo GitLab                                              | Diff da API do GitLab; se ela vier vazia (MR recém-criado ou modo demonstração), diff local `git diff <alvo>...HEAD` do worktree do agente                                                 | O GitLab calcula o diff de forma assíncrona; logo depois de abrir o MR a lista pode vir vazia.                                                                                                                                                               |
 | Pipeline em etapas (Build, Testes, Lint)                            | O desenho das etapas é aproximado a partir do status geral do pipeline                                                                                                                     | Ler os jobs de cada pipeline é mais uma chamada por MR a cada 30 s; o status geral basta para o aceite. Dá para trocar pelos jobs reais depois.                                                                                                              |
 | Comentário identificado como do agente                              | Cabeçalho `🤖 **agente-N** · Agent Canvas` no começo do comentário                                                                                                                         | O comentário sai com o token do usuário; o cabeçalho deixa claro no GitLab quem escreveu e permite marcar como "agente" na leitura.                                                                                                                          |
-| "Criar agente para corrigir" o pipeline                             | **Pedir correção** manda a mensagem ao agente que abriu o MR                                                                                                                               | Agentes de correção com papel próprio chegam com a orquestração (Fase 5).                                                                                                                                                                                    |
 | `agent.create { …, context[] }`, `context.add/remove/summarize`     | `context.add`, `context.remove`, `context.summarize` e `context.unsummarize` por agente; os itens dos vínculos do canvas entram sem mensagem                                               | O contexto da issue, do repositório e das notas ligadas já vem dos vínculos que o canvas tem; só o que é escolhido à mão precisa de mensagem. "Completo" desfaz o resumo, como o plano pede.                                                                 |
 | `context_item` com `label` e `tokens` gravados                      | `context_item` guarda só o que não se deduz (item escolhido à mão, exclusão, resumo e o hash do conteúdo resumido); rótulo e tokens são calculados na hora                                 | O conteúdo muda (issue comentada, nota editada, arquivo alterado) e o número gravado ficaria velho.                                                                                                                                                          |
 | Nota de passagem pedida ao concluir                                 | O context.md pede ao agente que chame `write_note` antes da resposta final, no mesmo turno                                                                                                 | Pedir depois do turno custaria outro turno inteiro, com o contexto todo de novo.                                                                                                                                                                             |
@@ -224,15 +242,21 @@ docs/         plano e protótipo
 | Status `queued`                                                     | Novo status **Na fila**                                                                                                                                                                    | O plano pede fila para o limite de agentes simultâneos; o modelo de status não tinha onde guardar isso.                                                                                                                                                      |
 | Orçamento de tokens por árvore                                      | Ao passar do orçamento, a árvore não cria filhos nem começa turnos novos; o que está rodando termina o turno                                                                               | Cortar um turno no meio perde trabalho; o limite age na próxima decisão.                                                                                                                                                                                     |
 | Tabelas da seção 4                                                  | `agent.plan` (JSON) e a tabela `question` (perguntas do ask_human)                                                                                                                         | O plano é do agente; as perguntas precisam sobreviver a um recarregar da página.                                                                                                                                                                             |
+| Agente `fix` com o log do pipeline                                  | O fix trabalha no worktree e no branch do autor (um de cada vez) e envia pelo `open_merge_request`, que manda os commits ao MR existente                                                   | Os commits precisam cair no mesmo MR e o autor precisa continuar no mesmo branch depois; dois worktrees do mesmo branch não existem no git.                                                                                                                  |
+| Automações sem limite de tentativas                                 | No máximo 3 correções automáticas por MR (`fix_attempts`)                                                                                                                                  | Uma falha que o agente não sabe corrigir viraria um laço gastando tokens.                                                                                                                                                                                    |
+| Comentário de revisão → autor                                       | Vão ao autor os comentários de pessoas e do agente revisor do MR; os do próprio autor e do fix não                                                                                         | Evita o agente responder a si mesmo em laço.                                                                                                                                                                                                                 |
+| Label `agent-ready` "nova"                                          | Toda issue aberta com a label e sem agente dispara uma vez (a lista das que já dispararam fica nas configurações)                                                                          | O poller não sabe quando a label foi colocada; a regra começa desligada para não surpreender.                                                                                                                                                                |
+| Tabelas `automation` e `thread_comment`                             | Interruptores nas configurações; `merge_request_cache` guarda o último comentário visto e as tentativas de correção; `agent.mr_ref` liga fix e revisor ao MR                               | As discussões são lidas do GitLab na hora; só o "até onde já li" precisa ficar guardado.                                                                                                                                                                     |
+| Mensagens de MR do cliente                                          | Mais `mr.fix` (criar ou retomar o agente de correção)                                                                                                                                      | Botão **Criar agente para corrigir** da caixa de Ações e do painel do MR.                                                                                                                                                                                    |
 | TypeScript                                                          | Fixado em `~6.0`                                                                                                                                                                           | O TypeScript 7 (versão nativa) ainda não é suportado pelo `typescript-eslint`.                                                                                                                                                                               |
 
 ## Diferenças em relação ao protótipo
 
 O visual (tokens, cartões, janelas de agente, painéis, menu, aviso, foco) foi portado do protótipo. O que difere, por enquanto:
 
-- Revisão por agente e as automações além da nota de passagem chegam na Fase 6: o painel de Automações mostra essas regras desligadas e o foco do MR não tem a seção "Revisão".
+- O painel de Automações não tem os botões "Testar com um evento" do protótipo: os eventos vêm do GitLab de verdade. O foco do MR não tem a seção "Revisão"; a revisão do agente revisor aparece na discussão do MR.
 - O painel da issue não tem as opções de contexto do protótipo (descrição, comentários, CLAUDE.md, log do pipeline): o contexto se ajusta depois, no painel do agente.
-- O painel do agente não tem barra de progresso em etapas (o protótipo tinha um roteiro fixo); mostra o que o agente está fazendo agora, tokens, custo e turnos. A linha do tempo chega na Fase 6.
+- O painel do agente não tem barra de progresso em etapas (o protótipo tinha um roteiro fixo); mostra o que o agente está fazendo agora, tokens, custo e turnos.
 - O medidor de contexto ganhou uma fatia cinza para o cabeçalho do context.md (avisos, repositório, MR) e a linha com o uso real do último turno, que inclui o system prompt e a conversa.
 - Uma issue real pertence a um projeto só; o cartão mostra esse projeto em vez da lista de repositórios afetados que o protótipo inventava.
 - Os critérios de aceite vêm dos itens de checklist (`- [ ]`) da descrição. Sem checklist, a seção não aparece.
@@ -241,7 +265,7 @@ O visual (tokens, cartões, janelas de agente, painéis, menu, aviso, foco) foi 
 - O canvas usa o React Flow: pan, zoom e arrasto vêm dele, e o crédito "React Flow" fica visível no canto, como pede a licença para quem não assina o plano Pro.
 - O texto da nota cresce com o conteúdo (até 320 px) em vez de rolar.
 
-Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots/fase-2`](docs/screenshots/fase-2), [`docs/screenshots/fase-3`](docs/screenshots/fase-3), [`docs/screenshots/fase-4`](docs/screenshots/fase-4) e [`docs/screenshots/fase-5`](docs/screenshots/fase-5).
+Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots/fase-2`](docs/screenshots/fase-2), [`docs/screenshots/fase-3`](docs/screenshots/fase-3), [`docs/screenshots/fase-4`](docs/screenshots/fase-4), [`docs/screenshots/fase-5`](docs/screenshots/fase-5) e [`docs/screenshots/fase-6`](docs/screenshots/fase-6).
 
 ## Limitações conhecidas
 
@@ -249,7 +273,7 @@ Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots
 - A lista de issues traz até 300 issues abertas por projeto.
 - O Markdown segue o GFM (títulos, listas, checklists, tabelas, código). HTML dentro do texto aparece escapado, e imagens viram links: o conteúdo vem do GitLab e não é confiável. Referências do GitLab como `#123`, `!45` e `@usuario` ficam como texto.
 - Se o bridge cair no meio de um turno, os agentes que estavam trabalhando voltam como **Pausado**; **Retomar** continua a sessão. A recuperação automática é da Fase 7.
-- O polling de pipelines é de 30 segundos (webhooks não alcançam um app local).
+- O polling é de 30 segundos para MRs e 60 para issues (webhooks não alcançam um app local). Uma falha de pipeline ou um comentário pode levar esse tempo para virar trabalho de agente.
 - O merge usa as opções padrão do projeto no GitLab (sem squash forçado); o branch de origem é apagado no merge.
 - A estimativa de tokens é aproximada (caracteres ÷ 3,5); o número real só existe depois do turno.
 - Resumir usa a sua instalação do `claude` (e a sua cota) com um modelo pequeno.

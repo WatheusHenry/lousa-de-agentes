@@ -19,7 +19,8 @@ export class BridgeSocket {
   ) {}
 
   connect(): void {
-    this.stopped = false;
+    // fechado (ex.: o efeito do React desmontou antes do estado chegar): não abre de novo
+    if (this.stopped) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws?${SESSION_QUERY}=${this.token}`);
     this.ws = ws;
