@@ -233,4 +233,12 @@ describe('store do canvas', () => {
     expect(useStore.getState().questions).toEqual({});
     expect(sent.at(-1)).toEqual({ type: 'question.answer', questionId: 'q1', answer: 'Botão' });
   });
+
+  it('guarda os projetos escolhidos para a aba Issues (sem repetir; vazio = todos)', () => {
+    const st = useStore.getState();
+    st.setIssueProjects([101, 102, 101]);
+    expect(useStore.getState().issueProjects).toEqual([101, 102]);
+    st.setIssueProjects([]);
+    expect(useStore.getState().issueProjects).toEqual([]);
+  });
 });

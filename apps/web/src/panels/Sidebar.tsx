@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Issue, Question, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
@@ -142,10 +142,13 @@ function IssuesTab() {
   const loading = useStore((s) => s.issuesLoading);
   const error = useStore((s) => s.issuesError);
   const agents = useStore((s) => s.agents);
-  const project = useStore((s) => s.issueProject);
+  const chosen = useStore((s) => s.issueProjects);
   const projects = useStore((s) => s.settings?.projects);
-  // projeto escolhido que saiu das configurações: mostra todos
-  const projectId = projects?.some((p) => p.id === project) ? project : null;
+  // só os escolhidos que ainda estão nas configurações; nenhum = todos
+  const shown = useMemo(() => {
+    const ids = chosen.filter((id) => projects?.some((p) => p.id === id));
+    return ids.length ? new Set(ids) : null;
+  }, [chosen, projects]);
 
   // agentes ativos por issue (só os que estão no canvas)
   const activity = useMemo(() => {
@@ -168,7 +171,7 @@ function IssuesTab() {
     const list = refs
       .map((r) => issues[r])
       .filter((i): i is Issue => !!i)
-      .filter((i) => projectId === null || i.projectId === projectId)
+      .filter((i) => !shown || shown.has(i.projectId))
       .filter(
         (i) =>
           !query ||
@@ -177,7 +180,7 @@ function IssuesTab() {
       .filter((i) => (filter === 'bug' ? isBug(i) : filter === 'agents' ? activity.has(i.ref) : true));
     const onCanvas = (i: Issue) => onRefs.has(i.ref);
     return { on: list.filter(onCanvas), off: list.filter((i) => !onCanvas(i)), total: list.length };
-  }, [refs, issues, nodes, query, filter, activity, projectId]);
+  }, [refs, issues, nodes, query, filter, activity, shown]);
 
   if (!refs.length && loading) return <p className="tip">Carregando issues do GitLab…</p>;
 
@@ -239,13 +242,15 @@ function RefreshIssues() {
   );
 }
 
-/** Escolhe de qual projeto a aba Issues mostra as issues. */
+/** Escolhe de quais projetos a aba Issues mostra as issues (nenhum marcado = todos). */
 function ProjectPicker() {
-  const projects = useStore((s) => s.settings?.projects ?? []);
-  const project = useStore((s) => s.issueProject);
-  const setProject = useStore((s) => s.setIssueProject);
+  const projects = useStore((s) => s.settings?.projects ?? EMPTY_PROJECTS);
+  const chosen = useStore((s) => s.issueProjects);
+  const setChosen = useStore((s) => s.setIssueProjects);
   const refs = useStore((s) => s.openIssueRefs);
   const issues = useStore((s) => s.issues);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
   const byProject = useMemo(() => {
     const m: Record<number, number> = {};
     for (const r of refs) {
@@ -254,28 +259,82 @@ function ProjectPicker() {
     }
     return m;
   }, [refs, issues]);
-  const total = Object.values(byProject).reduce((a, b) => a + b, 0);
-  const value = projects.some((p) => p.id === project) ? String(project) : '';
+  const valid = chosen.filter((id) => projects.some((p) => p.id === id));
+  const all = valid.length === 0 || valid.length === projects.length;
+  const isOn = (id: number) => all || valid.includes(id);
+  const count = projects.reduce((n, p) => n + (isOn(p.id) ? (byProject[p.id] ?? 0) : 0), 0);
+
+  // fecha ao clicar fora ou com Esc
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  const toggle = (id: number) => {
+    const current = all ? projects.map((p) => p.id) : valid;
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    // desmarcar o último volta para todos; marcar todos é o mesmo que nenhum filtro
+    setChosen(next.length === projects.length ? [] : next);
+  };
+  const label = all
+    ? 'Todos os projetos'
+    : valid.length === 1
+      ? projects.find((p) => p.id === valid[0])!.name
+      : `${valid.length} de ${projects.length} projetos`;
+
   return (
-    <div className="proj-pick">
-      {projects.length > 1 && (
-        <select
-          className="field"
-          aria-label="Projeto das issues"
-          value={value}
-          onChange={(e) => setProject(e.target.value ? Number(e.target.value) : null)}
-        >
-          <option value="">Todos os projetos ({total})</option>
+    <div className="proj-pick" ref={box}>
+      <button
+        className="field proj-btn"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        title="Escolher de quais projetos ver as issues"
+      >
+        <span className="proj-lab">{label}</span>
+        <span className="proj-n">{count}</span>
+        <span aria-hidden="true" className="proj-caret">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="proj-menu" role="group" aria-label="Projetos das issues">
+          <div className="proj-head">
+            <span>Mostrar issues de</span>
+            <button className="link-btn" disabled={all} onClick={() => setChosen([])}>
+              Todos
+            </button>
+          </div>
           {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.pathWithNamespace} ({byProject[p.id] ?? 0})
-            </option>
+            <div className="proj-row" key={p.id}>
+              <label>
+                <input type="checkbox" checked={isOn(p.id)} onChange={() => toggle(p.id)} />
+                <span className="proj-name" title={p.pathWithNamespace}>
+                  {p.pathWithNamespace}
+                </span>
+                <span className="proj-n">{byProject[p.id] ?? 0}</span>
+              </label>
+              <button className="link-btn proj-only" onClick={() => setChosen([p.id])} title={`Só ${p.name}`}>
+                Só este
+              </button>
+            </div>
           ))}
-        </select>
+        </div>
       )}
     </div>
   );
 }
+
+const EMPTY_PROJECTS: never[] = [];
 
 function IssueRow({
   issue: i,

@@ -87,7 +87,7 @@ Em vez de salvar o token pela tela, você pode criar um `.env` na raiz do reposi
 
 ## Usando o canvas (Fase 1)
 
-- **Issues**: a aba Issues lista as issues abertas dos projetos escolhidos (até 300 por projeto, atualizadas a cada minuto; **↻** busca na hora). Com mais de um projeto, o seletor no topo da aba mostra só as de um projeto, com a contagem de cada um, e lembra a escolha. Arraste uma issue para o canvas ou use o **+** da linha. Se ela já estiver no canvas, o botão vira **mostrar**.
+- **Issues**: a aba Issues lista as issues abertas dos projetos escolhidos (até 300 por projeto, atualizadas a cada minuto; **↻** busca na hora). Com mais de um projeto, o seletor no topo da aba escolhe de quais projetos ver as issues: marque os que quiser (com a contagem de cada um), use **Só este** para um projeto ou **Todos** para voltar a ver tudo. A escolha fica salva no navegador. Arraste uma issue para o canvas ou use o **+** da linha. Se ela já estiver no canvas, o botão vira **mostrar**.
 - **Markdown**: descrições de issues e MRs, comentários, notas no painel e respostas dos agentes aparecem formatados.
 - **Notas**: botão **Nota** na toolbar, **duplo clique** no fundo ou **botão direito → Nova nota aqui**. Escreva direto no cartão; salva sozinho.
 - **Vincular**: arraste o **+** amarelo da nota até uma issue, ou use **Vincular a…** no painel da nota.

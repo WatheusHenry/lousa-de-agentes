@@ -73,7 +73,8 @@ export interface CanvasState {
   filter: Filter;
   query: string;
   /** Projeto escolhido na aba Issues (null = todos). */
-  issueProject: number | null;
+  /** Projetos cujas issues a aba Issues mostra; vazio = todos. */
+  issueProjects: number[];
   sideHidden: boolean;
   sideOpen: boolean;
   focusId: string | null;
@@ -134,7 +135,7 @@ export interface CanvasState {
   setTab(t: Tab): void;
   setFilter(f: Filter): void;
   setQuery(q: string): void;
-  setIssueProject(id: number | null): void;
+  setIssueProjects(ids: number[]): void;
   setSideHidden(v: boolean): void;
   setSideOpen(v: boolean): void;
   openFocus(id: string | null): void;
@@ -167,12 +168,18 @@ function send(m: ClientMessage) {
   sender?.send(m);
 }
 
-const readIssueProject = (): number | null => {
+const readIssueProjects = (): number[] => {
   try {
-    const v = Number(localStorage.getItem('ac-issue-project'));
-    return Number.isInteger(v) && v > 0 ? v : null;
+    const raw = localStorage.getItem('ac-issue-projects');
+    if (raw) {
+      const v: unknown = JSON.parse(raw);
+      return Array.isArray(v) ? v.filter((x): x is number => Number.isInteger(x) && x > 0) : [];
+    }
+    // escolha de um projeto só, das versões anteriores
+    const old = Number(localStorage.getItem('ac-issue-project'));
+    return Number.isInteger(old) && old > 0 ? [old] : [];
   } catch {
-    return null;
+    return [];
   }
 };
 
@@ -209,7 +216,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   tab: 'issues',
   filter: 'all',
   query: '',
-  issueProject: readIssueProject(),
+  issueProjects: readIssueProjects(),
   sideHidden: readSideHidden(),
   sideOpen: false,
   focusId: null,
@@ -542,14 +549,16 @@ export const useStore = create<CanvasState>()((set, get) => ({
   setTab: (t) => set({ tab: t }),
   setFilter: (f) => set({ filter: f }),
   setQuery: (q) => set({ query: q }),
-  setIssueProject(id) {
+  setIssueProjects(ids) {
+    const unique = [...new Set(ids)];
     try {
-      if (id === null) localStorage.removeItem('ac-issue-project');
-      else localStorage.setItem('ac-issue-project', String(id));
+      localStorage.removeItem('ac-issue-project');
+      if (!unique.length) localStorage.removeItem('ac-issue-projects');
+      else localStorage.setItem('ac-issue-projects', JSON.stringify(unique));
     } catch {
       /* armazenamento indisponível: só não lembra */
     }
-    set({ issueProject: id });
+    set({ issueProjects: unique });
   },
   setSideHidden(v) {
     try {
