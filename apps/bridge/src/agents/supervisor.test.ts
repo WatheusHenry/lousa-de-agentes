@@ -266,7 +266,7 @@ describe('supervisor', () => {
     expect(runner.starts[1]).toMatchObject({
       resume: true,
       sessionId: opts.sessionId,
-      allowedTools: ['Bash(npm test:*)'],
+      allowedTools: expect.arrayContaining(['Bash(npm test:*)', 'mcp__canvas__open_merge_request']),
     });
     await until(() => agentState('a1')?.status === 'done' && runner.sent.length === 2, 'segundo turno');
   });

@@ -145,3 +145,27 @@ export const policy = sqliteTable('policy', {
   scope: text('scope').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
+/** MRs que o canvas conhece (abertos por agentes), com o último estado lido do GitLab. */
+export const mergeRequestCache = sqliteTable(
+  'merge_request_cache',
+  {
+    projectId: integer('project_id').notNull(),
+    iid: integer('iid').notNull(),
+    projectPath: text('project_path').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    sourceBranch: text('source_branch').notNull(),
+    targetBranch: text('target_branch').notNull(),
+    state: text('state', { enum: ['opened', 'merged', 'closed', 'locked'] }).notNull(),
+    pipelineStatus: text('pipeline_status').notNull(),
+    webUrl: text('web_url').notNull(),
+    additions: integer('additions').notNull().default(0),
+    deletions: integer('deletions').notNull().default(0),
+    agentId: text('agent_id'),
+    issueRef: text('issue_ref'),
+    updatedAt: text('updated_at').notNull(),
+    fetchedAt: text('fetched_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.iid] })],
+);

@@ -49,6 +49,46 @@ function fakeGitLab(): Promise<{ server: Server; url: string; seen: IncomingMess
         { id: 1, body: 'mudou o título', system: true, author: { username: 'ana' }, created_at: 'a' },
         { id: 2, body: 'Usem o event_id', system: false, author: { username: 'joao' }, created_at: 'b' },
       ]);
+    const mr = {
+      iid: 5,
+      title: 'Corrige webhook',
+      description: 'Closes #142',
+      source_branch: 'agent/142-x',
+      target_branch: 'main',
+      state: 'opened',
+      head_pipeline: { status: 'running' },
+      web_url: 'w/mr/5',
+      updated_at: 'u',
+    };
+    if (url.pathname === '/api/v4/projects/3/merge_requests' && req.method === 'POST') return json(201, mr);
+    if (url.pathname === '/api/v4/projects/3/merge_requests/5' && req.method === 'GET') return json(200, mr);
+    if (url.pathname === '/api/v4/projects/3/merge_requests/5/merge' && req.method === 'PUT')
+      return json(200, { ...mr, state: 'merged', head_pipeline: { status: 'success' } });
+    if (url.pathname === '/api/v4/projects/3/merge_requests/9/merge')
+      return json(405, { message: '405 Method Not Allowed' });
+    if (url.pathname === '/api/v4/projects/3/merge_requests/5/diffs')
+      return json(200, [
+        {
+          old_path: 'a.ts',
+          new_path: 'a.ts',
+          diff: '@@ -1 +1 @@\n-x\n+y\n',
+          new_file: false,
+          deleted_file: false,
+          renamed_file: false,
+        },
+      ]);
+    if (url.pathname === '/api/v4/projects/3/merge_requests/5/notes' && req.method === 'GET')
+      return json(200, [
+        {
+          id: 1,
+          body: '🤖 **agente-1** · Agent Canvas\n\nRiscos: nenhum.',
+          system: false,
+          author: { username: 'matheus' },
+          created_at: 'c',
+        },
+        { id: 2, body: 'ok', system: false, author: { username: 'ana' }, created_at: 'd' },
+      ]);
+    if (url.pathname.endsWith('/notes') && req.method === 'POST') return json(201, { id: 3 });
     json(404, { message: '404 Not Found' });
   });
   return new Promise((resolve) =>
@@ -95,6 +135,32 @@ describe('GitbeakerClient', () => {
     expect(comments).toEqual([
       { id: 2, author: 'joao', body: 'Usem o event_id', createdAt: 'b', isAgent: false },
     ]);
+  });
+
+  it('merge requests: criar, ler pipeline, diffs, notas de agente, comentar e mergear', async () => {
+    const c = new GitbeakerClient(gl.url, TOKEN);
+    const created = await c.createMergeRequest(3, {
+      sourceBranch: 'agent/142-x',
+      targetBranch: 'main',
+      title: 'Corrige webhook',
+      description: 'Closes #142',
+    });
+    expect(created).toMatchObject({
+      iid: 5,
+      pipelineStatus: 'running',
+      state: 'opened',
+      sourceBranch: 'agent/142-x',
+    });
+    expect((await c.getMergeRequest(3, 5)).webUrl).toBe('w/mr/5');
+    const [d] = await c.listMergeRequestDiffs(3, 5);
+    expect(d).toMatchObject({ newPath: 'a.ts', diff: expect.stringContaining('+y') });
+    const notes = await c.listMergeRequestComments(3, 5);
+    expect(notes[0]).toMatchObject({ author: 'agente-1', body: 'Riscos: nenhum.', isAgent: true });
+    expect(notes[1]).toMatchObject({ author: 'ana', isAgent: false });
+    await c.commentOnMergeRequest(3, 5, 'oi');
+    await c.commentOnIssue(3, 142, 'oi');
+    expect(await c.mergeMergeRequest(3, 5)).toMatchObject({ state: 'merged', pipelineStatus: 'success' });
+    await expect(c.mergeMergeRequest(3, 9)).rejects.toThrow(/recusou/);
   });
 
   it('servidor fora do ar vira mensagem de rede', async () => {

@@ -1,11 +1,13 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Issue, IssueComment, Note } from '@agent-canvas/shared';
+import type { Issue, IssueComment, MergeRequest, Note } from '@agent-canvas/shared';
 
 export interface ContextInput {
   repo: { pathWithNamespace: string; defaultBranch: string | null; branch: string };
   issue?: { issue: Issue; comments: IssueComment[] } | null;
   notes: Note[];
+  /** Abrir o MR sozinho ao terminar (opção do agente) e o MR que ele já abriu. */
+  mr?: { openOnFinish: boolean; current: MergeRequest | null };
 }
 
 /**
@@ -25,6 +27,20 @@ export function buildContext(c: ContextInput): string {
     `- Branch de trabalho: ${c.repo.branch}`,
     `- Branch padrão: ${c.repo.defaultBranch ?? 'desconhecido'}`,
   ];
+  if (c.mr) {
+    const m = c.mr.current;
+    parts.push(
+      '',
+      '## Merge request',
+      '',
+      m
+        ? `- Você já abriu o MR !${m.iid} (${m.state}, pipeline: ${m.pipelineStatus}): ${m.webUrl}. Novos commits vão para ele chamando \`open_merge_request\` de novo.`
+        : c.mr.openOnFinish
+          ? '- Ao terminar, com tudo commitado e os testes passando, abra o MR com a ferramenta `open_merge_request`.'
+          : '- Não abra MR por conta própria: o usuário pede quando quiser.',
+      '- O merge é sempre feito pelo usuário.',
+    );
+  }
   if (c.issue) {
     const { issue: i, comments } = c.issue;
     parts.push(
