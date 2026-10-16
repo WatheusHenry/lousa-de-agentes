@@ -113,6 +113,10 @@ function TopBar({ workspace }: { workspace: string }) {
   );
   const waiting = useStore((s) => liveAgents(s).filter((a) => a.status === 'waiting').length);
   const mrCount = useStore((s) => liveMrs(s).filter((m) => m.state === 'opened').length);
+  // aviso na aba do navegador quando um agente espera você (com o canvas em segundo plano)
+  useEffect(() => {
+    document.title = waiting ? `(${waiting}) Aguardando você · Agent Canvas` : 'Agent Canvas';
+  }, [waiting]);
   return (
     <header className="top">
       <button

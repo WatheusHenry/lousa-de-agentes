@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Issue, Question, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
-import { addIssue, askFixPipeline, newAgentAt } from '../actions.ts';
+import { addIssue, fixPipeline, newAgentAt } from '../actions.ts';
 import { refreshIssues } from '../state/issues.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
@@ -18,12 +18,12 @@ import {
 } from '../icons.tsx';
 import { clock, isBug, isP1, repoName } from '../lib/format.ts';
 import { DiffStat, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
-import { liveMrs, mrNodeOf, useStore, type CanvasState, type Tab } from '../state/store.ts';
+import { activeFixer, liveMrs, mrNodeOf, useStore, type CanvasState, type Tab } from '../state/store.ts';
 
 /** Itens da aba Ações: permissões, MRs prontos ou com pipeline falho e agentes esperando instrução. */
 export function actionsCount(s: CanvasState): number {
   let n = Object.keys(s.approvals).length + Object.keys(s.questions).length;
-  for (const m of liveMrs(s)) if (mrReady(m) || mrFailed(m)) n++;
+  for (const m of liveMrs(s)) if (mrReady(m) || (mrFailed(m) && !activeFixer(s, m.ref))) n++;
   for (const node of Object.values(s.nodes)) {
     const a = node.type === 'agent' ? s.agents[node.refId] : undefined;
     if (a && (a.status === 'idle' || a.status === 'done' || a.status === 'error')) n++;
@@ -348,7 +348,8 @@ function ActionsTab() {
     [nodes, mergeRequests],
   );
   const ready = mrs.filter(mrReady);
-  const failed = mrs.filter(mrFailed);
+  // com um agente fix trabalhando, a falha não espera você
+  const failed = mrs.filter((m) => mrFailed(m) && !activeFixer({ agents }, m.ref));
   const focusMr = (ref: string) => {
     const n = mrNodeOf(useStore.getState(), ref);
     if (n) st.openFocus(n.id);
@@ -541,8 +542,8 @@ function ActionsTab() {
               <p className="act-t">{m.title}</p>
               <div className="act-btns">
                 {m.agentId && agents[m.agentId] && (
-                  <button className="btn sm primary" onClick={() => askFixPipeline(m.ref)}>
-                    Pedir correção a {agents[m.agentId]!.name}
+                  <button className="btn sm primary" onClick={() => fixPipeline(m.ref)}>
+                    Criar agente para corrigir
                   </button>
                 )}
                 <button className="btn sm" onClick={() => focusMr(m.ref)}>

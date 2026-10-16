@@ -2,6 +2,7 @@ import type { Agent } from '@agent-canvas/shared';
 import { focusNode } from '../canvas/viewport.ts';
 import { askOpenMr } from '../actions.ts';
 import { ContextSection } from '../context/ContextSection.tsx';
+import { AgentTimeline } from './Timeline.tsx';
 import { MrBadge } from '../mrs/mr-ui.tsx';
 import { agentNodeOf, issueNodeOf, mrNodeOf, mrOfAgent, useStore } from '../state/store.ts';
 import {
@@ -53,6 +54,12 @@ function PlanAndTeam({ agent: a }: { agent: Agent }) {
   while (root.parentId && agents[root.parentId]) root = agents[root.parentId]!;
   const hasTeam = root.id !== a.id || Object.values(agents).some((x) => x.parentId === a.id);
   const left = a.maxDepth - a.depth;
+  // tokens e custo da árvore inteira (o orçamento do supervisor vale para ela)
+  const tree = [root];
+  for (let i = 0; i < tree.length; i++)
+    tree.push(...Object.values(agents).filter((x) => x.parentId === tree[i]!.id));
+  const treeTokens = tree.reduce((s, x) => s + x.inputTokens + x.outputTokens, 0);
+  const treeCost = tree.reduce((s, x) => s + x.costUsd, 0);
   return (
     <>
       {a.plan && a.plan.length > 0 && (
@@ -77,6 +84,11 @@ function PlanAndTeam({ agent: a }: { agent: Agent }) {
               <AgentTreeItem agent={root} />
             </ul>
           ) : null}
+          {hasTeam && (
+            <p className="lab" style={{ margin: 0 }}>
+              Árvore de {tree.length} agentes: {fmtK(treeTokens)} tokens · {fmtUsd(treeCost)}
+            </p>
+          )}
           <p className="lab" style={{ margin: 0 }}>
             {left > 0
               ? `${a.name} pode criar sub-agentes até ${left} nível${left > 1 ? 's' : ''} abaixo dele.`
@@ -225,6 +237,8 @@ export function AgentPanel({
       <PlanAndTeam agent={a} />
 
       <ContextSection agent={a} />
+
+      <AgentTimeline agentId={a.id} />
 
       <div className="grp">
         <h4>Detalhes</h4>

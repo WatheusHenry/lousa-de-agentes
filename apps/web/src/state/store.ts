@@ -124,6 +124,8 @@ export interface CanvasState {
   contextUnsummarize(agentId: string, itemId: string): void;
   mergeMr(ref: string): void;
   refreshMr(ref: string): void;
+  /** Cria (ou retoma) o agente que corrige o pipeline do MR. */
+  fixMr(ref: string): void;
   commentMr(ref: string, body: string): void;
   commentIssue(ref: string, body: string): void;
 
@@ -531,6 +533,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   contextUnsummarize: (agentId, itemId) => send({ type: 'context.unsummarize', agentId, itemId }),
   mergeMr: (ref) => send({ type: 'mr.merge', mrRef: ref }),
   refreshMr: (ref) => send({ type: 'mr.refresh', mrRef: ref }),
+  fixMr: (ref) => send({ type: 'mr.fix', mrRef: ref }),
   commentMr: (ref, body) => send({ type: 'mr.comment', mrRef: ref, body }),
   commentIssue: (ref, body) => send({ type: 'issue.comment', issueRef: ref, body }),
 
@@ -603,7 +606,20 @@ export const liveMrs = (s: CanvasState) =>
     .filter((m): m is MergeRequest => !!m);
 
 /** MR mais recente aberto pelo agente. */
-export const mrOfAgent = (s: CanvasState, agentId: string) =>
-  Object.values(s.mergeRequests)
+/** MR do agente: o que ele abriu ou, para fix e revisor, o MR em que trabalha. */
+export const mrOfAgent = (s: CanvasState, agentId: string) => {
+  const own = s.agents[agentId]?.mrRef;
+  if (own) return s.mergeRequests[own];
+  return Object.values(s.mergeRequests)
     .filter((m) => m.agentId === agentId)
     .sort((a, b) => b.iid - a.iid)[0];
+};
+
+/** Agente fix trabalhando (ou na fila) no pipeline do MR, se houver. */
+export const activeFixer = (s: Pick<CanvasState, 'agents'>, mrRef: string) =>
+  Object.values(s.agents).find(
+    (a) =>
+      a.role === 'fix' &&
+      a.mrRef === mrRef &&
+      ['running', 'waiting', 'coordinating', 'queued'].includes(a.status),
+  );

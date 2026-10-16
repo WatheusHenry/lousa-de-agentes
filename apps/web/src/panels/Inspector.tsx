@@ -1,14 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { detectRepos, type Issue } from '@agent-canvas/shared';
+import { detectRepos, type Automations as AutomationsT, type Issue } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { Markdown } from '../components/Markdown.tsx';
 import { IconAgent, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel } from '../lib/format.ts';
-import { askFixPipeline } from '../actions.ts';
+import { fixPipeline } from '../actions.ts';
 import { DiffStat, MrBadge, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
-import { agentNodeOf, liveAgents, useStore } from '../state/store.ts';
+import { activeFixer, agentNodeOf, liveAgents, useStore } from '../state/store.ts';
 import { focusNode } from '../canvas/viewport.ts';
 
 /** Painel flutuante da direita: detalhes do item selecionado, ajuda ou automações. */
@@ -309,11 +309,7 @@ function MrPanel(nodeId: string): [ReactNode, ReactNode] {
           Aprovar e mergear
         </button>
       )}
-      {mrFailed(m) && agent && (
-        <button className="btn" style={{ justifyContent: 'center' }} onClick={() => askFixPipeline(m.ref)}>
-          Pedir correção a {agent.name}
-        </button>
-      )}
+      {mrFailed(m) && agent && <FixButton mrRef={m.ref} />}
       <p className="lab" style={{ margin: 0 }}>
         O status do pipeline atualiza sozinho a cada 30 segundos. Agentes nunca fazem merge.
       </p>
@@ -494,18 +490,21 @@ function Help() {
   );
 }
 
-const AUTOS = [
+const AUTOS: { key: keyof AutomationsT; when: string; then: string; desc: string }[] = [
   {
+    key: 'fixPipeline',
     when: 'Pipeline falhou',
     then: 'Criar agente para corrigir',
-    desc: 'Lê o log do job e corrige no mesmo branch.',
+    desc: 'Lê o log do job e corrige no mesmo branch. Até 3 tentativas por MR.',
   },
   {
+    key: 'reviewComments',
     when: 'Comentário de revisão no MR',
     then: 'Enviar ao agente autor',
     desc: 'O agente que abriu o MR ajusta e responde.',
   },
   {
+    key: 'reviewer',
     when: 'MR aberto por agente',
     then: 'Pedir revisão automática',
     desc: 'Um agente revisor comenta antes de você olhar.',
@@ -517,6 +516,7 @@ const AUTOS = [
     desc: 'Decisões e arquivos viram contexto para os próximos agentes.',
   },
   {
+    key: 'agentReady',
     when: 'Label agent-ready na issue',
     then: 'Iniciar agentes',
     desc: 'A issue entra no canvas e os agentes começam sozinhos.',
@@ -525,9 +525,9 @@ const AUTOS = [
 
 function Automations() {
   const automations = useStore((s) => s.settings?.automations);
-  const toggle = async (on: boolean) => {
+  const toggle = async (key: keyof AutomationsT, on: boolean) => {
     try {
-      useStore.getState().setSettings(await api.setAutomations({ handoff: on }));
+      useStore.getState().setSettings(await api.setAutomations({ [key]: on }));
     } catch (e) {
       useStore.getState().showToast(e instanceof ApiError ? e.message : 'Falha ao salvar a automação.');
     }
@@ -536,33 +536,47 @@ function Automations() {
     <>
       <h3>Quando acontecer…</h3>
       <p className="desc" style={{ color: 'var(--muted)', margin: 0 }}>
-        Regras que reagem a eventos e colocam agentes para trabalhar. A nota de passagem já funciona; as
-        outras chegam na Fase 6.
+        Regras que reagem a eventos do GitLab e colocam agentes para trabalhar. O GitLab é consultado a cada
+        30 segundos (MRs) e a cada minuto (issues).
       </p>
       <div className="rules">
-        {AUTOS.map((r) => {
-          const live = r.key === 'handoff';
-          return (
-            <label className="rule" key={r.when} style={live ? undefined : { cursor: 'default' }}>
-              <span className="rule-tx">
-                <span className="rule-when">{r.when}</span>
-                <span className="rule-then">→ {r.then}</span>
-                <span className="lab">{r.desc}</span>
-              </span>
-              <span className="switch">
-                <input
-                  type="checkbox"
-                  disabled={!live}
-                  checked={live ? !!automations?.handoff : false}
-                  onChange={(e) => live && void toggle(e.target.checked)}
-                  aria-label={r.when}
-                />
-                <i />
-              </span>
-            </label>
-          );
-        })}
+        {AUTOS.map((r) => (
+          <label className="rule" key={r.key}>
+            <span className="rule-tx">
+              <span className="rule-when">{r.when}</span>
+              <span className="rule-then">→ {r.then}</span>
+              <span className="lab">{r.desc}</span>
+            </span>
+            <span className="switch">
+              <input
+                type="checkbox"
+                checked={!!automations?.[r.key]}
+                onChange={(e) => void toggle(r.key, e.target.checked)}
+                aria-label={r.when}
+              />
+              <i />
+            </span>
+          </label>
+        ))}
       </div>
+      <p className="lab" style={{ margin: 0 }}>
+        Agentes criados por automação pedem permissão como os outros, e o merge continua sendo seu.
+      </p>
     </>
+  );
+}
+
+/** Pipeline com falha: cria o agente fix, ou mostra o que já está corrigindo. */
+function FixButton({ mrRef }: { mrRef: string }) {
+  const fixer = useStore((s) => activeFixer(s, mrRef));
+  const node = useStore((s) => (fixer ? agentNodeOf(s, fixer.id) : undefined));
+  return fixer ? (
+    <button className="btn" style={{ justifyContent: 'center' }} onClick={() => node && focusNode(node.id)}>
+      {fixer.name} está corrigindo o pipeline
+    </button>
+  ) : (
+    <button className="btn" style={{ justifyContent: 'center' }} onClick={() => fixPipeline(mrRef)}>
+      Criar agente para corrigir
+    </button>
   );
 }

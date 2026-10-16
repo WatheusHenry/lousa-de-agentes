@@ -120,15 +120,7 @@ export function askOpenMr(agentId: string) {
     );
 }
 
-/** Pipeline falhou: pede ao agente que abriu o MR que corrija e envie de novo. */
-export function askFixPipeline(mrRef: string) {
-  const st = useStore.getState();
-  const mr = st.mergeRequests[mrRef];
-  if (!mr?.agentId) return;
-  st.messageAgent(
-    mr.agentId,
-    `O pipeline do MR !${mr.iid} falhou no GitLab. Rode localmente os testes, o lint e o build do projeto, corrija o que falhar, faça commit e chame open_merge_request de novo para enviar os commits ao mesmo MR.`,
-  );
-  const n = agentNodeOf(st, mr.agentId);
-  if (n) st.openFocus(n.id);
+/** Pipeline com falha: o bridge cria (ou retoma) o agente fix do MR. */
+export function fixPipeline(mrRef: string) {
+  useStore.getState().fixMr(mrRef);
 }
