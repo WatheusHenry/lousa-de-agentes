@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import {
   ClientMessage,
   ProjectSelectionInput,
+  RepoPathInput,
   SESSION_HEADER,
   SESSION_META,
   SESSION_QUERY,
@@ -19,6 +20,7 @@ import { ApprovalService } from './approvals/approval-service.ts';
 import { CanvasError, CanvasStore } from './canvas/canvas-store.ts';
 import type { BridgeConfig } from './config.ts';
 import type { Db } from './db/index.ts';
+import { BrowseError, listDirs, nativePicker, pickNative } from './fs-browse.ts';
 import { GitLabError } from './gitlab/client.ts';
 import { Hub } from './hub.ts';
 import { registerMcp } from './mcp/canvas-server.ts';
@@ -121,6 +123,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof SettingsError) return reply.code(err.statusCode).send({ error: err.message });
+    if (err instanceof BrowseError) return reply.code(400).send({ error: err.message });
     if (err instanceof GitLabError) return reply.code(502).send({ error: err.message });
     if (err instanceof CanvasError || err instanceof AgentError || err instanceof MrError)
       return reply.code(409).send({ error: err.message });
@@ -177,6 +180,45 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   app.get('/api/repos', async () => settings.repos());
+
+  const settingsChanged = (view: ReturnType<SettingsService['view']>) => {
+    broadcast([{ type: 'settings.updated', settings: view }]);
+    return view;
+  };
+  const projectParam = (req: FastifyRequest) => Number((req.params as { projectId: string }).projectId);
+
+  // ---------- seletor de pastas (o navegador não revela caminhos reais) ----------
+
+  app.get('/api/fs/dirs', async (req) => {
+    const q = req.query as { path?: string; hidden?: string };
+    return { ...listDirs(q.path, q.hidden === '1'), native: nativePicker() !== null };
+  });
+
+  app.post('/api/fs/pick', async (req) => {
+    const b = (req.body ?? {}) as { title?: unknown; start?: unknown };
+    const title = typeof b.title === 'string' ? b.title.slice(0, 120) : 'Escolher pasta';
+    const start = typeof b.start === 'string' ? b.start.slice(0, 1024) : undefined;
+    return { path: await pickNative(title, start) };
+  });
+
+  /** Procura de novo os clones (depois de clonar ou mover uma pasta). */
+  app.post('/api/repos/rescan', async () => {
+    settings.locateClones();
+    return settingsChanged(settings.view());
+  });
+
+  app.put('/api/repos/:projectId/path', async (req) => {
+    const parsed = RepoPathInput.safeParse(req.body);
+    if (!parsed.success) throw new SettingsError('Caminho inválido.');
+    return settingsChanged(settings.setClonePath(projectParam(req), parsed.data.path || null));
+  });
+
+  app.post('/api/repos/:projectId/clone', async (req) => {
+    const view = await settings.cloneProject(projectParam(req));
+    const r = settings.repos().find((x) => x.gitlabProjectId === projectParam(req));
+    broadcast([store.logActivity(`${r?.name ?? 'Projeto'} clonado em ${r?.localPath ?? ''}`)]);
+    return settingsChanged(view);
+  });
 
   /** Issues abertas dos projetos escolhidos. Atualiza o cache local a cada chamada. */
   app.get('/api/gitlab/issues', async () => {

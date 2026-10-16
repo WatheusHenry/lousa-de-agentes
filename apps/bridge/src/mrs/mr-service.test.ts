@@ -81,7 +81,7 @@ describe('merge requests', () => {
   beforeEach(async () => {
     runner = new ScriptRunner();
     // o GitLab é o mock (com pipeline rápido), mas o modo é "gitlab": o branch vai mesmo para o origin
-    const client = new MockGitLabClient({ pipelineMs: 80 });
+    const client = new MockGitLabClient({ pipelineMs: 1000 });
     b = await makeBridge(() => client, runner, TEST_PORT);
     const reposDir = mkdtempSync(join(tmpdir(), 'ac-mr-repos-'));
     origin = join(reposDir, 'origin.git');
@@ -193,9 +193,11 @@ describe('merge requests', () => {
     await until(() => msgs.find((m) => m.type === 'error'), 'erro do merge');
 
     // o pipeline passa; o refresh (o mesmo do polling) avisa o canvas
-    await new Promise((r) => setTimeout(r, 100));
-    send({ type: 'mr.refresh', mrRef: mr.ref });
-    await until(() => lastMr()?.pipelineStatus === 'success', 'pipeline verde');
+    for (let i = 0; i < 40 && lastMr()?.pipelineStatus !== 'success'; i++) {
+      send({ type: 'mr.refresh', mrRef: mr.ref });
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(lastMr()?.pipelineStatus).toBe('success');
 
     const state = (await b.app.inject({ url: '/api/state', headers: b.headers })).json() as StateSnapshot;
     expect(state.mergeRequests.map((m) => m.ref)).toEqual([mr.ref]);

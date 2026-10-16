@@ -22,7 +22,7 @@ Canvas para orquestrar agentes do Claude Code a partir de issues e repositórios
 - Claude Code instalado e logado (`claude --version`; testado com a 2.1.301). Os agentes usam a sua instalação e o seu login.
 - `git` 2.5 ou mais novo (worktrees) e os repositórios clonados na pasta configurada.
 - `glab` é opcional.
-- Ferramentas de compilação para o `better-sqlite3` (normalmente já vem um binário pronto; se não, `python3`, `make` e um compilador C++).
+- Nada para compilar: o `better-sqlite3` traz binários prontos para Linux (glibc e musl), macOS e Windows, em x64 e arm64, e o `pnpm install` não roda o `node-gyp`.
 
 ## Instalação e uso
 
@@ -37,12 +37,18 @@ Na primeira vez aparece a tela de configuração:
 
 1. **URL da instância** do GitLab (ex.: `https://gitlab.com` ou a URL da sua empresa).
 2. **Token de acesso pessoal** com escopo `api` (GitLab → Preferências → Access tokens). O bridge valida com `GET /user` antes de salvar e recusa token inválido.
-3. **Pasta dos repositórios locais**: onde ficam seus clones (`<pasta>/<nome-do-projeto>` ou `<pasta>/<grupo>/<projeto>`). Cada agente trabalha num worktree criado a partir deles.
+3. **Pasta dos repositórios locais**: onde ficam seus clones. Não precisa seguir nenhum padrão de nomes: o bridge procura em até 4 níveis de subpastas e reconhece cada projeto pelo remoto do git (`git@…:grupo/projeto.git` ou `https://…/grupo/projeto.git`). Deixe vazio para procurar na sua pasta pessoal (3 níveis). Em vez de digitar, use **Escolher…**: um navegador de pastas que mostra quais já são clones git e, quando a máquina tem um (`zenity` ou `kdialog` no Linux, Finder no macOS), oferece também o seletor de pastas do sistema. O navegador não deixa uma página ler o caminho real de uma pasta, por isso quem lista as pastas é o bridge. Cada agente trabalha num worktree criado a partir do clone.
 4. Escolha os **projetos** cujas issues abertas aparecem no canvas.
 
 Sem token à mão, use **Usar dados de exemplo**: o canvas funciona com os mesmos dados fictícios do protótipo.
 
 Para abrir a configuração de novo, clique em "GitLab conectado" no rodapé da barra lateral.
+
+A aba **Repos** mostra onde está o clone de cada projeto. Para o que faltar:
+
+- **Clonar**: `git clone` na pasta dos repositórios (ou em `~/projetos`), com a sua chave SSH ou o credential helper do git. O token do GitLab nunca é usado para clonar, porque ficaria gravado no `.git/config`.
+- **Escolher pasta…**: aponta, pelo mesmo navegador de pastas, um clone que está em outro lugar. Se o remoto dele for de outro projeto, o bridge recusa.
+- **Procurar de novo**: depois de clonar ou mover uma pasta pelo terminal. Ao iniciar um agente num projeto sem clone, o bridge também procura de novo sozinho.
 
 ### Onde ficam os dados
 
@@ -150,6 +156,7 @@ docs/         plano e protótipo
 - Cada execução gera um token de sessão aleatório. A API (`/api/*`) exige o token no cabeçalho `x-agent-canvas-token` e o WebSocket no parâmetro `token`. O token chega ao front-end numa meta tag do `index.html`, que outras origens não conseguem ler.
 - O bridge recusa `Host` diferente de `127.0.0.1`/`localhost` na porta dele (proteção contra DNS rebinding) e `Origin` fora da lista permitida.
 - O token do GitLab nunca sai do bridge: o front-end só vê `hasToken`, e os processos dos agentes não recebem nenhuma variável `AGENT_CANVAS_*`.
+- O seletor de pastas (`/api/fs/dirs`) lista só nomes de subpastas, nunca conteúdo de arquivos, e exige o token de sessão como o resto da API.
 - O endpoint MCP aceita só o token do próprio agente, gerado a cada execução do bridge e guardado num arquivo `0600`.
 - Os agentes nunca recebem o token do GitLab: abrir MR e comentar passam pelo bridge, e não existe ferramenta de merge. O merge só acontece por **Aprovar e mergear**.
 - O bridge tira do ambiente dos agentes as variáveis de sessão do Claude Code (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`…), para um `pnpm dev` rodado dentro de um terminal do Claude Code não emprestar a sessão dele aos agentes.

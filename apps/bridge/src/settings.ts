@@ -12,6 +12,8 @@ import type {
 import { GitLabSettingsInput as InputSchema } from '@agent-canvas/shared';
 import type { Db } from './db/index.ts';
 import { issueCache, repo, setting } from './db/schema.ts';
+import { cloneOfOtherProject, cloneRepo, cloneUrls, matchClone, scanClones } from './git/discover.ts';
+import { GitError } from './git/worktree.ts';
 import { GitLabError, type GitLabClient } from './gitlab/client.ts';
 import { DEMO_USER, MockGitLabClient } from './gitlab/mock-client.ts';
 import type { SecretStore } from './secrets.ts';
@@ -51,6 +53,15 @@ export class SettingsService {
       tokenSource: tok?.source ?? null,
       user: user ?? null,
       projects: this.projects(),
+      clones: this.db
+        .select()
+        .from(repo)
+        .all()
+        .map((r) => ({
+          projectId: r.gitlabProjectId,
+          path: r.localPath,
+          manual: !!this.overrides()[r.gitlabProjectId],
+        })),
       configured: mode === 'demo' || (!!tok && !!user),
     };
   }
@@ -81,8 +92,9 @@ export class SettingsService {
     const current = this.view();
 
     let reposDir = current.reposDir;
-    if (input.reposDir !== undefined) {
-      reposDir = resolve(input.reposDir.replace(/^~(?=$|\/)/, homedir()));
+    if (input.reposDir === '') reposDir = '';
+    else if (input.reposDir !== undefined) {
+      reposDir = expandHome(input.reposDir);
       if (!existsSync(reposDir) || !statSync(reposDir).isDirectory())
         throw new SettingsError(`A pasta ${reposDir} não existe.`);
     }
@@ -113,6 +125,7 @@ export class SettingsService {
     this.set('reposDir', reposDir);
     this.set('user', user);
     this.cachedClient = null;
+    if (reposDir !== current.reposDir) this.locateClones();
     return this.view();
   }
 
@@ -120,7 +133,6 @@ export class SettingsService {
   async selectProjects(projectIds: number[]): Promise<SettingsView> {
     const client = this.client();
     const projects = await Promise.all(projectIds.map((id) => client.getProject(id)));
-    const reposDir = this.view().reposDir;
     this.db.transaction((tx) => {
       tx.delete(repo).run();
       for (const p of projects) {
@@ -132,16 +144,86 @@ export class SettingsService {
             description: p.description,
             defaultBranch: p.defaultBranch,
             webUrl: p.webUrl,
-            localPath: findLocalClone(reposDir, p),
           })
           .run();
       }
     });
+    this.locateClones();
     return this.view();
   }
 
   repos() {
     return this.db.select().from(repo).all();
+  }
+
+  /** Onde procurar clones: a pasta configurada (4 níveis) ou a pasta pessoal (3 níveis). */
+  private searchRoot(): { root: string; depth: number } {
+    const dir = this.view().reposDir;
+    return dir ? { root: dir, depth: 4 } : { root: homedir(), depth: 3 };
+  }
+
+  /**
+   * Acha o clone de cada projeto pelo remoto do git (o nome da pasta não importa). Caminhos
+   * informados à mão têm prioridade. Roda ao escolher projetos, ao mudar a pasta, no botão
+   * "Procurar de novo" e quando um agente vai começar num projeto ainda sem clone.
+   */
+  locateClones(): void {
+    const { root, depth } = this.searchRoot();
+    const clones = scanClones(root, depth);
+    const manual = this.overrides();
+    for (const r of this.repos()) {
+      const m = manual[r.gitlabProjectId];
+      const path =
+        m && existsSync(join(m, '.git'))
+          ? m
+          : matchClone(clones, { pathWithNamespace: r.pathWithNamespace, name: r.name });
+      this.db.update(repo).set({ localPath: path }).where(eq(repo.id, r.id)).run();
+    }
+  }
+
+  /** Caminho do clone informado pelo usuário (null volta para a busca automática). */
+  setClonePath(projectId: number, raw: string | null): SettingsView {
+    const r = this.repoOf(projectId);
+    const overrides = Object.fromEntries(
+      Object.entries(this.overrides()).filter(([id]) => Number(id) !== projectId),
+    ) as Record<number, string>;
+    if (raw) {
+      const path = expandHome(raw);
+      if (!existsSync(join(path, '.git'))) throw new SettingsError(`${path} não é um repositório git.`);
+      if (cloneOfOtherProject(path, r.pathWithNamespace) && this.view().mode === 'gitlab')
+        throw new SettingsError(
+          `O remoto de ${path} não aponta para ${r.pathWithNamespace}. Confira se é o clone certo.`,
+        );
+      overrides[projectId] = path;
+    }
+    this.set('clonePaths', overrides);
+    this.locateClones();
+    return this.view();
+  }
+
+  /** Clona o projeto na pasta dos repositórios (ou em ~/projetos), com as credenciais git do usuário. */
+  async cloneProject(projectId: number): Promise<SettingsView> {
+    const r = this.repoOf(projectId);
+    if (r.localPath) throw new SettingsError(`${r.name} já tem clone em ${r.localPath}.`);
+    const root = this.view().reposDir || join(homedir(), 'projetos');
+    const dest = existsSync(join(root, r.name)) ? join(root, r.pathWithNamespace) : join(root, r.name);
+    try {
+      await cloneRepo(cloneUrls(r.webUrl), dest);
+    } catch (err) {
+      throw new SettingsError(err instanceof GitError ? err.message : 'Falha ao clonar.', 502);
+    }
+    this.setClonePath(projectId, dest);
+    return this.view();
+  }
+
+  private repoOf(projectId: number) {
+    const r = this.db.select().from(repo).where(eq(repo.gitlabProjectId, projectId)).get();
+    if (!r) throw new SettingsError('Projeto não está entre os escolhidos.', 404);
+    return r;
+  }
+
+  private overrides(): Record<number, string> {
+    return this.get<Record<number, string>>('clonePaths') ?? {};
   }
 
   /** Cliente do GitLab conforme as configurações atuais. */
@@ -172,11 +254,4 @@ export class SettingsService {
   }
 }
 
-/** Procura o clone local do projeto em <reposDir>/<nome> ou <reposDir>/<grupo>/<nome>. */
-function findLocalClone(reposDir: string, p: GitLabProject): string | null {
-  if (!reposDir) return null;
-  for (const candidate of [join(reposDir, p.name), join(reposDir, p.pathWithNamespace)]) {
-    if (existsSync(join(candidate, '.git'))) return candidate;
-  }
-  return null;
-}
+const expandHome = (p: string) => resolve(p.replace(/^~(?=$|\/)/, homedir()));

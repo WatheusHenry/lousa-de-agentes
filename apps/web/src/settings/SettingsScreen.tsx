@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { GitLabProject, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
+import { FolderPicker } from '../components/FolderPicker.tsx';
 import { IconRepo, IconSearch } from '../icons.tsx';
 
 interface Props {
@@ -56,6 +57,7 @@ function GitLabStep({
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [token, setToken] = useState('');
   const [reposDir, setReposDir] = useState(settings.reposDir);
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const tokenFromEnv = settings.tokenSource === 'env';
@@ -69,7 +71,7 @@ function GitLabStep({
         mode,
         ...(mode === 'gitlab' ? { baseUrl: baseUrl.trim() } : {}),
         ...(mode === 'gitlab' && token.trim() ? { token: token.trim() } : {}),
-        ...(reposDir.trim() ? { reposDir: reposDir.trim() } : {}),
+        reposDir: reposDir.trim(),
       });
       setToken('');
       onSaved(view);
@@ -132,19 +134,37 @@ function GitLabStep({
           salvar.
         </span>
       </label>
-      <label className="f">
-        Pasta dos repositórios locais
-        <input
-          className="field mono"
-          value={reposDir}
-          onChange={(e) => setReposDir(e.target.value)}
-          placeholder="~/code"
-          spellCheck={false}
-        />
+      <div className="f">
+        <label htmlFor="repos-dir">Pasta dos repositórios locais</label>
+        <div className="field-pick">
+          <input
+            id="repos-dir"
+            className="field mono"
+            value={reposDir}
+            onChange={(e) => setReposDir(e.target.value)}
+            placeholder="~/projetos (vazio: procura na sua pasta pessoal)"
+            spellCheck={false}
+          />
+          <button type="button" className="btn" onClick={() => setPicking(true)}>
+            Escolher…
+          </button>
+        </div>
         <span className="hint">
-          Onde ficam os clones. Os agentes vão trabalhar em worktrees a partir deles.
+          Onde ficam os clones. O app procura em subpastas e reconhece cada projeto pelo remoto do git, então
+          o nome da pasta não importa. O que faltar dá para clonar ou apontar na aba Repos.
         </span>
-      </label>
+        {picking && (
+          <FolderPicker
+            title="Pasta dos repositórios"
+            start={reposDir}
+            onClose={() => setPicking(false)}
+            onPick={(p) => {
+              setReposDir(p);
+              setPicking(false);
+            }}
+          />
+        )}
+      </div>
       {error && (
         <p className="err" role="alert">
           {error}

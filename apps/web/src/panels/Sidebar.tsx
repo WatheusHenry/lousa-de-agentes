@@ -1,5 +1,7 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
-import type { Issue } from '@agent-canvas/shared';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Issue, SettingsView } from '@agent-canvas/shared';
+import { api, ApiError } from '../api/http.ts';
+import { FolderPicker } from '../components/FolderPicker.tsx';
 import { addIssue, askFixPipeline, newAgentAt } from '../actions.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
@@ -507,55 +509,146 @@ function ReposTab() {
   const list = settings.projects.filter((p) => !query || p.pathWithNamespace.toLowerCase().includes(query));
   const agents = useStore((s) => s.agents);
   const nodes = useStore((s) => s.nodes);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [picking, setPicking] = useState<number | null>(null);
   const activeByRepo = new Map<number, number>();
   for (const n of Object.values(nodes)) {
     const a = n.type === 'agent' ? agents[n.refId] : undefined;
     if (a && isLive(a) && a.repos[0] !== undefined)
       activeByRepo.set(a.repos[0], (activeByRepo.get(a.repos[0]) ?? 0) + 1);
   }
+  const cloneOf = (id: number) => settings.clones.find((c) => c.projectId === id);
+  const missing = list.filter((p) => !cloneOf(p.id)?.path).length;
+
+  /** Chama o bridge; o settings.updated pelo WebSocket atualiza a lista. */
+  async function run(key: string, fn: () => Promise<SettingsView>, done?: string) {
+    setBusy(key);
+    try {
+      useStore.getState().setSettings(await fn());
+      if (done) useStore.getState().showToast(done, { label: 'Ok', run: () => {} });
+      return true;
+    } catch (e) {
+      useStore.getState().showToast(e instanceof ApiError ? e.message : 'Falha ao falar com o bridge.', {
+        label: 'Ok',
+        run: () => {},
+      });
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <>
       <div className="grp-h">
         <span>Repositórios</span>
         <span className="cnt">{list.length}</span>
-      </div>
-      {list.map((p) => (
-        <div
-          className="iss"
-          key={p.id}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData('text/plain', `repo:${p.id}`);
-            e.dataTransfer.effectAllowed = 'copy';
-          }}
+        <button
+          className="btn sm plain"
+          style={{ marginLeft: 'auto' }}
+          disabled={!!busy}
+          title="Procura os clones de novo, pelo remoto do git"
+          onClick={() =>
+            run('rescan', api.rescanRepos, missing ? undefined : 'Todos os projetos têm clone local.')
+          }
         >
-          <span className="iss-ic repo">
-            <IconRepo />
-          </span>
-          <div className="iss-b">
-            <div className="iss-t mono-t">{p.name}</div>
-            <div className="iss-m">
-              <span>{p.description || p.pathWithNamespace}</span>
-            </div>
-          </div>
-          <div className="iss-r">
-            {(activeByRepo.get(p.id) ?? 0) > 0 && (
-              <span className="badge info live" title={`${activeByRepo.get(p.id)} agentes ativos`}>
-                <span className="d" />
-                {activeByRepo.get(p.id)}
-              </span>
-            )}
-            <button
-              className="btn plain icon xs"
-              aria-label={`Novo agente em ${p.name}`}
-              title="Novo agente"
-              onClick={() => newAgentAt(undefined, { repos: [p.id] })}
+          {busy === 'rescan' ? 'Procurando…' : 'Procurar de novo'}
+        </button>
+      </div>
+      {list.map((p) => {
+        const c = cloneOf(p.id);
+        return (
+          <div key={p.id}>
+            <div
+              className="iss"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', `repo:${p.id}`);
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
             >
-              <IconAgent />
-            </button>
+              <span className="iss-ic repo">
+                <IconRepo />
+              </span>
+              <div className="iss-b">
+                <div className="iss-t mono-t">{p.name}</div>
+                <div className="iss-m">
+                  {c?.path ? (
+                    <span className="mono" title={c.path}>
+                      {shortPath(c.path)}
+                      {c.manual ? ' · informado' : ''}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--warn, var(--bad))' }}>Sem clone local</span>
+                  )}
+                </div>
+              </div>
+              <div className="iss-r">
+                {(activeByRepo.get(p.id) ?? 0) > 0 && (
+                  <span className="badge info live" title={`${activeByRepo.get(p.id)} agentes ativos`}>
+                    <span className="d" />
+                    {activeByRepo.get(p.id)}
+                  </span>
+                )}
+                <button
+                  className="btn plain icon xs"
+                  aria-label={`Novo agente em ${p.name}`}
+                  title="Novo agente"
+                  onClick={() => newAgentAt(undefined, { repos: [p.id] })}
+                >
+                  <IconAgent />
+                </button>
+              </div>
+            </div>
+            {!c?.path && (
+              <div className="act-btns" style={{ margin: '-2px 2px 8px 40px' }}>
+                <button
+                  className="btn sm"
+                  disabled={!!busy}
+                  title={`git clone com as suas credenciais (SSH ou HTTPS) em ${settings.reposDir || '~/projetos'}`}
+                  onClick={() => run(`clone-${p.id}`, () => api.cloneRepo(p.id), `${p.name} clonado.`)}
+                >
+                  {busy === `clone-${p.id}` ? 'Clonando…' : 'Clonar'}
+                </button>
+                <button className="btn sm plain" onClick={() => setPicking(p.id)}>
+                  Escolher pasta…
+                </button>
+              </div>
+            )}
+            {c?.manual && (
+              <p className="tip" style={{ margin: '-4px 2px 8px 40px' }}>
+                <button
+                  className="link-btn"
+                  onClick={() => run(`path-${p.id}`, () => api.setRepoPath(p.id, null))}
+                >
+                  Voltar para a busca automática
+                </button>
+              </p>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
+      {picking !== null && (
+        <FolderPicker
+          title={`Clone de ${settings.projects.find((p) => p.id === picking)?.name ?? ''}`}
+          mode="repo"
+          start={settings.reposDir}
+          onClose={() => setPicking(null)}
+          onPick={async (path) => {
+            const id = picking;
+            setPicking(null);
+            await run(`path-${id}`, () => api.setRepoPath(id, path));
+          }}
+        />
+      )}
+      {missing > 0 && (
+        <p className="tip">
+          <span>
+            O clone é reconhecido pelo remoto do git, em até 4 níveis de subpastas da pasta dos repositórios.
+            Clonar usa a sua chave SSH ou o credential helper do git, nunca o token.
+          </span>
+        </p>
+      )}
       <p className="tip">
         <IconDrag /> Arraste um repositório para o canvas para criar um agente, ou solte em cima de um agente
         em branco.
@@ -568,6 +661,9 @@ function ReposTab() {
     </>
   );
 }
+
+/** /home/ana/projetos/x → ~/projetos/x (o bridge não diz a home; deduz pelo padrão comum). */
+const shortPath = (p: string) => p.replace(/^\/(home|Users)\/[^/]+/, '~');
 
 function FeedTab() {
   const activity = useStore((s) => s.activity);

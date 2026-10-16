@@ -27,6 +27,7 @@ const empty: StateSnapshot = {
     tokenSource: null,
     user: null,
     projects: [],
+    clones: [],
     configured: true,
   },
   nodes: [],
