@@ -63,6 +63,18 @@ Em vez de salvar o token pela tela, você pode criar um `.env` na raiz do reposi
 | `AGENT_CANVAS_GITLAB_TOKEN`    | —                 | Token do GitLab (alternativa ao arquivo de segredos)      |
 | `AGENT_CANVAS_ALLOWED_ORIGINS` | —                 | Origens extras aceitas pelo bridge, separadas por vírgula |
 
+## Usando o canvas (Fase 1)
+
+- **Issues**: a aba Issues lista as issues abertas dos projetos escolhidos (atualiza a cada minuto). Arraste uma para o canvas ou use o **+** da linha. Se ela já estiver no canvas, o botão vira **mostrar**.
+- **Notas**: botão **Nota** na toolbar, **duplo clique** no fundo ou **botão direito → Nova nota aqui**. Escreva direto no cartão; salva sozinho.
+- **Vincular**: arraste o **+** amarelo da nota até uma issue, ou use **Vincular a…** no painel da nota.
+- **Mover**: arraste pelo cartão (a nota arrasta pelo cabeçalho). A posição fica no SQLite.
+- **Foco**: duplo clique num item (ou o ícone ↗) abre a issue como documento, com critérios de aceite e discussão do GitLab, e a nota como editor. **Esc** fecha.
+- **Remover**: **Delete** ou botão direito. O aviso tem **Desfazer** (ou **Ctrl/⌘ + Z**).
+- **Câmera**: arraste o fundo ou role para mover, **Ctrl/⌘ + scroll** para zoom, **Ajustar** enquadra tudo na área livre entre os painéis. **Ctrl/⌘ + B** mostra ou esconde a barra lateral.
+
+Recarregar a página mantém tudo: nós, posições, notas e vínculos vêm do bridge.
+
 ## Scripts
 
 | Comando                                          | O que faz                                                       |
@@ -106,8 +118,21 @@ docs/         plano e protótipo
 | Tabelas da seção 4                                                  | Mais `setting` (configurações não secretas) e `activity` (feed); `note` ganhou `createdAt`/`updatedAt`                  | Guardar a configuração validada e manter o feed de atividade depois de reiniciar. As tabelas de agentes, aprovações e MRs entram nas fases em que são usadas.                                                                               |
 | TypeScript                                                          | Fixado em `~6.0`                                                                                                        | O TypeScript 7 (versão nativa) ainda não é suportado pelo `typescript-eslint`.                                                                                                                                                              |
 
+## Diferenças em relação ao protótipo
+
+O visual (tokens, cartões, painéis, menu, aviso, foco) foi portado do protótipo. O que difere, por enquanto:
+
+- Agentes, MRs, aba Ações, contexto e automações ainda não existem: os botões **+ Novo agente**, **Iniciar** e **Iniciar agentes** aparecem desativados, a aba Ações mostra o estado vazio e o painel de Automações mostra as regras desligadas. Isso chega nas Fases 2 a 6.
+- O painel da issue não tem as opções de contexto e autonomia, que só fazem sentido ao iniciar agentes.
+- Uma issue real pertence a um projeto só; o cartão mostra esse projeto em vez da lista de repositórios afetados que o protótipo inventava.
+- Os critérios de aceite vêm dos itens de checklist (`- [ ]`) da descrição. Sem checklist, a seção não aparece.
+- A discussão da issue é a do GitLab (sem notas de sistema). Comentar pelo canvas chega na Fase 3.
+- A barra lateral não aceita soltar um repositório no canvas (cria agente na Fase 2).
+- O canvas usa o React Flow: pan, zoom e arrasto vêm dele, e o crédito "React Flow" fica visível no canto, como pede a licença para quem não assina o plano Pro.
+- O texto da nota cresce com o conteúdo (até 320 px) em vez de rolar.
+
 ## Limitações conhecidas
 
-- Fase 1 ainda não roda agentes: os botões de agente aparecem desativados.
-- Comentar em issues pelo canvas chega na Fase 3.
-- Se o bridge reiniciar (por exemplo, com o `tsx watch` em dev), o token de sessão muda e é preciso recarregar a página.
+- Se o bridge reiniciar (por exemplo, com o `tsx watch` em dev), o token de sessão muda e é preciso recarregar a página. O aviso "Sem conexão com o bridge" tem o botão para isso.
+- A lista de issues traz até 300 issues abertas por projeto.
+- Descrições e comentários aparecem como texto, sem renderizar Markdown.
