@@ -1,9 +1,11 @@
 /* Estilos portados do protótipo (docs/prototype/agent-canvas.html), com ajustes para o React Flow no fim. */
 html,
-body {
+body,
+#root {
   height: 100%;
 }
 body {
+  margin: 0;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--sans);
@@ -2904,7 +2906,9 @@ pre.cmd .c {
   }
 }
 .react-flow__attribution {
-  display: none;
+  background: transparent;
+  font-size: 10px;
+  opacity: 0.6;
 }
 /* entrada de nós criados agora (só transform e opacity) */
 @keyframes node-in {
@@ -3046,4 +3050,17 @@ pre.cmd .c {
 }
 a.btn {
   text-decoration: none;
+}
+
+.side-f-t {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* o texto da nota cresce com o conteúdo, até um limite */
+.note .nbody {
+  field-sizing: content;
+  max-height: 320px;
 }
