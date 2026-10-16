@@ -26,7 +26,7 @@ import { MrError, MrService } from './mrs/mr-service.ts';
 import type { Session } from './session.ts';
 import { SettingsError, type SettingsService } from './settings.ts';
 
-export const SERVER_VERSION = '0.2.0';
+export const SERVER_VERSION = '0.3.0';
 
 export interface ServerDeps {
   config: Pick<BridgeConfig, 'port' | 'allowedOrigins' | 'webDist'>;

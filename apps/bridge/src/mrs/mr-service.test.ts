@@ -151,7 +151,7 @@ describe('merge requests', () => {
       gitIn(opts.cwd, 'commit', '-qm', 'Webhook idempotente');
       tool.open = await callTool(opts, 'open_merge_request', {
         title: 'Corrige cobrança duplicada no webhook',
-        description: 'Usa a chave de idempotência.',
+        description: 'Usa a chave de idempotência.\n\nCloses #142',
       });
       h.onLine(result(opts.sessionId));
     };
@@ -175,7 +175,7 @@ describe('merge requests', () => {
       additions: 1,
       deletions: 0,
     });
-    expect(mr.description).toContain('Closes #142');
+    expect(mr.description.match(/Closes #142/g)).toHaveLength(1);
     // o branch foi enviado ao origin
     expect(gitIn(origin, 'branch', '--list', mr.sourceBranch)).toContain(mr.sourceBranch);
     // nó do MR ligado ao agente

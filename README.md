@@ -7,12 +7,13 @@ Canvas para orquestrar agentes do Claude Code a partir de issues e repositórios
 
 ## Estado atual
 
-| Fase               | O que entrega                                                                    | Estado    |
-| ------------------ | -------------------------------------------------------------------------------- | --------- |
-| 0 · Base           | Monorepo, bridge com token de sessão, tela de configuração do GitLab             | pronta    |
-| 1 · Canvas         | Issues reais no canvas, notas, vínculos, desfazer, persistência                  | pronta    |
-| 2 · Um agente real | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela aba Ações | pronta    |
-| 3 em diante        | MRs e pipelines, qualidade do contexto, orquestração, automações, robustez       | ainda não |
+| Fase                | O que entrega                                                                      | Estado    |
+| ------------------- | ---------------------------------------------------------------------------------- | --------- |
+| 0 · Base            | Monorepo, bridge com token de sessão, tela de configuração do GitLab               | pronta    |
+| 1 · Canvas          | Issues reais no canvas, notas, vínculos, desfazer, persistência                    | pronta    |
+| 2 · Um agente real  | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela aba Ações   | pronta    |
+| 3 · MRs e pipelines | Agente abre o MR, nó no canvas com pipeline ao vivo, diff, discussão, merge humano | pronta    |
+| 4 em diante         | Qualidade do contexto, orquestração, automações, robustez                          | ainda não |
 
 ## Requisitos
 
@@ -88,7 +89,18 @@ Recarregar a página mantém tudo: nós, posições, notas e vínculos vêm do b
 - **Conversa**: pelo campo da janela ou pelo **modo foco** (ícone ↗ ou duplo clique). A saída é estruturada como no protótipo (texto, ferramenta, resultado, pedido de permissão); **Saída bruta** no foco mostra as linhas do stream-json, para depuração.
 - **Permissões**: quando o agente quer rodar algo que não está liberado, a janela mostra o pedido e ele aparece na aba **Ações** (com contador). **Permitir**, **Negar**, **Sempre permitir** (grava a regra no formato do Claude Code, por exemplo `Bash(npm test:*)`, e libera na hora os pedidos iguais) e **Permitir todos**. As regras ficam em **Sempre permitidos**, na mesma aba.
 - **Pausar, Retomar, Parar**: no painel do agente ou no botão direito. Pausar interrompe o turno; Retomar continua a mesma sessão (`--resume`). Remover o agente do canvas para o processo.
-- **Onde ficam as mudanças**: cada agente trabalha em `~/.agent-canvas/worktrees/<id>`, num branch `agent/<iid>-<slug>` do seu clone. Os commits aparecem nesse branch (`git log agent/…` no clone). O agente não faz push nem merge.
+- **Onde ficam as mudanças**: cada agente trabalha em `~/.agent-canvas/worktrees/<id>`, num branch `agent/<iid>-<slug>` do seu clone. Os commits aparecem nesse branch (`git log agent/…` no clone). O agente não faz push por conta própria e nunca faz merge.
+
+## Merge requests e pipelines (Fase 3)
+
+- **O agente abre o MR**: ao terminar, com tudo commitado e os testes passando, o agente chama a ferramenta `open_merge_request` do canvas. O bridge envia o branch para o `origin` do seu clone (com as suas credenciais git), abre o MR para o branch padrão com `Closes #<iid>` e cria o nó do MR ao lado do agente, ligado a ele. Chamar de novo envia os commits novos para o mesmo MR. No painel do agente, **Abrir MR agora** pede isso a qualquer momento.
+- **Pipeline ao vivo**: o bridge consulta os MRs abertos do canvas a cada 30 segundos e atualiza o cartão (rodando, passou, falhou) e o feed sozinho. **Atualizar status** no foco do MR consulta na hora.
+- **Foco do MR**: etapas do pipeline, diff por arquivo, discussão do GitLab e um campo para comentar. O foco da issue também ganhou o campo de comentário e a lista dos MRs dela.
+- **Aba Ações**: **Merge requests prontos** (pipeline verde) com **Aprovar e mergear** e **Ver diff**, e **Pipelines com falha** com **Pedir correção** ao agente que abriu o MR. O merge é sempre seu: os agentes não têm ferramenta de merge.
+- **Comentários de agentes**: as ferramentas `comment_issue` e `comment_mr` comentam com o seu token, com o cabeçalho `🤖 **agente-N** · Agent Canvas`. O canvas usa esse cabeçalho para marcar o comentário como "agente" na discussão.
+- **Modo demonstração**: o GitLab é simulado e o push é pulado; o pipeline simulado passa em 20 segundos.
+
+![MR aberto pelo agente](docs/screenshots/fase-3/mr-no-canvas.png)
 
 ### Como um agente roda
 
@@ -100,10 +112,11 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
   --mcp-config ~/.agent-canvas/agents/<id>/mcp.json --strict-mcp-config \
   --permission-prompt-tool mcp__canvas__approve --permission-mode default \
   --append-system-prompt <apps/bridge/src/agents/roles/main.md> \
-  --allowedTools <regras salvas> --disallowedTools "Bash(git push --force:*)" …
+  --allowedTools mcp__canvas__open_merge_request,mcp__canvas__comment_issue,mcp__canvas__comment_mr,<regras salvas> \
+  --disallowedTools "Bash(git push --force:*)" …
 ```
 
-O servidor MCP do canvas roda dentro do bridge (`POST /mcp`, Streamable HTTP), identificado por um token por agente. A ferramenta `approve` responde no formato que o Claude Code exige: `{"behavior":"allow","updatedInput":…}` ou `{"behavior":"deny","message":…}`. Antes de qualquer regra, o bridge nega push forçado, `rm -r` fora do worktree, arquivos fora do worktree e comandos de rede (`curl`, `wget`, `ssh`…) sem regra explícita.
+O servidor MCP do canvas roda dentro do bridge (`POST /mcp`, Streamable HTTP), identificado por um token por agente. Ele expõe `approve` e as ferramentas do GitLab (`open_merge_request`, `comment_issue`, `comment_mr`), que agem só sobre o branch, a issue e o MR do próprio agente. A ferramenta `approve` responde no formato que o Claude Code exige: `{"behavior":"allow","updatedInput":…}` ou `{"behavior":"deny","message":…}`. Antes de qualquer regra, o bridge nega push forçado, `rm -r` fora do worktree, arquivos fora do worktree e comandos de rede (`curl`, `wget`, `ssh`…) sem regra explícita.
 
 Para regravar as saídas reais usadas nos testes do parser (por exemplo, depois de atualizar o Claude Code): `pnpm --filter @agent-canvas/bridge exec tsx scripts/record-fixtures.ts`.
 
@@ -138,6 +151,7 @@ docs/         plano e protótipo
 - O bridge recusa `Host` diferente de `127.0.0.1`/`localhost` na porta dele (proteção contra DNS rebinding) e `Origin` fora da lista permitida.
 - O token do GitLab nunca sai do bridge: o front-end só vê `hasToken`, e os processos dos agentes não recebem nenhuma variável `AGENT_CANVAS_*`.
 - O endpoint MCP aceita só o token do próprio agente, gerado a cada execução do bridge e guardado num arquivo `0600`.
+- Os agentes nunca recebem o token do GitLab: abrir MR e comentar passam pelo bridge, e não existe ferramenta de merge. O merge só acontece por **Aprovar e mergear**.
 - O bridge tira do ambiente dos agentes as variáveis de sessão do Claude Code (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`…), para um `pnpm dev` rodado dentro de um terminal do Claude Code não emprestar a sessão dele aos agentes.
 
 ## Desvios do plano
@@ -156,23 +170,30 @@ docs/         plano e protótipo
 | Regras por repositório                                              | Regras globais por enquanto (a coluna `scope` já existe)                                                                                                                                   | A tela para escolher o escopo chega junto com as regras padrão afrouxáveis por repositório.                                                                                                                                                                  |
 | Contrato servidor → cliente                                         | Mensagens extras `note.upsert`, `noteLink.upsert/remove`, `issue.upsert`, `settings.updated`, `state.snapshot`, `error`                                                                    | Para outros clientes abertos acompanharem notas e configurações, e para o desfazer restaurar tudo de uma vez.                                                                                                                                                |
 | Tabelas da seção 4                                                  | Mais `setting` (configurações não secretas) e `activity` (feed); `note` ganhou `createdAt`/`updatedAt`; `agent` guarda instrução, erro, tokens e custo; `agent_event` guarda a linha bruta | Guardar a configuração validada, o feed e o modo "saída bruta". As tabelas de contexto, MRs, automações e discussões entram nas fases em que são usadas.                                                                                                     |
+| `mr.updated` (servidor → cliente)                                   | `mr.upsert` com o MR inteiro, mais `thread.changed { target, ref }`                                                                                                                        | Mesmo padrão de `agent.upsert`. `thread.changed` avisa o foco aberto para recarregar a discussão depois de um comentário.                                                                                                                                    |
+| Mensagens de MR do cliente                                          | `mr.merge`, `mr.refresh`, `mr.comment`, `issue.comment`                                                                                                                                    | O plano não detalhava o contrato da Fase 3.                                                                                                                                                                                                                  |
+| Diff do MR pelo GitLab                                              | Diff da API do GitLab; se ela vier vazia (MR recém-criado ou modo demonstração), diff local `git diff <alvo>...HEAD` do worktree do agente                                                 | O GitLab calcula o diff de forma assíncrona; logo depois de abrir o MR a lista pode vir vazia.                                                                                                                                                               |
+| Pipeline em etapas (Build, Testes, Lint)                            | O desenho das etapas é aproximado a partir do status geral do pipeline                                                                                                                     | Ler os jobs de cada pipeline é mais uma chamada por MR a cada 30 s; o status geral basta para o aceite. Dá para trocar pelos jobs reais depois.                                                                                                              |
+| Comentário identificado como do agente                              | Cabeçalho `🤖 **agente-N** · Agent Canvas` no começo do comentário                                                                                                                         | O comentário sai com o token do usuário; o cabeçalho deixa claro no GitLab quem escreveu e permite marcar como "agente" na leitura.                                                                                                                          |
+| "Criar agente para corrigir" o pipeline                             | **Pedir correção** manda a mensagem ao agente que abriu o MR                                                                                                                               | Agentes de correção com papel próprio chegam com a orquestração (Fase 5).                                                                                                                                                                                    |
 | TypeScript                                                          | Fixado em `~6.0`                                                                                                                                                                           | O TypeScript 7 (versão nativa) ainda não é suportado pelo `typescript-eslint`.                                                                                                                                                                               |
 
 ## Diferenças em relação ao protótipo
 
 O visual (tokens, cartões, janelas de agente, painéis, menu, aviso, foco) foi portado do protótipo. O que difere, por enquanto:
 
-- MRs, contexto escolhido à mão, orquestrador, sub-agentes e automações chegam nas Fases 3 a 6: o painel de Automações mostra as regras desligadas e o contador de MRs fica em zero.
+- Contexto escolhido à mão, orquestrador, sub-agentes, revisão por agente e automações chegam nas Fases 4 a 6: o painel de Automações mostra as regras desligadas e o foco do MR não tem a seção "Revisão".
 - O painel do agente não tem barra de progresso em etapas (o protótipo tinha um roteiro fixo); mostra o que o agente está fazendo agora, tokens, custo e turnos. Equipe, contexto com medidor e linha do tempo chegam com as Fases 4 a 6.
 - O painel da issue não tem as opções de contexto e autonomia (profundidade): tem só instruções extras. Um agente trabalha no projeto da issue; issues com vários repositórios ganham orquestrador na Fase 5.
 - Uma issue real pertence a um projeto só; o cartão mostra esse projeto em vez da lista de repositórios afetados que o protótipo inventava.
 - Os critérios de aceite vêm dos itens de checklist (`- [ ]`) da descrição. Sem checklist, a seção não aparece.
-- A discussão da issue é a do GitLab (sem notas de sistema). Comentar pelo canvas chega na Fase 3.
+- A discussão da issue e do MR é a do GitLab (sem notas de sistema).
+- O painel do agente mostra o MR nos detalhes em vez de um terceiro número no topo (tokens, custo e turnos ficam).
 - Soltar uma issue ou um repositório em cima de um agente que já começou não acrescenta contexto ainda (Fase 4); só funciona no agente em branco.
 - O canvas usa o React Flow: pan, zoom e arrasto vêm dele, e o crédito "React Flow" fica visível no canto, como pede a licença para quem não assina o plano Pro.
 - O texto da nota cresce com o conteúdo (até 320 px) em vez de rolar.
 
-Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1) e [`docs/screenshots/fase-2`](docs/screenshots/fase-2).
+Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots/fase-2`](docs/screenshots/fase-2) e [`docs/screenshots/fase-3`](docs/screenshots/fase-3).
 
 ## Limitações conhecidas
 
@@ -181,4 +202,6 @@ Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1) e [`docs/screenshot
 - Descrições, comentários e respostas dos agentes aparecem como texto, sem renderizar Markdown.
 - Se o bridge cair no meio de um turno, os agentes que estavam trabalhando voltam como **Pausado**; **Retomar** continua a sessão. A recuperação automática é da Fase 7.
 - Ainda não há limite de agentes simultâneos nem orçamento de tokens (supervisor da Fase 5).
+- O polling de pipelines é de 30 segundos (webhooks não alcançam um app local).
+- O merge usa as opções padrão do projeto no GitLab (sem squash forçado); o branch de origem é apagado no merge.
 - Worktrees de agentes removidos não são apagados (a limpeza com confirmação é da Fase 7). Para apagar à mão: `git worktree remove ~/.agent-canvas/worktrees/<id>` no clone.

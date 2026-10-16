@@ -41,7 +41,7 @@ async function asTool(fn: () => Promise<string>) {
 }
 
 function buildServer(ctx: McpAgentContext, deps: McpDeps): McpServer {
-  const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.2.0' });
+  const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.3.0' });
 
   // usada pelo --permission-prompt-tool; a resposta segue o formato do Claude Code:
   // {"behavior":"allow","updatedInput":{...}} ou {"behavior":"deny","message":"..."}

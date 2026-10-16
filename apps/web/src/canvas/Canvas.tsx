@@ -48,7 +48,7 @@ export function Canvas() {
     setNodes((prev) => {
       const byId = new Map(prev.map((n) => [n.id, n]));
       return Object.values(storeNodes)
-        .filter((n) => n.type === 'issue' || n.type === 'note' || n.type === 'agent')
+        .filter((n) => n.type in nodeTypes)
         .map((n) => toFlowNode(n, selected === n.id, byId.get(n.id)));
     });
   }, [storeNodes, selected]);

@@ -131,9 +131,12 @@ export class MrService {
     }
 
     const issue = a.issueRef ? parseIssueRef(a.issueRef) : null;
-    const closes = issue && issue.projectId === projectId ? `\n\nCloses #${issue.iid}` : '';
-    const description =
-      `${(opts.description ?? '').trim()}${closes}\n\n_Aberto por ${a.name} no Agent Canvas._`.trim();
+    const body = (opts.description ?? '').trim();
+    // o agente às vezes já escreve "Closes #iid"; não repete
+    const alreadyCloses =
+      issue && new RegExp(`\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #${issue.iid}\\b`, 'i').test(body);
+    const closes = issue && issue.projectId === projectId && !alreadyCloses ? `\n\nCloses #${issue.iid}` : '';
+    const description = `${body}${closes}\n\n_Aberto por ${a.name} no Agent Canvas._`.trim();
     const created = await this.settings.client().createMergeRequest(projectId!, {
       sourceBranch: a.branch,
       targetBranch: target,
