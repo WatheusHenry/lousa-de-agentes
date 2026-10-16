@@ -1,6 +1,8 @@
 import type { Agent } from '@agent-canvas/shared';
 import { focusNode } from '../canvas/viewport.ts';
-import { agentNodeOf, issueNodeOf, useStore } from '../state/store.ts';
+import { askOpenMr } from '../actions.ts';
+import { MrBadge } from '../mrs/mr-ui.tsx';
+import { agentNodeOf, issueNodeOf, mrNodeOf, mrOfAgent, useStore } from '../state/store.ts';
 import {
   fmtK,
   fmtUsd,
@@ -48,6 +50,7 @@ export function AgentPanel({
   const projects = useStore((s) => s.settings?.projects ?? EMPTY);
   const issue = useStore((s) => (a?.issueRef ? s.issues[a.issueRef] : undefined));
   const issueNode = useStore((s) => (a?.issueRef ? issueNodeOf(s, a.issueRef) : undefined));
+  const mr = useStore((s) => (a ? mrOfAgent(s, a.id) : undefined));
   const waiting = useStore((s) => Object.values(s.approvals).filter((p) => p.agentId === agentId).length);
   const focusId = useStore((s) => s.focusId);
   const st = useStore.getState();
@@ -220,6 +223,23 @@ export function AgentPanel({
               </dd>
             </>
           )}
+          {mr && (
+            <>
+              <dt>MR</dt>
+              <dd style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  className="btn sm"
+                  onClick={() => {
+                    const n = mrNodeOf(useStore.getState(), mr.ref);
+                    if (n) focusNode(n.id);
+                  }}
+                >
+                  !{mr.iid}
+                </button>
+                <MrBadge mr={mr} />
+              </dd>
+            </>
+          )}
           {a.contextTokens > 0 && (
             <>
               <dt>Contexto</dt>
@@ -235,6 +255,13 @@ export function AgentPanel({
             </>
           )}
         </dl>
+        {!mr && a.worktreePath && (
+          <div>
+            <button className="btn sm" onClick={() => askOpenMr(a.id)}>
+              Abrir MR agora
+            </button>
+          </div>
+        )}
       </div>
       {!inFocus && (
         <div className="foot-danger">

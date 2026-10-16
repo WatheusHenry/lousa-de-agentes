@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { IssueComment } from '@agent-canvas/shared';
+import type { IssueComment, MrDiffFile } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { nodeScreenRect, reducedMotion } from '../canvas/viewport.ts';
-import { IconAgent, IconIssue, IconNote } from '../icons.tsx';
+import { IconAgent, IconIssue, IconMr, IconNote } from '../icons.tsx';
 import {
   checklist,
   descriptionWithoutChecklist,
@@ -14,7 +14,8 @@ import {
   repoName,
   timeAgo,
 } from '../lib/format.ts';
-import { useStore } from '../state/store.ts';
+import { agentNodeOf, mrNodeOf, useStore } from '../state/store.ts';
+import { DiffStat, MrBadge, mrReady, PipelineStages } from '../mrs/mr-ui.tsx';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
 import { isBlank, roleLabel, statusLabel, statusTone, SUGGESTIONS } from '../agents/agent-ui.ts';
 
@@ -96,6 +97,7 @@ export function Focus() {
         {shown?.type === 'issue' && <IssueDoc nodeId={shown.id} onClose={closeAnimated} />}
         {shown?.type === 'note' && <NoteDoc nodeId={shown.id} onClose={closeAnimated} />}
         {shown?.type === 'agent' && <AgentDoc nodeId={shown.id} onClose={closeAnimated} />}
+        {shown?.type === 'mr' && <MrDoc nodeId={shown.id} onClose={closeAnimated} />}
       </div>
     </div>
   );
@@ -173,22 +175,18 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
         .filter((a) => !!a && a.issueRef === node?.refId) as NonNullable<(typeof agentsById)[string]>[],
     [nodes, agentsById, node?.refId],
   );
-  const [comments, setComments] = useState<IssueComment[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!issue) return;
-    let alive = true;
-    setComments(null);
-    setError(null);
-    api
-      .comments(issue.projectId, issue.iid)
-      .then((c) => alive && setComments(c))
-      .catch((e) => alive && setError(e instanceof ApiError ? e.message : 'Falha ao carregar a discussão.'));
-    return () => {
-      alive = false;
-    };
-  }, [issue?.projectId, issue?.iid]); // eslint-disable-line react-hooks/exhaustive-deps
+  const thread = useThread(issue ? issue.ref : null, () => api.comments(issue!.projectId, issue!.iid));
+  const commentIssue = useStore((s) => s.commentIssue);
+  const mergeRequests = useStore((s) => s.mergeRequests);
+  const issueMrs = useMemo(
+    () =>
+      Object.values(mergeRequests).filter(
+        (m) =>
+          m.issueRef === node?.refId &&
+          Object.values(nodes).some((n) => n.type === 'mr' && n.refId === m.ref),
+      ),
+    [mergeRequests, nodes, node?.refId],
+  );
 
   if (!issue) return null;
   const crit = checklist(issue.description);
@@ -273,39 +271,36 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
               </p>
             )}
           </section>
-          <section>
-            <h4>Discussão</h4>
-            {error ? (
-              <p className="lab" style={{ margin: 0, color: 'var(--bad)' }}>
-                {error}
-              </p>
-            ) : !comments ? (
-              <p className="lab" style={{ margin: 0 }}>
-                Carregando…
-              </p>
-            ) : !comments.length ? (
-              <p className="lab" style={{ margin: 0 }}>
-                Sem comentários ainda.
-              </p>
-            ) : (
-              <div className="thread">
-                {comments.map((c) => (
-                  <div className="cm" key={c.id}>
-                    <span className={`av${c.isAgent ? ' bot' : ''}`}>
-                      {c.isAgent ? <IconAgent /> : initials(c.author)}
+          {issueMrs.length > 0 && (
+            <section>
+              <h4>Merge requests</h4>
+              <div className="links">
+                {issueMrs.map((m) => (
+                  <div className="lk" key={m.ref}>
+                    <span className="ico mr">
+                      <IconMr />
                     </span>
-                    <div>
-                      <div className="cm-h">
-                        <b>{c.author}</b>
-                        {c.isAgent && <span className="badge info">agente</span>}
-                        <time dateTime={c.createdAt}>{timeAgo(c.createdAt)}</time>
-                      </div>
-                      <p style={{ whiteSpace: 'pre-wrap' }}>{c.body}</p>
-                    </div>
+                    <span>
+                      <b>!{m.iid}</b> {m.projectPath.split('/').pop()}
+                    </span>
+                    <MrBadge mr={m} />
+                    <button
+                      className="btn sm plain"
+                      onClick={() => {
+                        const n = mrNodeOf(useStore.getState(), m.ref);
+                        if (n) openFocus(n.id);
+                      }}
+                    >
+                      Abrir
+                    </button>
                   </div>
                 ))}
               </div>
-            )}
+            </section>
+          )}
+          <section>
+            <h4>Discussão</h4>
+            <Thread {...thread} />
           </section>
         </div>
       </div>
@@ -333,7 +328,273 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             Abrir no GitLab
           </button>
         </div>
-        <div className="f-hint">Comentar pelo canvas chega na Fase 3 · Esc fecha</div>
+        <CommentBox
+          placeholder={`Comentar na issue #${issue.iid}`}
+          onSend={(body) => commentIssue(issue.ref, body)}
+        />
+        <div className="f-hint">O comentário vai para o GitLab com o seu usuário · Esc fecha</div>
+      </div>
+    </div>
+  );
+}
+
+/** Discussão do GitLab, recarregada quando o bridge avisa que mudou (thread.changed). */
+function useThread(ref: string | null, load: () => Promise<IssueComment[]>) {
+  const version = useStore((s) => (ref ? (s.threadVersion[ref] ?? 0) : 0));
+  const [comments, setComments] = useState<IssueComment[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const lastRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ref) return;
+    let alive = true;
+    // ao trocar de item, limpa; ao recarregar o mesmo, mantém a lista até chegar a nova
+    if (lastRef.current !== ref) setComments(null);
+    lastRef.current = ref;
+    setError(null);
+    load()
+      .then((c) => alive && setComments(c))
+      .catch((e) => alive && setError(e instanceof ApiError ? e.message : 'Falha ao carregar a discussão.'));
+    return () => {
+      alive = false;
+    };
+  }, [ref, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { comments, error };
+}
+
+function Thread({ comments, error }: { comments: IssueComment[] | null; error: string | null }) {
+  if (error)
+    return (
+      <p className="lab" style={{ margin: 0, color: 'var(--bad)' }}>
+        {error}
+      </p>
+    );
+  if (!comments)
+    return (
+      <p className="lab" style={{ margin: 0 }}>
+        Carregando…
+      </p>
+    );
+  if (!comments.length)
+    return (
+      <p className="lab" style={{ margin: 0 }}>
+        Sem comentários ainda.
+      </p>
+    );
+  return (
+    <div className="thread">
+      {comments.map((c) => (
+        <div className="cm" key={c.id}>
+          <span className={`av${c.isAgent ? ' bot' : ''}`}>
+            {c.isAgent ? <IconAgent /> : initials(c.author)}
+          </span>
+          <div>
+            <div className="cm-h">
+              <b>{c.author}</b>
+              {c.isAgent && <span className="badge info">agente</span>}
+              <time dateTime={c.createdAt}>{timeAgo(c.createdAt)}</time>
+            </div>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{c.body}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Campo de comentário do foco de issue e MR. */
+function CommentBox({ placeholder, onSend }: { placeholder: string; onSend(body: string): void }) {
+  const [text, setText] = useState('');
+  const send = () => {
+    if (!text.trim()) return;
+    onSend(text.trim());
+    setText('');
+  };
+  return (
+    <form
+      className="f-comp"
+      onSubmit={(e) => {
+        e.preventDefault();
+        send();
+      }}
+    >
+      <textarea
+        rows={1}
+        value={text}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        onChange={(e) => {
+          setText(e.target.value);
+          const t = e.target;
+          t.style.height = 'auto';
+          t.style.height = Math.min(t.scrollHeight, 160) + 'px';
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            send();
+          }
+        }}
+      />
+      <button className="send" aria-label="Comentar">
+        ↑
+      </button>
+    </form>
+  );
+}
+
+/** Linhas de um diff unificado, com as classes do protótipo. */
+function DiffFile({ f }: { f: MrDiffFile }) {
+  const lines = f.diff.replace(/\n$/, '').split('\n');
+  const add = lines.filter((l) => l.startsWith('+')).length;
+  const del = lines.filter((l) => l.startsWith('-')).length;
+  const name = f.renamedFile ? `${f.oldPath} → ${f.newPath}` : f.newPath;
+  return (
+    <div className="diff">
+      <div className="diff-h">
+        <span>
+          {name}
+          {f.newFile ? ' (novo)' : f.deletedFile ? ' (removido)' : ''}
+        </span>
+        <DiffStat add={add} del={del} />
+      </div>
+      <div className="diff-b">
+        {lines.map((l, i) => (
+          <div
+            key={i}
+            className={`dl ${l.startsWith('@@') ? 'hunk' : l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx'}`}
+          >
+            {l || ' '}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
+  const node = useStore((s) => s.nodes[nodeId]);
+  const mr = useStore((s) => (node ? s.mergeRequests[node.refId] : undefined));
+  const agent = useStore((s) => (mr?.agentId ? s.agents[mr.agentId] : undefined));
+  const issue = useStore((s) => (mr?.issueRef ? s.issues[mr.issueRef] : undefined));
+  const openFocus = useStore((s) => s.openFocus);
+  const commentMr = useStore((s) => s.commentMr);
+  const mergeMr = useStore((s) => s.mergeMr);
+  const refreshMr = useStore((s) => s.refreshMr);
+  const thread = useThread(mr ? mr.ref : null, () => api.mrComments(mr!.ref));
+  const [files, setFiles] = useState<MrDiffFile[] | null>(null);
+  const [diffError, setDiffError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!mr) return;
+    let alive = true;
+    setDiffError(null);
+    api
+      .mrDiff(mr.ref)
+      .then((f) => alive && setFiles(f))
+      .catch((e) => alive && setDiffError(e instanceof ApiError ? e.message : 'Falha ao carregar o diff.'));
+    return () => {
+      alive = false;
+    };
+  }, [mr?.ref, mr?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!mr) return null;
+  const repo = mr.projectPath.split('/').pop();
+  const description = mr.description.replace(/\n*_Aberto por .+ no Agent Canvas\._\s*$/, '').trim();
+
+  return (
+    <div className="f-main">
+      <Head
+        icon={
+          <span className="ico mr">
+            <IconMr />
+          </span>
+        }
+        name={`MR !${mr.iid}`}
+        sub={`${repo} · ${mr.sourceBranch}`}
+        status={<MrBadge mr={mr} />}
+        onClose={onClose}
+      />
+      <div className="f-body doc">
+        <div className="fx">
+          <div className="fx-head">
+            <div className="tags">
+              <span className="badge repo">{repo}</span>
+              <span className="badge">
+                {mr.sourceBranch} → {mr.targetBranch}
+              </span>
+            </div>
+            <h2 className="fx-title">{mr.title}</h2>
+            <p className="fx-meta">
+              {agent ? `Aberto por ${agent.name}` : 'Aberto pelo canvas'}
+              {issue ? ` · fecha #${issue.iid}` : ''} · <DiffStat add={mr.additions} del={mr.deletions} /> ·
+              atualizado {timeAgo(mr.updatedAt)}
+            </p>
+          </div>
+          {description && (
+            <section>
+              <h4>Descrição</h4>
+              <p className="fx-p pre">{description}</p>
+            </section>
+          )}
+          <section>
+            <h4>Pipeline</h4>
+            <PipelineStages mr={mr} />
+          </section>
+          <section>
+            <h4>Mudanças{files ? ` · ${files.length} arquivo${files.length === 1 ? '' : 's'}` : ''}</h4>
+            {diffError ? (
+              <p className="lab" style={{ margin: 0, color: 'var(--bad)' }}>
+                {diffError}
+              </p>
+            ) : !files ? (
+              <p className="lab" style={{ margin: 0 }}>
+                Carregando…
+              </p>
+            ) : !files.length ? (
+              <p className="lab" style={{ margin: 0 }}>
+                Sem mudanças para mostrar.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {files.map((f) => (
+                  <DiffFile key={`${f.oldPath}:${f.newPath}`} f={f} />
+                ))}
+              </div>
+            )}
+          </section>
+          <section>
+            <h4>Discussão</h4>
+            <Thread {...thread} />
+          </section>
+        </div>
+      </div>
+      <div className="f-foot">
+        <div className="f-sugg">
+          {mrReady(mr) && (
+            <button type="button" onClick={() => mergeMr(mr.ref)}>
+              Aprovar e mergear
+            </button>
+          )}
+          {agent && (
+            <button
+              type="button"
+              onClick={() => {
+                const n = agentNodeOf(useStore.getState(), agent.id);
+                if (n) openFocus(n.id);
+              }}
+            >
+              Abrir {agent.name}
+            </button>
+          )}
+          <button type="button" onClick={() => refreshMr(mr.ref)}>
+            Atualizar status
+          </button>
+          <button type="button" onClick={() => window.open(mr.webUrl, '_blank', 'noopener,noreferrer')}>
+            Abrir no GitLab
+          </button>
+        </div>
+        <CommentBox placeholder={`Comentar no MR !${mr.iid}`} onSend={(body) => commentMr(mr.ref, body)} />
+        <div className="f-hint">O comentário vai para o GitLab com o seu usuário · Esc fecha</div>
       </div>
     </div>
   );

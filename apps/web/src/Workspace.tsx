@@ -10,7 +10,7 @@ import { Inspector } from './panels/Inspector.tsx';
 import { Sidebar } from './panels/Sidebar.tsx';
 import { Toast } from './panels/Toast.tsx';
 import { newAgentAt } from './actions.ts';
-import { hasPendingUndo, liveAgents, useStore } from './state/store.ts';
+import { hasPendingUndo, liveAgents, liveMrs, useStore } from './state/store.ts';
 
 const ISSUES_EVERY_MS = 60_000;
 
@@ -128,6 +128,7 @@ function TopBar({ workspace }: { workspace: string }) {
     (s) => liveAgents(s).filter((a) => a.status === 'running' || a.status === 'coordinating').length,
   );
   const waiting = useStore((s) => liveAgents(s).filter((a) => a.status === 'waiting').length);
+  const mrCount = useStore((s) => liveMrs(s).filter((m) => m.state === 'opened').length);
   return (
     <header className="top">
       <button
@@ -168,7 +169,9 @@ function TopBar({ workspace }: { workspace: string }) {
             {waiting} aguardando você
           </button>
         )}
-        <span className="badge mrb">0 MRs</span>
+        <span className="badge mrb">
+          {mrCount} MR{mrCount === 1 ? '' : 's'}
+        </span>
       </div>
       <button className="btn primary" onClick={() => newAgentAt()}>
         + Novo agente

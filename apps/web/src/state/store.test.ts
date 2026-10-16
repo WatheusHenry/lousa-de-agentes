@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClientMessage, Issue, StateSnapshot } from '@agent-canvas/shared';
-import { hasPendingUndo, useStore } from './store.ts';
+import type { ClientMessage, Issue, MergeRequest, StateSnapshot } from '@agent-canvas/shared';
+import { hasPendingUndo, liveMrs, mrOfAgent, useStore } from './store.ts';
+import { actionsCount } from '../panels/Sidebar.tsx';
 
 const issue: Issue = {
   ref: '101#142',
@@ -113,5 +114,46 @@ describe('store do canvas', () => {
   it('erro do servidor vira aviso', () => {
     useStore.getState().applyServer({ type: 'error', message: 'Issue desconhecida.' });
     expect(useStore.getState().toast?.msg).toBe('Issue desconhecida.');
+  });
+
+  it('MR: chega pelo servidor, conta nas Ações quando fica pronto e o merge é um pedido ao bridge', () => {
+    const mr: MergeRequest = {
+      ref: '101!88',
+      projectId: 101,
+      projectPath: 'acme/payments-api',
+      iid: 88,
+      title: 'Corrige webhook',
+      description: '',
+      sourceBranch: 'agent/142-webhook',
+      targetBranch: 'main',
+      state: 'opened',
+      pipelineStatus: 'running',
+      webUrl: 'x',
+      additions: 3,
+      deletions: 1,
+      agentId: 'a1',
+      issueRef: '101#142',
+      updatedAt: '2026-10-01T00:00:00Z',
+    };
+    const st = useStore.getState();
+    st.applyServer({ type: 'mr.upsert', mr });
+    st.applyServer({
+      type: 'node.upsert',
+      node: { id: 'n-mr', type: 'mr', refId: mr.ref, x: 0, y: 0, createdAt: mr.updatedAt },
+    });
+    expect(liveMrs(useStore.getState())).toHaveLength(1);
+    expect(mrOfAgent(useStore.getState(), 'a1')?.iid).toBe(88);
+    const before = actionsCount(useStore.getState());
+    st.applyServer({ type: 'mr.upsert', mr: { ...mr, pipelineStatus: 'success' } });
+    expect(actionsCount(useStore.getState())).toBe(before + 1);
+
+    st.mergeMr(mr.ref);
+    st.commentMr(mr.ref, 'ok');
+    expect(sent.slice(-2)).toEqual([
+      { type: 'mr.merge', mrRef: '101!88' },
+      { type: 'mr.comment', mrRef: '101!88', body: 'ok' },
+    ]);
+    st.applyServer({ type: 'thread.changed', target: 'mr', ref: mr.ref });
+    expect(useStore.getState().threadVersion[mr.ref]).toBe(1);
   });
 });

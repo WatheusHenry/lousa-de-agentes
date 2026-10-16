@@ -9,6 +9,7 @@ import type {
   CanvasNode,
   ClientMessage,
   Issue,
+  MergeRequest,
   Note,
   NoteLink,
   ServerMessage,
@@ -48,6 +49,10 @@ export interface CanvasState {
   /** Pedidos de permissão pendentes. */
   approvals: Record<string, Approval>;
   policies: Policy[];
+  /** MRs do canvas, por ref (`<projectId>!<iid>`). */
+  mergeRequests: Record<string, MergeRequest>;
+  /** Muda quando a discussão de um MR ou issue muda no GitLab (para recarregar). */
+  threadVersion: Record<string, number>;
 
   // ---------- issues abertas (barra lateral) ----------
   openIssueRefs: string[];
@@ -101,6 +106,10 @@ export interface CanvasState {
   stopAgent(agentId: string): void;
   decideApproval(approvalId: string, decision: 'allow' | 'deny', remember?: boolean): void;
   removePolicy(policyId: string): void;
+  mergeMr(ref: string): void;
+  refreshMr(ref: string): void;
+  commentMr(ref: string, body: string): void;
+  commentIssue(ref: string, body: string): void;
 
   select(id: string | null): void;
   setPanel(p: Panel): void;
@@ -160,6 +169,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
   agentEvents: {},
   approvals: {},
   policies: [],
+  mergeRequests: {},
+  threadVersion: {},
   openIssueRefs: [],
   issuesLoading: false,
   issuesError: null,
@@ -194,6 +205,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
         agentEvents: groupEvents(s.agentEvents),
         approvals: byId(s.approvals.filter((a) => a.status === 'pending')),
         policies: s.policies,
+        mergeRequests: Object.fromEntries(s.mergeRequests.map((m) => [m.ref, m])),
         selected: st.selected && nodes[st.selected] ? st.selected : null,
         focusId: st.focusId && nodes[st.focusId] ? st.focusId : null,
       };
@@ -268,6 +280,12 @@ export const useStore = create<CanvasState>()((set, get) => ({
         }));
       case 'policy.remove':
         return set((s) => ({ policies: s.policies.filter((p) => p.id !== m.policyId) }));
+      case 'mr.upsert':
+        return set((s) => ({ mergeRequests: { ...s.mergeRequests, [m.mr.ref]: m.mr } }));
+      case 'thread.changed':
+        return set((s) => ({
+          threadVersion: { ...s.threadVersion, [m.ref]: (s.threadVersion[m.ref] ?? 0) + 1 },
+        }));
       case 'error':
         return get().showToast(m.message, { label: 'Ok', run: () => {} });
     }
@@ -393,7 +411,9 @@ export const useStore = create<CanvasState>()((set, get) => ({
           ? `Nota "${s.notes[n.refId]?.title ?? ''}" excluída`
           : n.type === 'agent'
             ? `${s.agents[n.refId]?.name ?? 'Agente'} parado e removido do canvas`
-            : 'Item removido do canvas';
+            : n.type === 'mr'
+              ? `MR !${s.mergeRequests[n.refId]?.iid ?? ''} removido do canvas (continua no GitLab)`
+              : 'Item removido do canvas';
     const nodes = omit(s.nodes, id);
     set({
       nodes,
@@ -425,7 +445,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
       repos: repos ?? [],
       ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
       maxDepth: 0,
-      openMr: false,
+      openMr: true,
       x: at.x,
       y: at.y,
     });
@@ -445,6 +465,10 @@ export const useStore = create<CanvasState>()((set, get) => ({
     set((s) => ({ policies: s.policies.filter((p) => p.id !== policyId) }));
     send({ type: 'policy.remove', policyId });
   },
+  mergeMr: (ref) => send({ type: 'mr.merge', mrRef: ref }),
+  refreshMr: (ref) => send({ type: 'mr.refresh', mrRef: ref }),
+  commentMr: (ref, body) => send({ type: 'mr.comment', mrRef: ref, body }),
+  commentIssue: (ref, body) => send({ type: 'issue.comment', issueRef: ref, body }),
 
   select: (id) => set((s) => ({ selected: id, panel: id ? null : s.panel })),
   setPanel: (p) => set({ panel: p, selected: null }),
@@ -494,3 +518,19 @@ export const liveAgents = (s: CanvasState) =>
     .filter((n) => n.type === 'agent')
     .map((n) => s.agents[n.refId])
     .filter((a): a is Agent => !!a);
+
+export const mrNodeOf = (s: CanvasState, ref: string) =>
+  Object.values(s.nodes).find((n) => n.type === 'mr' && n.refId === ref);
+
+/** MRs cujo nó está no canvas. */
+export const liveMrs = (s: CanvasState) =>
+  Object.values(s.nodes)
+    .filter((n) => n.type === 'mr')
+    .map((n) => s.mergeRequests[n.refId])
+    .filter((m): m is MergeRequest => !!m);
+
+/** MR mais recente aberto pelo agente. */
+export const mrOfAgent = (s: CanvasState, agentId: string) =>
+  Object.values(s.mergeRequests)
+    .filter((m) => m.agentId === agentId)
+    .sort((a, b) => b.iid - a.iid)[0];

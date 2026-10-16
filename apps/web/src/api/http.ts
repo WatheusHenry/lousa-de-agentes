@@ -5,6 +5,7 @@ import {
   type GitLabSettingsInput,
   type Issue,
   type IssueComment,
+  type MrDiffFile,
   type SettingsView,
   type StateSnapshot,
 } from '@agent-canvas/shared';
@@ -57,4 +58,6 @@ export const api = {
   rawEvents: (agentId: string) => call<string[]>(`/api/agents/${encodeURIComponent(agentId)}/raw`),
   comments: (projectId: number, iid: number) =>
     call<IssueComment[]>(`/api/gitlab/issues/${projectId}/${iid}/comments`),
+  mrDiff: (ref: string) => call<MrDiffFile[]>(`/api/mrs/${encodeURIComponent(ref)}/diff`),
+  mrComments: (ref: string) => call<IssueComment[]>(`/api/mrs/${encodeURIComponent(ref)}/comments`),
 };

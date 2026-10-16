@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { Issue } from '@agent-canvas/shared';
-import { addIssue, newAgentAt } from '../actions.ts';
+import { addIssue, askFixPipeline, newAgentAt } from '../actions.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
   IconAgent,
@@ -8,16 +8,19 @@ import {
   IconExpand,
   IconIssue,
   IconLocate,
+  IconMr,
   IconPlus,
   IconRepo,
   IconSearch,
 } from '../icons.tsx';
 import { clock, isBug, isP1, repoName } from '../lib/format.ts';
-import { useStore, type CanvasState, type Tab } from '../state/store.ts';
+import { DiffStat, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
+import { liveMrs, mrNodeOf, useStore, type CanvasState, type Tab } from '../state/store.ts';
 
-/** Itens da aba Ações: permissões pendentes e agentes esperando instrução. */
+/** Itens da aba Ações: permissões, MRs prontos ou com pipeline falho e agentes esperando instrução. */
 export function actionsCount(s: CanvasState): number {
   let n = Object.keys(s.approvals).length;
+  for (const m of liveMrs(s)) if (mrReady(m) || mrFailed(m)) n++;
   for (const node of Object.values(s.nodes)) {
     const a = node.type === 'agent' ? s.agents[node.refId] : undefined;
     if (a && (a.status === 'idle' || a.status === 'done' || a.status === 'error')) n++;
@@ -268,7 +271,22 @@ function ActionsTab() {
   const agents = useStore((s) => s.agents);
   const nodes = useStore((s) => s.nodes);
   const policies = useStore((s) => s.policies);
+  const mergeRequests = useStore((s) => s.mergeRequests);
   const st = useStore.getState();
+  const mrs = useMemo(
+    () =>
+      Object.values(nodes)
+        .filter((n) => n.type === 'mr')
+        .map((n) => mergeRequests[n.refId])
+        .filter((m) => !!m),
+    [nodes, mergeRequests],
+  );
+  const ready = mrs.filter(mrReady);
+  const failed = mrs.filter(mrFailed);
+  const focusMr = (ref: string) => {
+    const n = mrNodeOf(useStore.getState(), ref);
+    if (n) st.openFocus(n.id);
+  };
   const pending = Object.values(approvals).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const idle = Object.values(nodes)
     .filter((n) => n.type === 'agent')
@@ -309,7 +327,7 @@ function ActionsTab() {
     </>
   );
 
-  if (!pending.length && !idle.length)
+  if (!pending.length && !idle.length && !ready.length && !failed.length)
     return (
       <>
         <div className="empty-act">
@@ -317,7 +335,7 @@ function ActionsTab() {
             <IconAgent />
           </span>
           <b>Nada esperando você</b>
-          <span>Quando um agente pedir permissão ou terminar um turno, aparece aqui.</span>
+          <span>Quando um agente pedir permissão ou um MR ficar pronto, aparece aqui.</span>
         </div>
         {policiesBlock}
       </>
@@ -383,6 +401,70 @@ function ActionsTab() {
               </div>
             );
           })}
+        </>
+      )}
+      {ready.length > 0 && (
+        <>
+          <div className="grp-h">
+            <span>Merge requests prontos</span>
+            <span className="cnt">{ready.length}</span>
+          </div>
+          {ready.map((m) => (
+            <div className="act-card" key={m.ref}>
+              <div className="act-top">
+                <span className="ico mr sm">
+                  <IconMr />
+                </span>
+                <b>!{m.iid}</b>
+                <span className="lab">{m.projectPath.split('/').pop()}</span>
+                <span style={{ marginLeft: 'auto' }}>
+                  <DiffStat add={m.additions} del={m.deletions} />
+                </span>
+              </div>
+              <p className="act-t">{m.title}</p>
+              <div className="act-btns">
+                <button className="btn sm primary" onClick={() => st.mergeMr(m.ref)}>
+                  Aprovar e mergear
+                </button>
+                <button className="btn sm" onClick={() => focusMr(m.ref)}>
+                  Ver diff
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+      {failed.length > 0 && (
+        <>
+          <div className="grp-h">
+            <span>Pipelines com falha</span>
+            <span className="cnt">{failed.length}</span>
+          </div>
+          {failed.map((m) => (
+            <div className="act-card" key={m.ref}>
+              <div className="act-top">
+                <span className="ico mr sm">
+                  <IconMr />
+                </span>
+                <b>!{m.iid}</b>
+                <span className="lab">{m.projectPath.split('/').pop()}</span>
+                <span className="badge bad" style={{ marginLeft: 'auto' }}>
+                  Falhou
+                </span>
+              </div>
+              <p className="act-t">{m.title}</p>
+              <div className="act-btns">
+                {m.agentId && agents[m.agentId] && (
+                  <button className="btn sm primary" onClick={() => askFixPipeline(m.ref)}>
+                    Pedir correção a {agents[m.agentId]!.name}
+                  </button>
+                )}
+                <button className="btn sm" onClick={() => focusMr(m.ref)}>
+                  Ver
+                </button>
+              </div>
+            </div>
+          ))}
         </>
       )}
       {idle.length > 0 && (
