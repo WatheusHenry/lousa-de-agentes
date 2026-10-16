@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import type { WebSocket } from 'ws';
 import {
   ClientMessage,
   ProjectSelectionInput,
@@ -14,27 +13,49 @@ import {
   type ServerMessage,
   type StateSnapshot,
 } from '@agent-canvas/shared';
+import { AgentError, Supervisor } from './agents/supervisor.ts';
+import type { AgentRunner } from './agents/runner.ts';
+import { ApprovalService } from './approvals/approval-service.ts';
 import { CanvasError, CanvasStore } from './canvas/canvas-store.ts';
 import type { BridgeConfig } from './config.ts';
 import type { Db } from './db/index.ts';
 import { GitLabError } from './gitlab/client.ts';
+import { Hub } from './hub.ts';
+import { registerMcp } from './mcp/canvas-server.ts';
 import type { Session } from './session.ts';
 import { SettingsError, type SettingsService } from './settings.ts';
 
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '0.2.0';
 
 export interface ServerDeps {
   config: Pick<BridgeConfig, 'port' | 'allowedOrigins' | 'webDist'>;
   db: Db;
   session: Session;
   settings: SettingsService;
+  runner: AgentRunner;
+  /** Pasta de dados do app: worktrees e configs MCP dos agentes. */
+  home: string;
+  /** Modelo dos agentes (padrão do Claude Code quando ausente). */
+  model?: string;
   logger?: boolean;
 }
 
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const { config, db, session, settings } = deps;
   const store = new CanvasStore(db);
-  const clients = new Set<WebSocket>();
+  const hub = new Hub();
+  const approvals = new ApprovalService(db, hub);
+  const supervisor = new Supervisor({
+    db,
+    hub,
+    store,
+    settings,
+    approvals,
+    runner: deps.runner,
+    home: deps.home,
+    bridgePort: config.port,
+    ...(deps.model ? { model: deps.model } : {}),
+  });
 
   const app = Fastify({
     // a URL do WebSocket leva o token de sessão: o log grava só o caminho
@@ -83,6 +104,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         setImmediate(() => req.raw.socket.destroy());
         return reply;
       }
+    } else if (path === '/mcp') {
+      // o claude dos agentes: só Host local; o token do agente é conferido no handler
+      if (!allowedHosts.has(req.headers.host ?? ''))
+        return reply.code(403).send({ error: 'Host não permitido.' });
     } else if (path.startsWith('/api/')) {
       const h = req.headers[SESSION_HEADER];
       if (!guard(req, reply, Array.isArray(h) ? h[0] : h)) return reply;
@@ -92,18 +117,14 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof SettingsError) return reply.code(err.statusCode).send({ error: err.message });
     if (err instanceof GitLabError) return reply.code(502).send({ error: err.message });
-    if (err instanceof CanvasError) return reply.code(409).send({ error: err.message });
+    if (err instanceof CanvasError || err instanceof AgentError)
+      return reply.code(409).send({ error: err.message });
     app.log.error(err);
     const status = (err as { statusCode?: number }).statusCode;
     return reply.code(status && status < 500 ? status : 500).send({ error: 'Erro interno no bridge.' });
   });
 
-  function broadcast(msgs: ServerMessage[], except?: WebSocket): void {
-    for (const msg of msgs) {
-      const data = JSON.stringify(msg);
-      for (const ws of clients) if (ws !== except && ws.readyState === ws.OPEN) ws.send(data);
-    }
-  }
+  const broadcast = hub.broadcast.bind(hub);
 
   const snapshot = (): StateSnapshot => ({
     settings: settings.view(),
@@ -113,6 +134,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     noteLinks: store.liveNoteLinks(),
     issues: store.canvasIssues(),
     activity: store.recentActivity(),
+    agents: supervisor.agents(),
+    agentEvents: supervisor.recentEvents(),
+    approvals: approvals.pending(),
+    policies: approvals.policies(),
   });
 
   // ---------- HTTP ----------
@@ -174,15 +199,26 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return settings.client().listIssueComments(p, Number(iid));
   });
 
+  app.get('/api/agents/:id/events', async (req) => {
+    const { id } = req.params as { id: string };
+    const before = Number((req.query as { before?: string }).before) || undefined;
+    return supervisor.events(id, before).reverse();
+  });
+
+  /** Modo "saída bruta": as linhas do stream-json como vieram do claude. */
+  app.get('/api/agents/:id/raw', async (req) => supervisor.rawEvents((req.params as { id: string }).id));
+
+  registerMcp(app, { agentByToken: (t) => supervisor.mcpContext(t), approvals });
+
   // ---------- WebSocket ----------
 
   await app.register(fastifyWebsocket, { options: { maxPayload: 1_000_000 } });
 
   app.get('/ws', { websocket: true }, (socket) => {
-    clients.add(socket);
+    hub.clients.add(socket);
     const send = (m: ServerMessage) => socket.send(JSON.stringify(m));
     send({ type: 'hello', serverVersion: SERVER_VERSION });
-    socket.on('close', () => clients.delete(socket));
+    socket.on('close', () => hub.clients.delete(socket));
     socket.on('message', (raw) => {
       let msg: ClientMessage;
       try {
@@ -192,8 +228,21 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       } catch {
         return send({ type: 'error', message: 'Mensagem inválida.' });
       }
+      if (msg.type.startsWith('agent.') || msg.type === 'approval.decide' || msg.type === 'policy.remove') {
+        void handleAgentMessage(msg).catch((err) => {
+          const known =
+            err instanceof AgentError || err instanceof SettingsError || err instanceof GitLabError;
+          if (!known) app.log.error(err);
+          send({ type: 'error', message: known ? (err as Error).message : 'Erro ao falar com o agente.' });
+        });
+        return;
+      }
       try {
         const out = store.apply(msg);
+        if (msg.type === 'node.remove') {
+          const n = store.anyNode(msg.nodeId);
+          if (n?.type === 'agent') supervisor.onNodeRemoved(n.refId);
+        }
         if (msg.type === 'node.restore') {
           broadcast(out);
           if (out.length) broadcast([{ type: 'state.snapshot', state: snapshot() }]);
@@ -217,6 +266,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     });
   });
 
+  async function handleAgentMessage(msg: ClientMessage): Promise<void> {
+    if (msg.type === 'approval.decide') return approvals.decide(msg.approvalId, msg.decision, msg.remember);
+    if (msg.type === 'policy.remove') return approvals.removePolicy(msg.policyId);
+    if (msg.type.startsWith('agent.')) return supervisor.handle(msg as Parameters<Supervisor['handle']>[0]);
+  }
+
   // ---------- front-end em produção ----------
 
   if (config.webDist) {
@@ -239,7 +294,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   }
 
   app.addHook('preClose', async () => {
-    for (const ws of clients) ws.terminate();
+    supervisor.shutdown();
+    for (const ws of hub.clients) ws.terminate();
   });
 
   store.purgeRemoved();

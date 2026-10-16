@@ -11,7 +11,7 @@ import {
   type ServerMessage,
 } from '@agent-canvas/shared';
 import type { Db } from '../db/index.ts';
-import { activity, edge, issueCache, node, note, noteLink } from '../db/schema.ts';
+import { activity, agent, edge, issueCache, node, note, noteLink } from '../db/schema.ts';
 
 export class CanvasError extends Error {}
 
@@ -166,6 +166,9 @@ export class CanvasStore {
         return this.linkNote(msg.edgeId, msg.noteId, msg.targetNodeId);
       case 'note.unlink':
         return this.unlinkNote(msg.noteId, msg.targetNodeId);
+      default:
+        // mensagens de agente, aprovação e regra são tratadas pelo supervisor
+        throw new CanvasError('Mensagem não é do canvas.');
     }
   }
 
@@ -289,7 +292,9 @@ export class CanvasStore {
     if (!r) return [];
     return [
       { type: 'node.remove', nodeId },
-      this.logActivity(`${this.describe(r, true)} ${r.type === 'note' ? 'excluída' : 'removida do canvas'}`),
+      this.logActivity(
+        `${this.describe(r, true)} ${r.type === 'note' ? 'excluída' : r.type === 'agent' ? 'removido do canvas' : 'removida do canvas'}`,
+      ),
     ];
   }
 
@@ -340,6 +345,12 @@ export class CanvasStore {
     });
   }
 
+  /** Nó pelo id, removido ou não. */
+  anyNode(nodeId: string): CanvasNode | null {
+    const r = this.db.select().from(node).where(eq(node.id, nodeId)).get();
+    return r ? toNode(r) : null;
+  }
+
   private liveNodeByRef(type: NodeRow['type'], refId: string): NodeRow | undefined {
     return this.db
       .select()
@@ -356,6 +367,10 @@ export class CanvasStore {
     if (n.type === 'note') {
       const nt = this.db.select().from(note).where(eq(note.id, n.refId)).get();
       return `${capital ? 'Nota' : 'nota'} "${nt?.title ?? ''}"`;
+    }
+    if (n.type === 'agent') {
+      const a = this.db.select({ name: agent.name }).from(agent).where(eq(agent.id, n.refId)).get();
+      return a?.name ?? (capital ? 'Agente' : 'agente');
     }
     return capital ? 'Item' : 'item';
   }

@@ -83,3 +83,65 @@ export const activity = sqliteTable('activity', {
   text: text('text').notNull(),
   ts: text('ts').notNull(),
 });
+
+export const agent = sqliteTable('agent', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  role: text('role', { enum: ['main', 'orchestrator', 'sub', 'reviewer', 'fix'] }).notNull(),
+  parentId: text('parent_id'),
+  issueRef: text('issue_ref'),
+  repos: text('repos', { mode: 'json' }).$type<number[]>().notNull(),
+  instruction: text('instruction'),
+  title: text('title').notNull(),
+  branch: text('branch'),
+  worktreePath: text('worktree_path'),
+  sessionId: text('session_id'),
+  status: text('status', {
+    enum: ['idle', 'running', 'waiting', 'coordinating', 'paused', 'done', 'stopped', 'error'],
+  }).notNull(),
+  error: text('error'),
+  depth: integer('depth').notNull().default(0),
+  maxDepth: integer('max_depth').notNull().default(0),
+  openMr: integer('open_mr', { mode: 'boolean' }).notNull().default(false),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  contextTokens: integer('context_tokens').notNull().default(0),
+  costUsd: real('cost_usd').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+});
+
+export const agentEvent = sqliteTable(
+  'agent_event',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    agentId: text('agent_id').notNull(),
+    ts: text('ts').notNull(),
+    type: text('type').notNull(),
+    payload: text('payload', { mode: 'json' }).notNull(),
+    /** Linha original do stream-json, para o modo "saída bruta". */
+    raw: text('raw'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+  },
+  (t) => [index('agent_event_agent_idx').on(t.agentId, t.id)],
+);
+
+export const approval = sqliteTable('approval', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull(),
+  toolName: text('tool_name').notNull(),
+  input: text('input', { mode: 'json' }).notNull(),
+  toolUseId: text('tool_use_id'),
+  summary: text('summary').notNull(),
+  suggestedRule: text('suggested_rule').notNull(),
+  status: text('status', { enum: ['pending', 'allowed', 'denied'] }).notNull(),
+  decidedBy: text('decided_by'),
+  createdAt: text('created_at').notNull(),
+});
+
+export const policy = sqliteTable('policy', {
+  id: text('id').primaryKey(),
+  pattern: text('pattern').notNull(),
+  scope: text('scope').notNull(),
+  createdAt: text('created_at').notNull(),
+});

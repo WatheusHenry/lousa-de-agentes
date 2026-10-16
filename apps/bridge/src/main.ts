@@ -4,6 +4,7 @@ import { loadConfig } from './config.ts';
 import { openDb } from './db/index.ts';
 import { GitbeakerClient } from './gitlab/gitbeaker-client.ts';
 import { SecretStore } from './secrets.ts';
+import { CliRunner } from './agents/cli-runner.ts';
 import { buildServer } from './server.ts';
 import { Session } from './session.ts';
 import { SettingsService } from './settings.ts';
@@ -20,7 +21,16 @@ const settings = new SettingsService(
   new SecretStore(config.home),
   (url, token) => new GitbeakerClient(url, token),
 );
-const app = await buildServer({ config, db, session, settings, logger: true });
+const app = await buildServer({
+  config,
+  db,
+  session,
+  settings,
+  runner: new CliRunner(),
+  home: config.home,
+  ...(process.env.AGENT_CANVAS_MODEL ? { model: process.env.AGENT_CANVAS_MODEL } : {}),
+  logger: true,
+});
 
 await app.listen({ host: config.host, port: config.port });
 const unpublish = session.publish(config.home, config.port);

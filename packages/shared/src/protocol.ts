@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Agent, AgentEvent, Approval, Policy } from './agents.ts';
 import { Activity, CanvasEdge, CanvasNode, Note, NoteLink } from './canvas.ts';
 import { Issue, IssueRef } from './gitlab.ts';
 import { SettingsView } from './settings.ts';
@@ -19,6 +20,12 @@ export const StateSnapshot = z.object({
   /** Issues referenciadas por nós do canvas (do cache local). */
   issues: z.array(Issue),
   activity: z.array(Activity),
+  agents: z.array(Agent),
+  /** Últimos eventos de cada agente (o histórico completo vem por GET /api/agents/:id/events). */
+  agentEvents: z.array(AgentEvent),
+  /** Pedidos de permissão pendentes. */
+  approvals: z.array(Approval),
+  policies: z.array(Policy),
 });
 export type StateSnapshot = z.infer<typeof StateSnapshot>;
 
@@ -54,6 +61,41 @@ export const ClientMessage = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('note.link'), edgeId: Id, noteId: Id, targetNodeId: Id }),
   z.object({ type: z.literal('note.unlink'), noteId: Id, targetNodeId: Id }),
+  /**
+   * Cria um agente no canvas. Com `instruction`, começa na hora; sem ela, é um agente em
+   * branco que espera contexto e a primeira instrução.
+   */
+  z.object({
+    type: z.literal('agent.create'),
+    agentId: Id,
+    nodeId: Id,
+    edgeId: Id.optional(),
+    issueRef: IssueRef.optional(),
+    repos: z.array(z.number().int().positive()).max(1),
+    instruction: z.string().max(20_000).optional(),
+    maxDepth: z.number().int().min(0).max(3).default(0),
+    openMr: z.boolean().default(false),
+    x: Coord,
+    y: Coord,
+  }),
+  /** Dá contexto a um agente em branco antes de começar: repositório e issue. */
+  z.object({
+    type: z.literal('agent.update'),
+    agentId: Id,
+    repos: z.array(z.number().int().positive()).max(1).optional(),
+    issueRef: IssueRef.nullable().optional(),
+  }),
+  z.object({ type: z.literal('agent.message'), agentId: Id, text: z.string().min(1).max(20_000) }),
+  z.object({ type: z.literal('agent.pause'), agentId: Id }),
+  z.object({ type: z.literal('agent.resume'), agentId: Id }),
+  z.object({ type: z.literal('agent.stop'), agentId: Id }),
+  z.object({
+    type: z.literal('approval.decide'),
+    approvalId: Id,
+    decision: z.enum(['allow', 'deny']),
+    remember: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal('policy.remove'), policyId: Id }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -71,6 +113,11 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('issue.upsert'), issue: Issue }),
   z.object({ type: z.literal('settings.updated'), settings: SettingsView }),
   z.object({ type: z.literal('activity'), text: z.string(), ts: z.string() }),
+  z.object({ type: z.literal('agent.upsert'), agent: Agent }),
+  z.object({ type: z.literal('agent.event'), event: AgentEvent }),
+  z.object({ type: z.literal('approval.upsert'), approval: Approval }),
+  z.object({ type: z.literal('policy.upsert'), policy: Policy }),
+  z.object({ type: z.literal('policy.remove'), policyId: z.string() }),
   z.object({ type: z.literal('error'), message: z.string(), cause: z.string().optional() }),
   /**
    * Quando o servidor recarrega o estado (ex.: restaurar um nó traz arestas e notas junto),
