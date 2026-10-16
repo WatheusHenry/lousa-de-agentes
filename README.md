@@ -22,7 +22,7 @@ Canvas para orquestrar agentes do Claude Code a partir de issues e repositórios
 - Claude Code instalado e logado (`claude --version`; testado com a 2.1.301). Os agentes usam a sua instalação e o seu login.
 - `git` 2.5 ou mais novo (worktrees) e os repositórios clonados na pasta configurada.
 - `glab` é opcional.
-- Ferramentas de compilação para o `better-sqlite3` (normalmente já vem um binário pronto; se não, `python3`, `make` e um compilador C++).
+- Nada para compilar: o `better-sqlite3` traz binários prontos para Linux (glibc e musl), macOS e Windows, em x64 e arm64, e o `pnpm install` não roda o `node-gyp`.
 
 ## Instalação e uso
 
