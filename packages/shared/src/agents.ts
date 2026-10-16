@@ -72,6 +72,8 @@ export const AgentEventBody = z.discriminatedUnion('kind', [
     terminalReason: z.string().nullable(),
   }),
   z.object({ kind: z.literal('error'), message: z.string() }),
+  /** O bridge regravou o context.md (e avisou o agente, se ele estava rodando). */
+  z.object({ kind: z.literal('context'), labels: z.array(z.string()), notified: z.boolean() }),
 ]);
 export type AgentEventBody = z.infer<typeof AgentEventBody>;
 

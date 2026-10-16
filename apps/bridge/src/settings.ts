@@ -9,7 +9,11 @@ import type {
   GitLabUser,
   SettingsView,
 } from '@agent-canvas/shared';
-import { GitLabSettingsInput as InputSchema } from '@agent-canvas/shared';
+import {
+  DEFAULT_AUTOMATIONS,
+  GitLabSettingsInput as InputSchema,
+  type Automations,
+} from '@agent-canvas/shared';
 import type { Db } from './db/index.ts';
 import { issueCache, repo, setting } from './db/schema.ts';
 import { cloneOfOtherProject, cloneRepo, cloneUrls, matchClone, scanClones } from './git/discover.ts';
@@ -63,6 +67,7 @@ export class SettingsService {
           manual: !!this.overrides()[r.gitlabProjectId],
         })),
       configured: mode === 'demo' || (!!tok && !!user),
+      automations: this.automations(),
     };
   }
 
@@ -126,6 +131,15 @@ export class SettingsService {
     this.set('user', user);
     this.cachedClient = null;
     if (reposDir !== current.reposDir) this.locateClones();
+    return this.view();
+  }
+
+  automations(): Automations {
+    return { ...DEFAULT_AUTOMATIONS, ...this.get<Partial<Automations>>('automations') };
+  }
+
+  setAutomations(patch: Partial<Automations>): SettingsView {
+    this.set('automations', { ...this.automations(), ...patch });
     return this.view();
   }
 

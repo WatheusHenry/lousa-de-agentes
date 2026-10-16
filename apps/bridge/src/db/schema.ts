@@ -169,3 +169,27 @@ export const mergeRequestCache = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.projectId, t.iid] })],
 );
+
+/**
+ * Itens de contexto por agente. Os itens que vêm dos vínculos do canvas (issue, repositório,
+ * notas ligadas) só ganham linha aqui para guardar resumo ou exclusão; os escolhidos à mão
+ * têm `added`.
+ */
+export const contextItem = sqliteTable(
+  'context_item',
+  {
+    agentId: text('agent_id').notNull(),
+    kind: text('kind', {
+      enum: ['issue', 'repo', 'note', 'file', 'pipeline_log', 'mr_diff'],
+    }).notNull(),
+    ref: text('ref').notNull(),
+    added: integer('added', { mode: 'boolean' }).notNull().default(false),
+    excluded: integer('excluded', { mode: 'boolean' }).notNull().default(false),
+    /** Resumo usado no context.md no lugar do conteúdo completo. */
+    summary: text('summary'),
+    /** Hash do conteúdo que foi resumido: se o conteúdo mudar, o resumo deixa de valer. */
+    contentHash: text('content_hash'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.agentId, t.kind, t.ref] })],
+);

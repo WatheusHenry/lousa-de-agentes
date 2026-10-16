@@ -5,6 +5,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
   ClientMessage,
+  AutomationsInput,
   ProjectSelectionInput,
   RepoPathInput,
   SESSION_HEADER,
@@ -25,6 +26,8 @@ import { GitLabError } from './gitlab/client.ts';
 import { Hub } from './hub.ts';
 import { registerMcp } from './mcp/canvas-server.ts';
 import { MrError, MrService } from './mrs/mr-service.ts';
+import { ContextError, ContextService } from './context/context-service.ts';
+import { CliSummarizer, type Summarizer } from './context/summarize.ts';
 import type { Session } from './session.ts';
 import { SettingsError, type SettingsService } from './settings.ts';
 
@@ -42,6 +45,11 @@ export interface ServerDeps {
   model?: string;
   /** Intervalo do polling de pipelines (desligado quando ausente, como nos testes). */
   pollMrsEveryMs?: number;
+  /** Resumidor de itens pesados (o padrão roda `claude -p` com um modelo pequeno). */
+  summarizer?: Summarizer;
+  contextBudget?: number;
+  /** Espera antes de avisar o agente que o contexto mudou (os testes usam 0). */
+  contextDebounceMs?: number;
   logger?: boolean;
 }
 
@@ -51,6 +59,16 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const hub = new Hub();
   const approvals = new ApprovalService(db, hub);
   const mrs = new MrService(db, hub, store, settings);
+  const context = new ContextService({
+    db,
+    hub,
+    store,
+    settings,
+    mrs,
+    summarizer: deps.summarizer ?? new CliSummarizer(),
+    ...(deps.contextBudget ? { budget: deps.contextBudget } : {}),
+    ...(deps.contextDebounceMs !== undefined ? { debounceMs: deps.contextDebounceMs } : {}),
+  });
   const supervisor = new Supervisor({
     db,
     hub,
@@ -61,8 +79,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     home: deps.home,
     bridgePort: config.port,
     ...(deps.model ? { model: deps.model } : {}),
-    mrOfAgent: (id) => mrs.mrOfAgent(id),
+    context,
   });
+  context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
 
   const app = Fastify({
     // a URL do WebSocket leva o token de sessão: o log grava só o caminho
@@ -125,7 +144,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (err instanceof SettingsError) return reply.code(err.statusCode).send({ error: err.message });
     if (err instanceof BrowseError) return reply.code(400).send({ error: err.message });
     if (err instanceof GitLabError) return reply.code(502).send({ error: err.message });
-    if (err instanceof CanvasError || err instanceof AgentError || err instanceof MrError)
+    if (
+      err instanceof CanvasError ||
+      err instanceof AgentError ||
+      err instanceof MrError ||
+      err instanceof ContextError
+    )
       return reply.code(409).send({ error: err.message });
     app.log.error(err);
     const status = (err as { statusCode?: number }).statusCode;
@@ -256,6 +280,21 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   /** Modo "saída bruta": as linhas do stream-json como vieram do claude. */
   app.get('/api/agents/:id/raw', async (req) => supervisor.rawEvents((req.params as { id: string }).id));
 
+  app.get('/api/agents/:id/context', async (req) => context.view((req.params as { id: string }).id));
+  app.get('/api/agents/:id/files', async (req) =>
+    context.searchFiles(
+      (req.params as { id: string }).id,
+      String((req.query as { q?: string }).q ?? '').slice(0, 200),
+    ),
+  );
+  app.put('/api/settings/automations', async (req) => {
+    const parsed = AutomationsInput.safeParse(req.body);
+    if (!parsed.success) throw new SettingsError('Automação inválida.');
+    const view = settings.setAutomations(parsed.data);
+    broadcast([{ type: 'settings.updated', settings: view }]);
+    return view;
+  });
+
   app.get('/api/mrs/:ref/diff', async (req) => mrs.diff((req.params as { ref: string }).ref));
   app.get('/api/mrs/:ref/comments', async (req) => mrs.comments((req.params as { ref: string }).ref));
 
@@ -304,6 +343,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       if (
         msg.type.startsWith('agent.') ||
         msg.type.startsWith('mr.') ||
+        msg.type.startsWith('context.') ||
         msg.type === 'issue.comment' ||
         msg.type === 'approval.decide' ||
         msg.type === 'policy.remove'
@@ -313,7 +353,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
             err instanceof AgentError ||
             err instanceof SettingsError ||
             err instanceof GitLabError ||
-            err instanceof MrError;
+            err instanceof MrError ||
+            err instanceof ContextError;
           if (!known) app.log.error(err);
           send({ type: 'error', message: known ? (err as Error).message : 'Erro ao falar com o agente.' });
         });
@@ -321,6 +362,15 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       }
       try {
         const out = store.apply(msg);
+        if (msg.type === 'note.update') context.onNoteChanged(msg.noteId);
+        if (msg.type === 'note.link' || msg.type === 'note.unlink') {
+          const nt = out.find((m) => m.type === 'noteLink.upsert' || m.type === 'noteLink.remove');
+          if (nt)
+            context.onLinksChanged(
+              msg.targetNodeId,
+              msg.type === 'note.link' ? 'nota vinculada' : 'nota desvinculada',
+            );
+        }
         if (msg.type === 'node.remove') {
           const n = store.anyNode(msg.nodeId);
           if (n?.type === 'agent') supervisor.onNodeRemoved(n.refId);
@@ -354,7 +404,18 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (msg.type === 'mr.merge') return void (await mrs.merge(msg.mrRef));
     if (msg.type === 'mr.refresh') return void (await mrs.refresh(msg.mrRef, true));
     if (msg.type === 'mr.comment') return mrs.comment(msg.mrRef, msg.body);
-    if (msg.type === 'issue.comment') return mrs.commentIssue(msg.issueRef, msg.body);
+    if (msg.type === 'issue.comment') {
+      await mrs.commentIssue(msg.issueRef, msg.body);
+      // comentário do usuário é informação nova para os agentes da issue
+      context.invalidate('issue', msg.issueRef);
+      const n = store.liveNodes().find((x) => x.type === 'issue' && x.refId === msg.issueRef);
+      if (n) context.onLinksChanged(n.id, 'comentário novo na issue');
+      return;
+    }
+    if (msg.type === 'context.add') return context.add(msg.agentId, msg.kind, msg.ref);
+    if (msg.type === 'context.remove') return context.remove(msg.agentId, msg.itemId);
+    if (msg.type === 'context.summarize') return context.summarize(msg.agentId, msg.itemId);
+    if (msg.type === 'context.unsummarize') return context.unsummarize(msg.agentId, msg.itemId);
     if (msg.type.startsWith('agent.')) return supervisor.handle(msg as Parameters<Supervisor['handle']>[0]);
   }
 
@@ -383,6 +444,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.addHook('preClose', async () => {
     mrs.stopPolling();
+    context.shutdown();
     supervisor.shutdown();
     for (const ws of hub.clients) ws.terminate();
   });

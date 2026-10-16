@@ -42,6 +42,15 @@ export interface GitLabClient {
   listMergeRequestComments(projectId: number, iid: number): Promise<IssueComment[]>;
   commentOnMergeRequest(projectId: number, iid: number, body: string): Promise<void>;
   mergeMergeRequest(projectId: number, iid: number): Promise<GitLabMr>;
+  /** Logs (trace) dos jobs que falharam no pipeline mais recente do MR. */
+  failedJobLogs(projectId: number, iid: number): Promise<JobLog[]>;
+}
+
+export interface JobLog {
+  jobId: number;
+  name: string;
+  stage: string;
+  trace: string;
 }
 
 /** Erro do GitLab com mensagem pronta para mostrar ao usuário (nunca contém o token). */

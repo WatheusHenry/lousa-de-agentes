@@ -3,22 +3,19 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import {
-  parseIssueRef,
   type Agent,
   type AgentEvent,
   type AgentEventBody,
   type AgentStatus,
   type Approval,
   type ClientMessage,
-  type Note,
-  type MergeRequest,
 } from '@agent-canvas/shared';
 import type { ApprovalService } from '../approvals/approval-service.ts';
 import { DISALLOWED_TOOLS } from '../approvals/rules.ts';
 import type { CanvasStore } from '../canvas/canvas-store.ts';
-import { buildContext, writeContext } from '../context/builder.ts';
+import { writeContext } from '../context/builder.ts';
 import type { Db } from '../db/index.ts';
-import { agent as agentT, agentEvent, edge, node, note, noteLink, repo as repoT } from '../db/schema.ts';
+import { agent as agentT, agentEvent, edge, node, repo as repoT } from '../db/schema.ts';
 import { createWorktree, slugify } from '../git/worktree.ts';
 import type { Hub } from '../hub.ts';
 import { APPROVE_TOOL, CANVAS_TOOLS, MCP_SERVER_NAME, type McpAgentContext } from '../mcp/canvas-server.ts';
@@ -64,14 +61,16 @@ export interface SupervisorDeps {
   home: string;
   bridgePort: number;
   model?: string;
-  /** MR que o agente já abriu, para o context.md. */
-  mrOfAgent?: (agentId: string) => MergeRequest | null;
+  /** Monta o context.md com os itens de contexto do agente. */
+  context: { render(agentId: string): Promise<string> };
 }
 
 /** Ciclo de vida dos agentes: worktree, contexto, processo, eventos, status e permissões. */
 export class Supervisor {
   private live = new Map<string, Live>();
   private mcpTokens = new Map<string, string>(); // token → agentId
+  /** Mudanças de contexto de agentes parados, avisadas na próxima mensagem. */
+  private contextNotices = new Map<string, string[]>();
   private closed = false;
 
   constructor(private readonly d: SupervisorDeps) {
@@ -359,7 +358,12 @@ export class Supervisor {
         this.d.hub.broadcast(this.d.store.logActivity(`${a.name} trabalhando em ${r.name} · ${wt.branch}`));
       }
 
-      await this.refreshContext(a, r);
+      await this.refreshContext(a);
+      const notices = this.contextNotices.get(agentId);
+      if (notices?.length && resume) {
+        text = `${text}\n\n(O contexto mudou desde o último turno: ${notices.join('; ')}. Releia .agent-canvas/context.md.)`;
+      }
+      this.contextNotices.delete(agentId);
       const sessionId = a.sessionId ?? randomUUID();
       const started = resume && this.hasInit(agentId);
       if (!a.sessionId) a = this.save(agentId, { sessionId });
@@ -402,69 +406,35 @@ export class Supervisor {
     }
   }
 
-  /** Regrava o context.md (issue, comentários, notas ligadas ao agente ou à issue). */
-  private async refreshContext(a: Agent, r: typeof repoT.$inferSelect): Promise<void> {
-    let issueCtx = null;
-    if (a.issueRef) {
-      const issue = this.d.store.cachedIssue(a.issueRef);
-      if (issue) {
-        const { projectId, iid } = parseIssueRef(a.issueRef);
-        const comments = await this.d.settings
-          .client()
-          .listIssueComments(projectId, iid)
-          .catch(() => []);
-        issueCtx = { issue, comments };
-      }
-    }
-    writeContext(
-      a.worktreePath!,
-      buildContext({
-        repo: {
-          pathWithNamespace: r.pathWithNamespace,
-          defaultBranch: r.defaultBranch,
-          branch: a.branch ?? '',
-        },
-        issue: issueCtx,
-        notes: this.notesFor(a),
-        mr: { openOnFinish: a.openMr, current: this.d.mrOfAgent?.(a.id) ?? null },
-      }),
-    );
+  /** Regrava o context.md com os itens de contexto do agente (seção 7 do plano). */
+  private async refreshContext(a: Agent): Promise<void> {
+    writeContext(a.worktreePath!, await this.d.context.render(a.id));
   }
 
-  private notesFor(a: Agent): Note[] {
-    const targets = this.d.db
-      .select({ id: node.id })
-      .from(node)
-      .where(
-        and(
-          isNull(node.removedAt),
-          a.issueRef
-            ? sql`(${node.type} = 'agent' and ${node.refId} = ${a.id}) or (${node.type} = 'issue' and ${node.refId} = ${a.issueRef})`
-            : and(eq(node.type, 'agent'), eq(node.refId, a.id)),
-        ),
-      )
-      .all()
-      .map((n) => n.id);
-    if (!targets.length) return [];
-    const ids = this.d.db
-      .select({ noteId: noteLink.noteId })
-      .from(noteLink)
-      .where(inArray(noteLink.targetNodeId, targets))
-      .all()
-      .map((l) => l.noteId);
-    if (!ids.length) return [];
-    return this.d.db
-      .select()
-      .from(note)
-      .where(inArray(note.id, [...new Set(ids)]))
-      .all()
-      .map((n) => ({
-        id: n.id,
-        title: n.title,
-        body: n.body,
-        isHandoff: n.isHandoff,
-        createdBy: n.createdBy,
-      }));
+  /**
+   * O contexto mudou (item novo, resumo, nota editada): regrava o context.md e pede ao agente
+   * que releia. Rodando, a mensagem vai pelo stdin; parado, vai junto da próxima mensagem.
+   */
+  async contextChanged(agentId: string, labels: string[]): Promise<void> {
+    const a = this.get(agentId);
+    if (!a?.worktreePath || this.closed) return;
+    await this.refreshContext(a);
+    const notice = `O contexto foi atualizado: ${labels.join('; ')}. Releia .agent-canvas/context.md.`;
+    const l = this.live.get(agentId);
+    let notified = false;
+    if (l && !l.stopping && !l.pausing) {
+      if (l.inputClosed) l.afterExit = l.afterExit ? `${l.afterExit}\n\n${notice}` : notice;
+      else {
+        l.pendingTurns++;
+        l.proc.send(notice);
+        if (a.status !== 'waiting') this.setStatus(agentId, 'running');
+      }
+      notified = true;
+    } else if (a.sessionId) {
+      const cur = this.contextNotices.get(agentId);
+      this.contextNotices.set(agentId, [...(cur ?? []), ...labels]);
+    }
+    this.event(agentId, { kind: 'context', labels, notified });
   }
 
   private writeMcpConfig(agentId: string): string {

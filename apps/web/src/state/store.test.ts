@@ -28,6 +28,7 @@ const empty: StateSnapshot = {
     user: null,
     projects: [],
     clones: [],
+    automations: { handoff: true },
     configured: true,
   },
   nodes: [],

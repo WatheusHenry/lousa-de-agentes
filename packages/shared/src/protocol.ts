@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Agent, AgentEvent, Approval, Policy } from './agents.ts';
 import { Activity, CanvasEdge, CanvasNode, Note, NoteLink } from './canvas.ts';
+import { AgentContext, ContextKind } from './context.ts';
 import { Issue, IssueRef, MergeRequest, MrRef } from './gitlab.ts';
 import { SettingsView } from './settings.ts';
 
@@ -103,6 +104,15 @@ export const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mr.refresh'), mrRef: MrRef }),
   z.object({ type: z.literal('mr.comment'), mrRef: MrRef, body: z.string().min(1).max(20_000) }),
   z.object({ type: z.literal('issue.comment'), issueRef: IssueRef, body: z.string().min(1).max(20_000) }),
+  z.object({
+    type: z.literal('context.add'),
+    agentId: Id,
+    kind: ContextKind,
+    ref: z.string().min(1).max(512),
+  }),
+  z.object({ type: z.literal('context.remove'), agentId: Id, itemId: z.string().min(1).max(600) }),
+  z.object({ type: z.literal('context.summarize'), agentId: Id, itemId: z.string().min(1).max(600) }),
+  z.object({ type: z.literal('context.unsummarize'), agentId: Id, itemId: z.string().min(1).max(600) }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -134,5 +144,6 @@ export const ServerMessage = z.discriminatedUnion('type', [
    * manda o snapshot inteiro em vez de várias mensagens soltas.
    */
   z.object({ type: z.literal('state.snapshot'), state: StateSnapshot }),
+  z.object({ type: z.literal('context.updated'), context: AgentContext }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;

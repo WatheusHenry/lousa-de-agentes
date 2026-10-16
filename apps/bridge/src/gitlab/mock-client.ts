@@ -7,7 +7,7 @@ import {
   type Issue,
   type IssueComment,
 } from '@agent-canvas/shared';
-import { GitLabError, type GitLabClient, type GitLabMr } from './client.ts';
+import { GitLabError, type GitLabClient, type GitLabMr, type JobLog } from './client.ts';
 
 /** Dados de exemplo, os mesmos do protótipo (docs/prototype/agent-canvas.html). */
 export const DEMO_USER: GitLabUser = {
@@ -46,7 +46,8 @@ const DEMO_ISSUES: DemoIssue[] = [
     labels: ['bug', 'P1'],
     author: 'ana.ribeiro',
     description:
-      'Quando o gateway reenvia o webhook (timeout > 10s), o handler cria uma segunda cobrança.\n\n' +
+      'Quando o gateway reenvia o webhook (timeout > 10s), o handler cria uma segunda cobrança. ' +
+      'O handler fica em `src/webhooks/handler.ts`.\n\n' +
       '## Critérios de aceite\n- [ ] O mesmo evento processado duas vezes gera uma só cobrança\n' +
       '- [ ] O reenvio responde 200 com a cobrança existente\n- [ ] Teste cobrindo o retry do gateway',
     comments: [
@@ -219,6 +220,33 @@ export class MockGitLabClient implements GitLabClient {
 
   async getMergeRequest(projectId: number, iid: number): Promise<GitLabMr> {
     return this.view(this.mr(projectId, iid));
+  }
+
+  /** Log simulado de um job de testes que falhou, comprido como os de verdade. */
+  async failedJobLogs(projectId: number, iid: number): Promise<JobLog[]> {
+    const m = this.mr(projectId, iid);
+    if (this.view(m).pipelineStatus !== 'failed') return [];
+    const noise = Array.from(
+      { length: 1500 },
+      (_, n) =>
+        `\u001b[32m✓\u001b[0m test/unit/caso-${n}.spec.ts > comportamento ${n} (${(n % 9) + 1} ms) ` +
+        `[info] POST /webhooks/charges 200 {"id":"evt_${String(n).padStart(5, '0')}","amount":4990,"currency":"BRL","attempt":1}`,
+    );
+    const trace = [
+      '\u001b[0KRunning with gitlab-runner 17.0.0',
+      'section_start:1700000000:step_script\r\u001b[0KExecuting "step_script" stage of the job script',
+      '$ npm ci',
+      'added 812 packages in 21s',
+      '$ npm test',
+      ...noise.slice(0, 900),
+      '\u001b[31m✕\u001b[0m test/webhooks.spec.ts > não duplica a cobrança quando o webhook chega duas vezes',
+      '  AssertionError: expected 2 to equal 1',
+      '    at test/webhooks.spec.ts:42:31',
+      ...noise.slice(900),
+      'Tests: 1 failed, 1500 passed',
+      'ERROR: Job failed: exit code 1',
+    ].join('\n');
+    return [{ jobId: 7001, name: 'test', stage: 'test', trace }];
   }
 
   /** O mock não tem os commits: o serviço de MRs usa o diff do worktree local. */

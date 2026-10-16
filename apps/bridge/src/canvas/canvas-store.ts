@@ -84,6 +84,16 @@ export class CanvasStore {
     return row ? toIssue(row) : null;
   }
 
+  /** Issues abertas em cache de um projeto (para sugestões de contexto). */
+  cachedIssuesOf(projectId: number): Issue[] {
+    return this.db
+      .select()
+      .from(issueCache)
+      .where(and(eq(issueCache.projectId, projectId), eq(issueCache.state, 'opened')))
+      .all()
+      .map(toIssue);
+  }
+
   recentActivity(): Activity[] {
     return this.db
       .select()

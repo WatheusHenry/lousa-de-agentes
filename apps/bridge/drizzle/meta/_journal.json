@@ -22,6 +22,13 @@
       "when": 1792150383640,
       "tag": "0002_wild_iron_lad",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792157140783,
+      "tag": "0003_kind_morph",
+      "breakpoints": true
     }
   ]
 }

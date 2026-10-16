@@ -9,7 +9,7 @@ import {
   type IssueComment,
   type MrDiffFile,
 } from '@agent-canvas/shared';
-import { GitLabError, type GitLabClient, type GitLabMr } from './client.ts';
+import { GitLabError, type GitLabClient, type GitLabMr, type JobLog } from './client.ts';
 
 type Raw = Record<string, unknown>;
 const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback);
@@ -111,6 +111,21 @@ export class GitbeakerClient implements GitLabClient {
 
   async getMergeRequest(projectId: number, iid: number): Promise<GitLabMr> {
     return toMr((await this.call(() => this.api.MergeRequests.show(projectId, iid))) as unknown as Raw);
+  }
+
+  async failedJobLogs(projectId: number, iid: number): Promise<JobLog[]> {
+    const mr = (await this.call(() => this.api.MergeRequests.show(projectId, iid))) as unknown as Raw;
+    const pipe = (mr.head_pipeline ?? mr.pipeline) as Raw | null | undefined;
+    if (!pipe?.id) return [];
+    const jobs = (await this.call(() =>
+      this.api.Jobs.all(projectId, { pipelineId: num(pipe.id), scope: 'failed' as never, perPage: 20 }),
+    )) as unknown as Raw[];
+    const out: JobLog[] = [];
+    for (const j of jobs.slice(0, 3)) {
+      const trace = (await this.call(() => this.api.Jobs.showLog(projectId, num(j.id)))) as unknown as string;
+      out.push({ jobId: num(j.id), name: str(j.name), stage: str(j.stage), trace: String(trace ?? '') });
+    }
+    return out;
   }
 
   async listMergeRequestDiffs(projectId: number, iid: number): Promise<MrDiffFile[]> {

@@ -40,8 +40,18 @@ export const SettingsView = z.object({
   /** Clone local de cada projeto escolhido; `manual` quando o usuário informou o caminho. */
   clones: z.array(z.object({ projectId: z.number(), path: z.string().nullable(), manual: z.boolean() })),
   configured: z.boolean(),
+  automations: z.lazy(() => Automations),
 });
 export type SettingsView = z.infer<typeof SettingsView>;
 
 export const RepoPathInput = z.object({ path: z.string().trim().max(1024).nullable() });
 export type RepoPathInput = z.infer<typeof RepoPathInput>;
+
+/** Interruptores do painel de Automações (as outras regras chegam na Fase 6). */
+export const Automations = z.object({
+  /** Agente concluiu → nota de passagem com decisões, arquivos, MRs e pendências. */
+  handoff: z.boolean(),
+});
+export type Automations = z.infer<typeof Automations>;
+export const DEFAULT_AUTOMATIONS: Automations = { handoff: true };
+export const AutomationsInput = Automations.partial();
