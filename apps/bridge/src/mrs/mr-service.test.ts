@@ -64,6 +64,7 @@ describe('merge requests', () => {
   let ws: WebSocket;
   let msgs: ServerMessage[];
   let origin: string;
+  let client: MockGitLabClient;
 
   const send = (m: object) => ws.send(JSON.stringify(m));
   async function until<T>(fn: () => T | undefined | false, what: string): Promise<T> {
@@ -81,7 +82,7 @@ describe('merge requests', () => {
   beforeEach(async () => {
     runner = new ScriptRunner();
     // o GitLab é o mock (com pipeline rápido), mas o modo é "gitlab": o branch vai mesmo para o origin
-    const client = new MockGitLabClient({ pipelineMs: 1000 });
+    client = new MockGitLabClient({ pipelineMs: 1000 });
     b = await makeBridge(() => client, runner, TEST_PORT);
     const reposDir = mkdtempSync(join(tmpdir(), 'ac-mr-repos-'));
     origin = join(reposDir, 'origin.git');
@@ -212,6 +213,29 @@ describe('merge requests', () => {
     expect(
       msgs.some((m) => m.type === 'activity' && m.text.includes(`MR !${mr.iid} aprovado e mergeado`)),
     ).toBe(true);
+  });
+
+  it('MR já aberto para o branch (fora do canvas) é adotado em vez de dar erro', async () => {
+    let text = '';
+    runner.turn = async (opts, h) => {
+      h.onLine(init(opts.sessionId));
+      const branch = gitIn(opts.cwd, 'branch', '--show-current');
+      await client.createMergeRequest(101, {
+        sourceBranch: branch,
+        targetBranch: 'main',
+        title: 'Feito à mão',
+        description: '',
+      });
+      writeFileSync(join(opts.cwd, 'b.txt'), 'b\n');
+      gitIn(opts.cwd, 'add', '.');
+      gitIn(opts.cwd, 'commit', '-qm', 'b');
+      text = (await callTool(opts, 'open_merge_request', { title: 'Do agente' })).text;
+      h.onLine(result(opts.sessionId));
+    };
+    createAgent();
+    const mr = await until(() => lastMr(), 'mr.upsert');
+    expect(text).toContain(`MR !${mr.iid} aberto`);
+    expect(mr).toMatchObject({ title: 'Feito à mão', agentId: 'a1' });
   });
 
   it('comentários do agente e do usuário no MR e na issue', async () => {

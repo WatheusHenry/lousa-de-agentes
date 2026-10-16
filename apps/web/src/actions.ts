@@ -76,22 +76,21 @@ export function startIssueAgent(issueNodeId: string, extra?: string) {
   return nodeId;
 }
 
-/** Repositório ou issue solto em cima de um agente. */
+/**
+ * Repositório ou issue solto em cima de um agente. No agente em branco, define o repositório e a
+ * issue da tarefa; depois disso (ou se já estão definidos), entra como item extra de contexto.
+ */
 export function giveContext(agentId: string, kind: 'repo' | 'issue', val: string) {
   const st = useStore.getState();
   const a = st.agents[agentId];
   if (!a) return;
-  if (a.worktreePath) {
-    st.showToast(`${a.name} já começou; mais contexto chega numa próxima fase.`, {
-      label: 'Ok',
-      run: () => {},
-    });
-    return;
-  }
-  if (kind === 'repo') st.updateAgent(agentId, { repos: [Number(val)] });
-  else st.updateAgent(agentId, { issueRef: val });
   const node = agentNodeOf(st, agentId);
   if (node) st.select(node.id);
+  if (!a.worktreePath && kind === 'repo' && !a.repos.length)
+    return st.updateAgent(agentId, { repos: [Number(val)] });
+  if (!a.worktreePath && kind === 'issue' && !a.issueRef) return st.updateAgent(agentId, { issueRef: val });
+  if ((kind === 'repo' && a.repos[0] === Number(val)) || (kind === 'issue' && a.issueRef === val)) return;
+  st.contextAdd(agentId, kind, val);
 }
 
 export function focusComposer(nodeId: string, tries = 30) {

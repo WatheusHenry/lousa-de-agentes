@@ -139,12 +139,16 @@ export class MrService {
       issue && new RegExp(`\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #${issue.iid}\\b`, 'i').test(body);
     const closes = issue && issue.projectId === projectId && !alreadyCloses ? `\n\nCloses #${issue.iid}` : '';
     const description = `${body}${closes}\n\n_Aberto por ${a.name} no Agent Canvas._`.trim();
-    const created = await this.settings.client().createMergeRequest(projectId!, {
-      sourceBranch: a.branch,
-      targetBranch: target,
-      title: opts.title.trim().slice(0, 250) || a.title,
-      description,
-    });
+    const client = this.settings.client();
+    // um MR aberto para o branch fora do canvas (ou numa execução anterior) é adotado
+    const created =
+      (await client.findOpenMergeRequest(projectId!, a.branch).catch(() => null)) ??
+      (await client.createMergeRequest(projectId!, {
+        sourceBranch: a.branch,
+        targetBranch: target,
+        title: opts.title.trim().slice(0, 250) || a.title,
+        description,
+      }));
     const files = await localDiff(a.worktreePath, target);
     const row = this.save(projectId!, r.pathWithNamespace, created, {
       ...diffStat(files),

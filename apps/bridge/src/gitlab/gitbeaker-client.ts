@@ -113,6 +113,13 @@ export class GitbeakerClient implements GitLabClient {
     return toMr((await this.call(() => this.api.MergeRequests.show(projectId, iid))) as unknown as Raw);
   }
 
+  async findOpenMergeRequest(projectId: number, sourceBranch: string): Promise<GitLabMr | null> {
+    const list = (await this.call(() =>
+      this.api.MergeRequests.all({ projectId, sourceBranch, state: 'opened', perPage: 1 }),
+    )) as unknown as Raw[];
+    return list[0] ? toMr(list[0]) : null;
+  }
+
   async failedJobLogs(projectId: number, iid: number): Promise<JobLog[]> {
     const mr = (await this.call(() => this.api.MergeRequests.show(projectId, iid))) as unknown as Raw;
     const pipe = (mr.head_pipeline ?? mr.pipeline) as Raw | null | undefined;

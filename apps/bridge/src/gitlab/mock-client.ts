@@ -222,6 +222,12 @@ export class MockGitLabClient implements GitLabClient {
     return this.view(this.mr(projectId, iid));
   }
 
+  async findOpenMergeRequest(projectId: number, sourceBranch: string): Promise<GitLabMr | null> {
+    await this.getProject(projectId);
+    const m = [...this.mrs.values()].find((x) => x.sourceBranch === sourceBranch && x.state === 'opened');
+    return m ? this.view(m) : null;
+  }
+
   /** Log simulado de um job de testes que falhou, comprido como os de verdade. */
   async failedJobLogs(projectId: number, iid: number): Promise<JobLog[]> {
     const m = this.mr(projectId, iid);

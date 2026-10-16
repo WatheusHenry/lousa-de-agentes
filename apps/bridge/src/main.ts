@@ -6,6 +6,7 @@ import { GitbeakerClient } from './gitlab/gitbeaker-client.ts';
 import { SecretStore } from './secrets.ts';
 import { CliRunner } from './agents/cli-runner.ts';
 import { buildServer } from './server.ts';
+import { CliSummarizer } from './context/summarize.ts';
 import { Session } from './session.ts';
 import { SettingsService } from './settings.ts';
 
@@ -28,6 +29,10 @@ const app = await buildServer({
   settings,
   runner: new CliRunner(),
   pollMrsEveryMs: 30_000,
+  summarizer: new CliSummarizer(process.env.AGENT_CANVAS_SUMMARY_MODEL || 'haiku'),
+  ...(Number(process.env.AGENT_CANVAS_CONTEXT_BUDGET) > 0
+    ? { contextBudget: Number(process.env.AGENT_CANVAS_CONTEXT_BUDGET) }
+    : {}),
   home: config.home,
   ...(process.env.AGENT_CANVAS_MODEL ? { model: process.env.AGENT_CANVAS_MODEL } : {}),
   logger: true,

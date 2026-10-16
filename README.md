@@ -7,13 +7,14 @@ Canvas para orquestrar agentes do Claude Code a partir de issues e repositórios
 
 ## Estado atual
 
-| Fase                | O que entrega                                                                      | Estado    |
-| ------------------- | ---------------------------------------------------------------------------------- | --------- |
-| 0 · Base            | Monorepo, bridge com token de sessão, tela de configuração do GitLab               | pronta    |
-| 1 · Canvas          | Issues reais no canvas, notas, vínculos, desfazer, persistência                    | pronta    |
-| 2 · Um agente real  | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela aba Ações   | pronta    |
-| 3 · MRs e pipelines | Agente abre o MR, nó no canvas com pipeline ao vivo, diff, discussão, merge humano | pronta    |
-| 4 em diante         | Qualidade do contexto, orquestração, automações, robustez                          | ainda não |
+| Fase                | O que entrega                                                                        | Estado    |
+| ------------------- | ------------------------------------------------------------------------------------ | --------- |
+| 0 · Base            | Monorepo, bridge com token de sessão, tela de configuração do GitLab                 | pronta    |
+| 1 · Canvas          | Issues reais no canvas, notas, vínculos, desfazer, persistência                      | pronta    |
+| 2 · Um agente real  | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela aba Ações     | pronta    |
+| 3 · MRs e pipelines | Agente abre o MR, nó no canvas com pipeline ao vivo, diff, discussão, merge humano   | pronta    |
+| 4 · Contexto        | Itens de contexto, medidor de tokens, resumo, sugestões, releitura ao vivo, passagem | pronta    |
+| 5 em diante         | Orquestração, automações, robustez                                                   | ainda não |
 
 ## Requisitos
 
@@ -74,6 +75,8 @@ Em vez de salvar o token pela tela, você pode criar um `.env` na raiz do reposi
 | `AGENT_CANVAS_GITLAB_TOKEN`    | —                 | Token do GitLab (alternativa ao arquivo de segredos)      |
 | `AGENT_CANVAS_ALLOWED_ORIGINS` | —                 | Origens extras aceitas pelo bridge, separadas por vírgula |
 | `AGENT_CANVAS_MODEL`           | padrão do Claude  | Modelo dos agentes (`sonnet`, `opus`, `haiku`…)           |
+| `AGENT_CANVAS_SUMMARY_MODEL`   | `haiku`           | Modelo do botão Resumir                                   |
+| `AGENT_CANVAS_CONTEXT_BUDGET`  | `60000`           | Tokens recomendados no contexto de um agente              |
 | `AGENT_CANVAS_CLAUDE_BIN`      | `claude`          | Caminho do executável do Claude Code                      |
 
 ## Usando o canvas (Fase 1)
@@ -111,7 +114,7 @@ Recarregar a página mantém tudo: nós, posições, notas e vínculos vêm do b
 
 ### Como um agente roda
 
-O bridge cria o worktree, grava `.agent-canvas/context.md` (issue, comentários e notas ligadas, com o aviso de que conteúdo do GitLab é dado e não instrução) e inicia:
+O bridge cria o worktree, grava `.agent-canvas/context.md` (os itens de contexto, com o aviso de que o que vem do GitLab e do repositório é dado e não instrução) e inicia:
 
 ```
 claude -p --input-format stream-json --output-format stream-json --verbose \
@@ -119,13 +122,24 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
   --mcp-config ~/.agent-canvas/agents/<id>/mcp.json --strict-mcp-config \
   --permission-prompt-tool mcp__canvas__approve --permission-mode default \
   --append-system-prompt <apps/bridge/src/agents/roles/main.md> \
-  --allowedTools mcp__canvas__open_merge_request,mcp__canvas__comment_issue,mcp__canvas__comment_mr,<regras salvas> \
+  --allowedTools mcp__canvas__open_merge_request,mcp__canvas__comment_issue,mcp__canvas__comment_mr,mcp__canvas__write_note,<regras salvas> \
   --disallowedTools "Bash(git push --force:*)" …
 ```
 
-O servidor MCP do canvas roda dentro do bridge (`POST /mcp`, Streamable HTTP), identificado por um token por agente. Ele expõe `approve` e as ferramentas do GitLab (`open_merge_request`, `comment_issue`, `comment_mr`), que agem só sobre o branch, a issue e o MR do próprio agente. A ferramenta `approve` responde no formato que o Claude Code exige: `{"behavior":"allow","updatedInput":…}` ou `{"behavior":"deny","message":…}`. Antes de qualquer regra, o bridge nega push forçado, `rm -r` fora do worktree, arquivos fora do worktree e comandos de rede (`curl`, `wget`, `ssh`…) sem regra explícita.
+O servidor MCP do canvas roda dentro do bridge (`POST /mcp`, Streamable HTTP), identificado por um token por agente. Ele expõe `approve`, as ferramentas do GitLab (`open_merge_request`, `comment_issue`, `comment_mr`) e `write_note`, que agem só sobre o branch, a issue e o MR do próprio agente. A ferramenta `approve` responde no formato que o Claude Code exige: `{"behavior":"allow","updatedInput":…}` ou `{"behavior":"deny","message":…}`. Antes de qualquer regra, o bridge nega push forçado, `rm -r` fora do worktree, arquivos fora do worktree e comandos de rede (`curl`, `wget`, `ssh`…) sem regra explícita.
 
 Para regravar as saídas reais usadas nos testes do parser (por exemplo, depois de atualizar o Claude Code): `pnpm --filter @agent-canvas/bridge exec tsx scripts/record-fixtures.ts`.
+
+## Contexto dos agentes (Fase 4)
+
+- **O que o agente recebe**: o `.agent-canvas/context.md` é montado com os itens da seção **Contexto** do painel do agente. Os vínculos do canvas entram sozinhos: a issue do agente, o repositório (um índice, não o código: árvore até 3 níveis, README, CLAUDE.md e package.json) e as notas ligadas ao agente ou à issue. Pelo **Adicionar** (paleta com busca, ↑↓, Enter e Esc) entram arquivos do repositório, outras issues e repositórios, o diff de um MR e o log do pipeline que falhou (trecho do erro e as últimas 200 linhas do job). **Nova nota**, na paleta, cria a nota já ligada ao agente. Soltar uma issue ou um repositório em cima de um agente que já começou também acrescenta contexto.
+- **Medidor**: antes de rodar, mostra a estimativa (caracteres ÷ 3,5) contra o recomendado de 60 mil tokens (`AGENT_CANVAS_CONTEXT_BUDGET`), com a fatia de cada item. Depois do primeiro turno, mostra também o uso real que o `claude` informou.
+- **Resumir**: itens com 8 mil tokens ou mais ganham **Resumir**. Um `claude -p` curto com um modelo pequeno (haiku, ou `AGENT_CANVAS_SUMMARY_MODEL`) e sem ferramentas resume preservando arquivos, erros e decisões; o resumo vai para o context.md no lugar do original. **Completo** desfaz. Se o conteúdo mudar, o resumo deixa de valer.
+- **Sugestões**: arquivos citados na issue que existem no repositório, o log do pipeline do MR do agente quando falha, notas da issue tiradas deste agente e issues abertas com label em comum.
+- **Ao vivo**: mudar o contexto ou editar uma nota ligada regrava o context.md e, com o agente rodando, manda "O contexto foi atualizado: … Releia .agent-canvas/context.md". A janela do agente mostra a linha `↻ contexto atualizado`. Com o agente parado, o aviso vai junto da próxima mensagem.
+- **Nota de passagem**: com a automação ligada (painel **Automações**), o context.md pede ao agente que chame `write_note` antes da resposta final. A nota (Passagem · agente-N) fica ao lado dele, ligada à issue, e entra no contexto dos próximos agentes da issue (não no do autor).
+
+![Nota editada e o agente relendo o contexto](docs/screenshots/fase-4/nota-editada-agente-rele.png)
 
 ## Scripts
 
@@ -171,7 +185,6 @@ docs/         plano e protótipo
 | Rotas HTTP `/state`, `/repos`, `/gitlab/issues`, `/settings/gitlab` | Mesmas rotas com prefixo `/api`                                                                                                                                                            | Separa a API das páginas do front-end no proxy do Vite e quando o bridge serve o build.                                                                                                                                                                      |
 | `node.move` como única mensagem de nó                               | Mensagens extras `issue.place`, `node.remove` e `node.restore`                                                                                                                             | O canvas precisa criar o nó da issue e fazer remoção suave com desfazer, que o contrato da seção 5 não cobria. Remover e restaurar um agente usa as mesmas `node.remove`/`node.restore` (remover para o processo), em vez de `agent.remove`/`agent.restore`. |
 | `agent.status` e `agent.usage` separados                            | Um só `agent.upsert` com o agente inteiro (status, tokens, custo, branch, erro)                                                                                                            | Menos mensagens para manter em sincronia; o front-end sempre tem o agente completo.                                                                                                                                                                          |
-| `agent.create { …, context[] }`                                     | `agent.create` sem `context[]`; mais `agent.update { repos, issueRef }` para o agente em branco                                                                                            | Os itens de contexto escolhidos à mão e o seletor chegam na Fase 4. Na Fase 2 o contexto é a issue, os comentários e as notas ligadas.                                                                                                                       |
 | `--permission-prompt-tool` (listada no plano)                       | Usada como está, mais `--session-id`, `--strict-mcp-config`, `--permission-mode default` e `--disallowedTools`                                                                             | A flag existe na 2.1.301, mas não aparece no `claude --help` (só na documentação). `--session-id` deixa o bridge escolher o id da sessão antes de começar, o que simplifica o `--resume`.                                                                    |
 | Pausar = interromper depois do turno atual                          | Pausar interrompe o turno na hora (`control_request` de interrupt) e o processo termina; Retomar usa `--resume`                                                                            | Esperar o turno acabar pode levar minutos. A retomada avisa o modelo que foi uma pausa, porque o Claude Code descreve a interrupção como recusa.                                                                                                             |
 | Processo do agente vivo entre mensagens                             | O processo termina quando o turno acaba sem mensagens na fila; a próxima mensagem retoma a sessão com `--resume`                                                                           | Evita processos parados ocupando memória; mensagens enviadas durante o turno ainda vão direto pelo stdin.                                                                                                                                                    |
@@ -184,24 +197,29 @@ docs/         plano e protótipo
 | Pipeline em etapas (Build, Testes, Lint)                            | O desenho das etapas é aproximado a partir do status geral do pipeline                                                                                                                     | Ler os jobs de cada pipeline é mais uma chamada por MR a cada 30 s; o status geral basta para o aceite. Dá para trocar pelos jobs reais depois.                                                                                                              |
 | Comentário identificado como do agente                              | Cabeçalho `🤖 **agente-N** · Agent Canvas` no começo do comentário                                                                                                                         | O comentário sai com o token do usuário; o cabeçalho deixa claro no GitLab quem escreveu e permite marcar como "agente" na leitura.                                                                                                                          |
 | "Criar agente para corrigir" o pipeline                             | **Pedir correção** manda a mensagem ao agente que abriu o MR                                                                                                                               | Agentes de correção com papel próprio chegam com a orquestração (Fase 5).                                                                                                                                                                                    |
+| `agent.create { …, context[] }`, `context.add/remove/summarize`     | `context.add`, `context.remove`, `context.summarize` e `context.unsummarize` por agente; os itens dos vínculos do canvas entram sem mensagem                                               | O contexto da issue, do repositório e das notas ligadas já vem dos vínculos que o canvas tem; só o que é escolhido à mão precisa de mensagem. "Completo" desfaz o resumo, como o plano pede.                                                                 |
+| `context_item` com `label` e `tokens` gravados                      | `context_item` guarda só o que não se deduz (item escolhido à mão, exclusão, resumo e o hash do conteúdo resumido); rótulo e tokens são calculados na hora                                 | O conteúdo muda (issue comentada, nota editada, arquivo alterado) e o número gravado ficaria velho.                                                                                                                                                          |
+| Nota de passagem pedida ao concluir                                 | O context.md pede ao agente que chame `write_note` antes da resposta final, no mesmo turno                                                                                                 | Pedir depois do turno custaria outro turno inteiro, com o contexto todo de novo.                                                                                                                                                                             |
+| Ferramenta `write_note` (Fase 5)                                    | Adiantada para a Fase 4                                                                                                                                                                    | É o caminho da nota de passagem.                                                                                                                                                                                                                             |
+| Orçamento de tokens configurável                                    | Variável `AGENT_CANVAS_CONTEXT_BUDGET` (padrão 60 mil)                                                                                                                                     | A tela de configurações ganha o campo junto com os limites do supervisor (Fase 5).                                                                                                                                                                           |
 | TypeScript                                                          | Fixado em `~6.0`                                                                                                                                                                           | O TypeScript 7 (versão nativa) ainda não é suportado pelo `typescript-eslint`.                                                                                                                                                                               |
 
 ## Diferenças em relação ao protótipo
 
 O visual (tokens, cartões, janelas de agente, painéis, menu, aviso, foco) foi portado do protótipo. O que difere, por enquanto:
 
-- Contexto escolhido à mão, orquestrador, sub-agentes, revisão por agente e automações chegam nas Fases 4 a 6: o painel de Automações mostra as regras desligadas e o foco do MR não tem a seção "Revisão".
-- O painel do agente não tem barra de progresso em etapas (o protótipo tinha um roteiro fixo); mostra o que o agente está fazendo agora, tokens, custo e turnos. Equipe, contexto com medidor e linha do tempo chegam com as Fases 4 a 6.
+- Orquestrador, sub-agentes, revisão por agente e as automações além da nota de passagem chegam nas Fases 5 e 6: o painel de Automações mostra essas regras desligadas e o foco do MR não tem a seção "Revisão".
+- O painel do agente não tem barra de progresso em etapas (o protótipo tinha um roteiro fixo); mostra o que o agente está fazendo agora, tokens, custo e turnos. Equipe e linha do tempo chegam com as Fases 5 e 6.
+- O medidor de contexto ganhou uma fatia cinza para o cabeçalho do context.md (avisos, repositório, MR) e a linha com o uso real do último turno, que inclui o system prompt e a conversa.
 - O painel da issue não tem as opções de contexto e autonomia (profundidade): tem só instruções extras. Um agente trabalha no projeto da issue; issues com vários repositórios ganham orquestrador na Fase 5.
 - Uma issue real pertence a um projeto só; o cartão mostra esse projeto em vez da lista de repositórios afetados que o protótipo inventava.
 - Os critérios de aceite vêm dos itens de checklist (`- [ ]`) da descrição. Sem checklist, a seção não aparece.
 - A discussão da issue e do MR é a do GitLab (sem notas de sistema).
 - O painel do agente mostra o MR nos detalhes em vez de um terceiro número no topo (tokens, custo e turnos ficam).
-- Soltar uma issue ou um repositório em cima de um agente que já começou não acrescenta contexto ainda (Fase 4); só funciona no agente em branco.
 - O canvas usa o React Flow: pan, zoom e arrasto vêm dele, e o crédito "React Flow" fica visível no canto, como pede a licença para quem não assina o plano Pro.
 - O texto da nota cresce com o conteúdo (até 320 px) em vez de rolar.
 
-Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots/fase-2`](docs/screenshots/fase-2) e [`docs/screenshots/fase-3`](docs/screenshots/fase-3).
+Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots/fase-2`](docs/screenshots/fase-2), [`docs/screenshots/fase-3`](docs/screenshots/fase-3) e [`docs/screenshots/fase-4`](docs/screenshots/fase-4).
 
 ## Limitações conhecidas
 
@@ -212,4 +230,6 @@ Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots
 - Ainda não há limite de agentes simultâneos nem orçamento de tokens (supervisor da Fase 5).
 - O polling de pipelines é de 30 segundos (webhooks não alcançam um app local).
 - O merge usa as opções padrão do projeto no GitLab (sem squash forçado); o branch de origem é apagado no merge.
+- A estimativa de tokens é aproximada (caracteres ÷ 3,5); o número real só existe depois do turno.
+- Resumir usa a sua instalação do `claude` (e a sua cota) com um modelo pequeno.
 - Worktrees de agentes removidos não são apagados (a limpeza com confirmação é da Fase 7). Para apagar à mão: `git worktree remove ~/.agent-canvas/worktrees/<id>` no clone.

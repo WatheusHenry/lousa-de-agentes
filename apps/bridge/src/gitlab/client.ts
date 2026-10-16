@@ -38,6 +38,8 @@ export interface GitLabClient {
     opts: { sourceBranch: string; targetBranch: string; title: string; description: string },
   ): Promise<GitLabMr>;
   getMergeRequest(projectId: number, iid: number): Promise<GitLabMr>;
+  /** MR aberto de um branch, se houver (ex.: aberto fora do canvas). */
+  findOpenMergeRequest(projectId: number, sourceBranch: string): Promise<GitLabMr | null>;
   listMergeRequestDiffs(projectId: number, iid: number): Promise<MrDiffFile[]>;
   listMergeRequestComments(projectId: number, iid: number): Promise<IssueComment[]>;
   commentOnMergeRequest(projectId: number, iid: number, body: string): Promise<void>;
