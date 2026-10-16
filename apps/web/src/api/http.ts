@@ -10,6 +10,7 @@ import {
   type MrDiffFile,
   type SettingsView,
   type StateSnapshot,
+  type WorktreeLeftover,
 } from '@agent-canvas/shared';
 
 export interface DirListing {
@@ -83,5 +84,11 @@ export const api = {
     call<SettingsView>(`/api/repos/${projectId}/path`, { method: 'PUT', body: JSON.stringify({ path }) }),
   cloneRepo: (projectId: number) => call<SettingsView>(`/api/repos/${projectId}/clone`, { method: 'POST' }),
   mrDiff: (ref: string) => call<MrDiffFile[]>(`/api/mrs/${encodeURIComponent(ref)}/diff`),
+  leftovers: () => call<WorktreeLeftover[]>('/api/worktrees/leftovers'),
+  cleanupWorktrees: (agentIds: string[]) =>
+    call<{ removed: string[]; errors: { agentId: string; error: string }[] }>('/api/worktrees/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ agentIds }),
+    }),
   mrComments: (ref: string) => call<IssueComment[]>(`/api/mrs/${encodeURIComponent(ref)}/comments`),
 };

@@ -153,3 +153,20 @@ export const Question = z.object({
   createdAt: z.string(),
 });
 export type Question = z.infer<typeof Question>;
+
+/** Pasta de trabalho de um agente removido do canvas, que a limpeza pode apagar. */
+export const WorktreeLeftover = z.object({
+  agentId: z.string(),
+  name: z.string(),
+  path: z.string(),
+  branch: z.string().nullable(),
+  /** worktree do git ou pasta do orquestrador (sem git). */
+  kind: z.enum(['worktree', 'workspace']),
+  /** Quando o nó saiu do canvas (nulo se o nó já foi apagado de vez). */
+  removedAt: z.string().nullable(),
+  /** Arquivos com mudança sem commit. */
+  uncommitted: z.number(),
+  /** Commits do branch que não estão no remoto. */
+  unpushed: z.number(),
+});
+export type WorktreeLeftover = z.infer<typeof WorktreeLeftover>;

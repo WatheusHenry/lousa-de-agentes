@@ -1010,6 +1010,14 @@ export class Supervisor {
     return toAgent(row);
   }
 
+  /** A pasta de trabalho do agente foi apagada (limpeza): ele não retoma mais aquela sessão. */
+  forgetWorktree(agentId: string, note: string): void {
+    const a = this.get(agentId);
+    if (!a) return;
+    this.save(agentId, { worktreePath: null, error: note });
+    if (!['done', 'stopped', 'error', 'idle'].includes(a.status)) this.setStatus(agentId, 'stopped', note);
+  }
+
   /**
    * O agente está trabalhando: processo com turno pela frente (o que já deu o result e só está
    * saindo não conta, a não ser que tenha mensagem para retomar) ou na fila.

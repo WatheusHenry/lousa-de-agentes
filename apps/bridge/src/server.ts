@@ -17,6 +17,7 @@ import {
 } from '@agent-canvas/shared';
 import { AgentError, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
 import { AutomationService } from './automations/automation-service.ts';
+import { WorktreeCleanup } from './agents/worktree-cleanup.ts';
 import { QuestionService } from './agents/questions.ts';
 import type { AgentRunner } from './agents/runner.ts';
 import { ApprovalService } from './approvals/approval-service.ts';
@@ -108,6 +109,14 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     automations.onMrChanged(mr, prev);
   };
   mrs.onOpened = (mr) => automations.onMrOpened(mr);
+  const cleanup = new WorktreeCleanup({
+    db,
+    hub,
+    store,
+    home: deps.home,
+    busy: (id) => supervisor.busy(id),
+    forget: (id, note) => supervisor.forgetWorktree(id, note),
+  });
   const poller = new Poller({
     mrs: async () => {
       await mrs.pollOnce();
@@ -327,6 +336,15 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const view = settings.setAutomations(parsed.data);
     broadcast([{ type: 'settings.updated', settings: view }]);
     return view;
+  });
+
+  /** Pastas de trabalho de agentes removidos (a limpeza só apaga o que o usuário confirmar). */
+  app.get('/api/worktrees/leftovers', async () => cleanup.list());
+  app.post('/api/worktrees/cleanup', async (req) => {
+    const ids = (req.body as { agentIds?: unknown })?.agentIds;
+    if (!Array.isArray(ids) || !ids.every((x) => typeof x === 'string') || ids.length > 200)
+      throw new SettingsError('Lista de agentes inválida.');
+    return cleanup.remove(ids as string[]);
   });
 
   app.get('/api/mrs/:ref/diff', async (req) => mrs.diff((req.params as { ref: string }).ref));

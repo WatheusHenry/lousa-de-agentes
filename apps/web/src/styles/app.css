@@ -3623,3 +3623,19 @@ a.btn {
 .sd.queued {
   background: var(--line-strong);
 }
+/* limpeza de pastas de agentes removidos */
+.act-card.leftover {
+  cursor: pointer;
+}
+.act-card.leftover input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.side .callout {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0 2px 8px;
+}
+.side .callout .btn {
+  margin-left: 0;
+}

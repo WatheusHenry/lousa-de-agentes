@@ -3,6 +3,7 @@ import type { Issue, Question, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
 import { addIssue, fixPipeline, newAgentAt } from '../actions.ts';
+import { Leftovers } from './Leftovers.tsx';
 import { refreshIssues } from '../state/issues.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
@@ -791,6 +792,7 @@ function ReposTab() {
         <IconDrag /> Arraste um repositório para o canvas para criar um agente, ou solte em cima de um agente
         em branco.
       </p>
+      <Leftovers />
       <p className="tip">
         <button className="link-btn" onClick={() => setSettingsOpen(true)}>
           Escolher projetos
