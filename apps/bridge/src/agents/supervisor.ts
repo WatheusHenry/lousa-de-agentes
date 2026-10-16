@@ -32,13 +32,13 @@ import { parseLine } from './stream-parser.ts';
 export class AgentError extends Error {}
 
 const rolePrompt = (name: string) => readFileSync(new URL(`./roles/${name}.md`, import.meta.url), 'utf8');
-/** Prompt de sistema de cada papel (reviewer e fix chegam com as automações da Fase 6). */
+/** Prompt de sistema de cada papel. */
 const ROLE_PROMPTS: Record<AgentRole, string> = {
   main: rolePrompt('main'),
   orchestrator: rolePrompt('orchestrator'),
   sub: rolePrompt('sub'),
-  reviewer: rolePrompt('main'),
-  fix: rolePrompt('main'),
+  reviewer: rolePrompt('reviewer'),
+  fix: rolePrompt('fix'),
 };
 /** Estados em que um filho já não está trabalhando (wait_for_agents devolve). */
 const SETTLED: AgentStatus[] = ['done', 'error', 'stopped', 'paused', 'idle'];
@@ -253,6 +253,7 @@ export class Supervisor {
       contextTokens: 0,
       costUsd: 0,
       plan: null,
+      mrRef: null,
       createdAt: nowIso(),
     };
     const n = {
@@ -454,6 +455,16 @@ export class Supervisor {
         throw new AgentError(
           `A árvore deste agente passou do orçamento de ${Math.round(this.limits.treeTokenBudget / 1000)}k tokens (AGENT_CANVAS_TREE_TOKEN_BUDGET).`,
         );
+      // o agente fix trabalha no worktree do autor: um de cada vez
+      const sharing = a.worktreePath
+        ? [...this.live.keys()].find(
+            (id) => id !== agentId && this.busy(id) && this.get(id)?.worktreePath === a.worktreePath,
+          )
+        : undefined;
+      if (sharing)
+        throw new AgentError(
+          `${this.get(sharing)!.name} está trabalhando no mesmo worktree. Espere ele terminar.`,
+        );
       if (this.runningCount() >= this.limits.maxRunning) {
         // sem vaga: entra na fila e começa quando outro agente terminar
         this.queue.push({ agentId, text, resume });
@@ -482,18 +493,23 @@ export class Supervisor {
           const parent = a.parentId ? this.get(a.parentId) : null;
           // sub-agente no mesmo repositório do pai: branch a partir do branch do pai
           const fromParent = a.role === 'sub' && parent?.branch && parent.repos[0] === repoId;
+          // revisor: branch a partir do branch do MR, só para ler e rodar testes
+          const reviewed = a.role === 'reviewer' ? this.d.mrOfAgent?.(agentId) : null;
+          const localBase = fromParent ? parent.branch : (reviewed?.sourceBranch ?? null);
           const branchName = fromParent
             ? `${parent.branch}-${slugify(a.title, 3)}`
-            : issue
-              ? `agent/${issue.iid}-${slugify(issue.title)}`
-              : `agent/${slugify(a.title)}-${agentId.slice(-4)}`;
+            : reviewed
+              ? `${reviewed.sourceBranch}-review`
+              : issue
+                ? `agent/${issue.iid}-${slugify(issue.title)}`
+                : `agent/${slugify(a.title)}-${agentId.slice(-4)}`;
           const wt = await createWorktree({
             repoPath: r.localPath,
             root: join(this.d.home, 'worktrees'),
             agentId,
             branchName,
-            defaultBranch: fromParent ? parent.branch : r.defaultBranch,
-            ...(fromParent ? { localBase: true } : {}),
+            defaultBranch: localBase ?? r.defaultBranch,
+            ...(localBase ? { localBase: true } : {}),
           });
           a = this.save(agentId, { worktreePath: wt.path, branch: wt.branch });
           this.d.hub.broadcast(this.d.store.logActivity(`${a.name} trabalhando em ${r.name} · ${wt.branch}`));
@@ -807,6 +823,7 @@ export class Supervisor {
       contextTokens: 0,
       costUsd: 0,
       plan: null,
+      mrRef: null,
       createdAt: nowIso(),
     };
     const pn = this.d.db
@@ -859,6 +876,99 @@ export class Supervisor {
     this.event(id, { kind: 'user_message', text: task });
     void this.launch(id, task, false).catch(() => {});
     return toAgent(row);
+  }
+
+  /**
+   * Agente fix ou reviewer de um MR aberto por outro agente (automações e caixa de Ações).
+   * Fica abaixo do autor na árvore, sem poder criar sub-agentes. O fix trabalha no worktree e
+   * no branch do autor, para os commits irem ao mesmo MR; o reviewer ganha um worktree só dele.
+   */
+  helper(role: 'fix' | 'reviewer', mr: MergeRequest, task: string): Agent {
+    const author = mr.agentId ? this.get(mr.agentId) : null;
+    if (!author) throw new AgentError('O MR não foi aberto por um agente do canvas.');
+    if (role === 'fix' && (!author.worktreePath || !author.branch))
+      throw new AgentError(`${author.name} não tem mais o worktree do MR.`);
+    const count =
+      this.d.db
+        .select({ n: sql<number>`count(*)` })
+        .from(agentT)
+        .get()?.n ?? 0;
+    const id = `a_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    const row: Row = {
+      id,
+      name: `agente-${count + 1}`,
+      role,
+      parentId: author.id,
+      issueRef: mr.issueRef ?? author.issueRef,
+      repos: [mr.projectId],
+      instruction: task,
+      title: role === 'fix' ? `Corrigir o pipeline do !${mr.iid}` : `Revisar o !${mr.iid}`,
+      branch: role === 'fix' ? author.branch : null,
+      worktreePath: role === 'fix' ? author.worktreePath : null,
+      sessionId: null,
+      status: 'idle',
+      error: null,
+      depth: author.depth + 1,
+      maxDepth: author.depth + 1,
+      openMr: false,
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 0,
+      costUsd: 0,
+      plan: null,
+      mrRef: mr.ref,
+      createdAt: nowIso(),
+    };
+    // ao lado do nó do MR, com a aresta MR → agente
+    const mn = this.d.db
+      .select()
+      .from(node)
+      .where(and(eq(node.type, 'mr'), eq(node.refId, mr.ref), isNull(node.removedAt)))
+      .get();
+    const helpers = this.agents().filter((x) => x.mrRef === mr.ref).length;
+    const n = {
+      id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      type: 'agent' as const,
+      refId: id,
+      x: (mn?.x ?? 0) + 380,
+      y: (mn?.y ?? 0) - 40 + helpers * 420,
+      createdAt: nowIso(),
+    };
+    const e = {
+      id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      fromNodeId: mn?.id ?? '',
+      toNodeId: n.id,
+      kind: 'spawn' as const,
+    };
+    this.d.db.transaction((tx) => {
+      tx.insert(agentT).values(row).run();
+      tx.insert(node).values(n).run();
+      if (mn) tx.insert(edge).values(e).run();
+    });
+    this.d.hub.broadcast([
+      { type: 'agent.upsert', agent: toAgent(row) },
+      { type: 'node.upsert', node: n },
+      ...(mn ? [{ type: 'edge.upsert' as const, edge: e }] : []),
+      this.d.store.logActivity(
+        role === 'fix'
+          ? `${row.name} criado para corrigir o pipeline do MR !${mr.iid}`
+          : `${row.name} criado para revisar o MR !${mr.iid}`,
+      ),
+    ]);
+    this.d.context.seed(id, [{ kind: role === 'fix' ? 'pipeline_log' : 'mr_diff', ref: mr.ref }]);
+    this.event(id, { kind: 'user_message', text: task });
+    void this.launch(id, task, false).catch(() => {});
+    return toAgent(row);
+  }
+
+  /**
+   * O agente está trabalhando: processo com turno pela frente (o que já deu o result e só está
+   * saindo não conta, a não ser que tenha mensagem para retomar) ou na fila.
+   */
+  busy(agentId: string): boolean {
+    const l = this.live.get(agentId);
+    if (l && !l.stopping && (!l.inputClosed || l.afterExit)) return true;
+    return this.queue.some((q) => q.agentId === agentId);
   }
 
   /**

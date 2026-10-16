@@ -403,7 +403,7 @@ export class ContextService {
         : null,
       ...(a.role === 'orchestrator'
         ? {}
-        : { mr: { openOnFinish: a.openMr, current: this.d.mrs.mrOfAgent(a.id) } }),
+        : { mr: { openOnFinish: a.openMr, current: this.d.mrs.mrOfAgent(a.id), role: a.role } }),
       // a nota de passagem é da raiz (agente da issue ou orquestrador), como no plano
       handoff: this.d.settings.automations().handoff && a.depth === 0,
       team: this.team(a),

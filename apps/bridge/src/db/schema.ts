@@ -109,6 +109,8 @@ export const agent = sqliteTable('agent', {
   costUsd: real('cost_usd').notNull().default(0),
   /** Plano em checklist publicado com report_plan. */
   plan: text('plan', { mode: 'json' }).$type<{ text: string; done: boolean; agentId?: string | null }[]>(),
+  /** MR em que o agente trabalha sem ser o autor (fix e reviewer). */
+  mrRef: text('mr_ref'),
   createdAt: text('created_at').notNull(),
 });
 
@@ -166,6 +168,10 @@ export const mergeRequestCache = sqliteTable(
     deletions: integer('deletions').notNull().default(0),
     agentId: text('agent_id'),
     issueRef: text('issue_ref'),
+    /** Último comentário já visto pelo poller (nulo: ainda não leu a discussão). */
+    seenCommentId: integer('seen_comment_id'),
+    /** Agentes fix já acionados para este MR (a automação para no limite). */
+    fixAttempts: integer('fix_attempts').notNull().default(0),
     updatedAt: text('updated_at').notNull(),
     fetchedAt: text('fetched_at').notNull(),
   },

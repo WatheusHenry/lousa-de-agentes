@@ -16,6 +16,7 @@ import {
   type StateSnapshot,
 } from '@agent-canvas/shared';
 import { AgentError, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
+import { AutomationService } from './automations/automation-service.ts';
 import { QuestionService } from './agents/questions.ts';
 import type { AgentRunner } from './agents/runner.ts';
 import { ApprovalService } from './approvals/approval-service.ts';
@@ -24,6 +25,7 @@ import type { BridgeConfig } from './config.ts';
 import type { Db } from './db/index.ts';
 import { BrowseError, listDirs, nativePicker, pickNative } from './fs-browse.ts';
 import { GitLabError } from './gitlab/client.ts';
+import { Poller } from './gitlab/poller.ts';
 import { Hub } from './hub.ts';
 import { registerMcp } from './mcp/canvas-server.ts';
 import { MrError, MrService } from './mrs/mr-service.ts';
@@ -33,6 +35,13 @@ import type { Session } from './session.ts';
 import { SettingsError, type SettingsService } from './settings.ts';
 
 export const SERVER_VERSION = '0.3.0';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Para os testes rodarem uma rodada do poller sem esperar o intervalo. */
+    poller: Poller;
+  }
+}
 
 export interface ServerDeps {
   config: Pick<BridgeConfig, 'port' | 'allowedOrigins' | 'webDist'>;
@@ -44,8 +53,10 @@ export interface ServerDeps {
   home: string;
   /** Modelo dos agentes (padrão do Claude Code quando ausente). */
   model?: string;
-  /** Intervalo do polling de pipelines (desligado quando ausente, como nos testes). */
+  /** Intervalo do polling de MRs: pipeline, estado e comentários (desligado quando ausente, como nos testes). */
   pollMrsEveryMs?: number;
+  /** Intervalo do polling de issues (label agent-ready). */
+  pollIssuesEveryMs?: number;
   /** Resumidor de itens pesados (o padrão roda `claude -p` com um modelo pequeno). */
   summarizer?: Summarizer;
   contextBudget?: number;
@@ -89,9 +100,19 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
   supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
-  mrs.onChanged = (mr) => {
+  const automations = new AutomationService({ hub, store, settings, mrs, supervisor, context });
+  mrs.onChanged = (mr, prev) => {
     if (mr.agentId) void context.broadcastView(mr.agentId);
+    automations.onMrChanged(mr, prev);
   };
+  mrs.onOpened = (mr) => automations.onMrOpened(mr);
+  const poller = new Poller({
+    mrs: async () => {
+      await mrs.pollOnce();
+      await automations.pollComments();
+    },
+    issues: () => automations.pollIssues(),
+  });
 
   const app = Fastify({
     // a URL do WebSocket leva o token de sessão: o log grava só o caminho
@@ -453,7 +474,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (msg.type === 'question.answer') return questions.answer(msg.questionId, msg.answer);
     if (msg.type === 'mr.merge') return void (await mrs.merge(msg.mrRef));
     if (msg.type === 'mr.refresh') return void (await mrs.refresh(msg.mrRef, true));
-    if (msg.type === 'mr.comment') return mrs.comment(msg.mrRef, msg.body);
+    if (msg.type === 'mr.comment') {
+      await mrs.comment(msg.mrRef, msg.body);
+      // comentário do usuário num MR de agente vai para o autor sem esperar o poller
+      return automations.pollMr(msg.mrRef).catch(() => {});
+    }
+    if (msg.type === 'mr.fix') return void (await automations.fixPipeline(msg.mrRef, 'user'));
     if (msg.type === 'issue.comment') {
       await mrs.commentIssue(msg.issueRef, msg.body);
       // comentário do usuário é informação nova para os agentes da issue
@@ -490,10 +516,14 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     );
   }
 
-  if (deps.pollMrsEveryMs) mrs.startPolling(deps.pollMrsEveryMs);
+  app.decorate('poller', poller);
+  poller.start({
+    ...(deps.pollMrsEveryMs ? { mrsEveryMs: deps.pollMrsEveryMs } : {}),
+    ...(deps.pollIssuesEveryMs ? { issuesEveryMs: deps.pollIssuesEveryMs } : {}),
+  });
 
   app.addHook('preClose', async () => {
-    mrs.stopPolling();
+    poller.stop();
     context.shutdown();
     supervisor.shutdown();
     for (const ws of hub.clients) ws.terminate();

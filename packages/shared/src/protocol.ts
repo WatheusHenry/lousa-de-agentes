@@ -105,6 +105,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
   /** Merge é sempre uma ação humana, pela caixa de Ações. */
   z.object({ type: z.literal('mr.merge'), mrRef: MrRef }),
   z.object({ type: z.literal('mr.refresh'), mrRef: MrRef }),
+  /** Cria (ou retoma) o agente fix do MR com pipeline falhando. */
+  z.object({ type: z.literal('mr.fix'), mrRef: MrRef }),
   z.object({ type: z.literal('mr.comment'), mrRef: MrRef, body: z.string().min(1).max(20_000) }),
   z.object({ type: z.literal('issue.comment'), issueRef: IssueRef, body: z.string().min(1).max(20_000) }),
   z.object({

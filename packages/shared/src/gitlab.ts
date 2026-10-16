@@ -132,3 +132,22 @@ export function parseAgentNote(body: string): { agent: string; body: string } | 
   const m = /^🤖 \*\*(.+?)\*\* · Agent Canvas\n\n([\s\S]*)$/.exec(body);
   return m ? { agent: m[1]!, body: m[2]! } : null;
 }
+
+/**
+ * Repositórios que a issue parece tocar: o projeto dela e os projetos escolhidos citados no
+ * título ou na descrição (pelo nome ou pelo caminho).
+ */
+export function detectRepos(
+  issue: { projectId: number; title: string; description: string },
+  projects: { id: number; name: string; pathWithNamespace: string }[],
+): number[] {
+  const text = `${issue.title}\n${issue.description}`.toLowerCase();
+  const cited = projects.filter((p) => {
+    if (p.id === issue.projectId) return false;
+    const names = [p.pathWithNamespace.toLowerCase(), p.name.toLowerCase()];
+    return names.some((n) =>
+      new RegExp(`(^|[^\\w/-])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`).test(text),
+    );
+  });
+  return [issue.projectId, ...cited.map((p) => p.id)];
+}

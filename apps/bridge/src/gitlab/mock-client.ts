@@ -133,6 +133,9 @@ export class MockGitLabClient implements GitLabClient {
   private mrs = new Map<string, GitLabMr & { createdAt: number; mergeable: boolean }>();
   private nextMrIid = 88;
   private nextNoteId = 9000;
+  /** Status de pipeline forçado por MR (testes e simulação de falha). */
+  private forced = new Map<string, GitLabMr['pipelineStatus']>();
+  private extraLabels = new Map<string, string[]>();
 
   constructor(
     private readonly opts: {
@@ -168,7 +171,7 @@ export class MockGitLabClient implements GitLabClient {
       iid: i.iid,
       title: i.title,
       description: i.description,
-      labels: i.labels,
+      labels: [...i.labels, ...(this.extraLabels.get(`${project.id}#${i.iid}`) ?? [])],
       author: i.author,
       state: 'opened' as const,
       updatedAt: new Date(BASE_TIME - n * DAY).toISOString(),
@@ -263,6 +266,21 @@ export class MockGitLabClient implements GitLabClient {
     return [{ jobId: 7001, name: 'test', stage: 'test', trace }];
   }
 
+  /** Força o status do pipeline do MR; `null` volta ao pipeline simulado, que roda de novo. */
+  forcePipeline(projectId: number, iid: number, status: GitLabMr['pipelineStatus'] | null): void {
+    const m = this.mr(projectId, iid);
+    if (status) this.forced.set(`${projectId}!${iid}`, status);
+    else {
+      this.forced.delete(`${projectId}!${iid}`);
+      m.createdAt = Date.now();
+    }
+  }
+
+  addLabel(projectId: number, iid: number, label: string): void {
+    const k = `${projectId}#${iid}`;
+    this.extraLabels.set(k, [...(this.extraLabels.get(k) ?? []), label]);
+  }
+
   /** O mock não tem os commits: o serviço de MRs usa o diff do worktree local. */
   async listMergeRequestDiffs(projectId: number, iid: number): Promise<MrDiffFile[]> {
     this.mr(projectId, iid);
@@ -299,7 +317,9 @@ export class MockGitLabClient implements GitLabClient {
   /** O pipeline simulado roda por `pipelineMs` e depois passa (ou falha). */
   private view(m: GitLabMr & { createdAt: number }): GitLabMr {
     const done = Date.now() - m.createdAt >= (this.opts.pipelineMs ?? 20_000);
-    const pipelineStatus = done ? (this.opts.pipelineFails ? 'failed' : 'success') : 'running';
+    const pipelineStatus =
+      [...this.forced].find(([k]) => this.mrs.get(k) === m)?.[1] ??
+      (done ? (this.opts.pipelineFails ? 'failed' : 'success') : 'running');
     return {
       iid: m.iid,
       title: m.title,

@@ -29,6 +29,7 @@ const app = await buildServer({
   settings,
   runner: new CliRunner(),
   pollMrsEveryMs: 30_000,
+  pollIssuesEveryMs: 60_000,
   limits: {
     ...(Number(process.env.AGENT_CANVAS_MAX_AGENTS) > 0
       ? { maxRunning: Number(process.env.AGENT_CANVAS_MAX_AGENTS) }

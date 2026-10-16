@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ContextKind, MergeRequest } from '@agent-canvas/shared';
+import type { AgentRole, ContextKind, MergeRequest } from '@agent-canvas/shared';
 
 /** Um item de contexto já resolvido em texto. */
 export interface ContextSection {
@@ -18,7 +18,7 @@ export interface ContextInput {
   repo: { pathWithNamespace: string; defaultBranch: string | null; branch: string } | null;
   sections: ContextSection[];
   /** Abrir o MR sozinho ao terminar (opção do agente) e o MR que ele já abriu. */
-  mr?: { openOnFinish: boolean; current: MergeRequest | null };
+  mr?: { openOnFinish: boolean; current: MergeRequest | null; role?: AgentRole };
   /** Pedir a nota de passagem ao concluir (automação ligada). */
   handoff?: boolean;
   /** Profundidade disponível e sub-agentes já criados. */
@@ -55,11 +55,15 @@ export function buildContext(c: ContextInput): string {
       '',
       '## Merge request',
       '',
-      m
-        ? `- Você já abriu o MR !${m.iid} (${m.state}, pipeline: ${m.pipelineStatus}): ${m.webUrl}. Novos commits vão para ele chamando \`open_merge_request\` de novo.`
-        : c.mr.openOnFinish
-          ? '- Ao terminar, com tudo commitado e os testes passando, abra o MR com a ferramenta `open_merge_request`.'
-          : '- Não abra MR por conta própria: o usuário pede quando quiser.',
+      m && c.mr.role === 'reviewer'
+        ? `- Você revisa o MR !${m.iid} (${m.sourceBranch} → ${m.targetBranch}, pipeline: ${m.pipelineStatus}): ${m.webUrl}. Publique a revisão com \`comment_mr\`; não abra MR.`
+        : m && c.mr.role === 'fix'
+          ? `- Você corrige o MR !${m.iid} (pipeline: ${m.pipelineStatus}): ${m.webUrl}. Com a correção commitada, chame \`open_merge_request\` para enviar os commits a ele.`
+          : m
+            ? `- Você já abriu o MR !${m.iid} (${m.state}, pipeline: ${m.pipelineStatus}): ${m.webUrl}. Novos commits vão para ele chamando \`open_merge_request\` de novo.`
+            : c.mr.openOnFinish
+              ? '- Ao terminar, com tudo commitado e os testes passando, abra o MR com a ferramenta `open_merge_request`.'
+              : '- Não abra MR por conta própria: o usuário pede quando quiser.',
       '- O merge é sempre feito pelo usuário.',
     );
   }

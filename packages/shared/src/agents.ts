@@ -41,6 +41,8 @@ export const Agent = z.object({
   costUsd: z.number(),
   /** Plano em checklist (report_plan). */
   plan: z.array(PlanItem).nullable(),
+  /** MR em que o agente trabalha sem ser o autor (agentes fix e reviewer). */
+  mrRef: z.string().nullable(),
   createdAt: z.string(),
 });
 export type Agent = z.infer<typeof Agent>;

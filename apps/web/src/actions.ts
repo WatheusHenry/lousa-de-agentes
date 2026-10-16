@@ -84,25 +84,6 @@ export function startIssueAgent(
 }
 
 /**
- * Repositórios que a issue parece tocar: o projeto dela e os projetos escolhidos citados no
- * título ou na descrição (pelo nome ou pelo caminho).
- */
-export function detectRepos(
-  issue: { projectId: number; title: string; description: string },
-  projects: { id: number; name: string; pathWithNamespace: string }[],
-): number[] {
-  const text = `${issue.title}\n${issue.description}`.toLowerCase();
-  const cited = projects.filter((p) => {
-    if (p.id === issue.projectId) return false;
-    const names = [p.pathWithNamespace.toLowerCase(), p.name.toLowerCase()];
-    return names.some((n) =>
-      new RegExp(`(^|[^\\w/-])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`).test(text),
-    );
-  });
-  return [issue.projectId, ...cited.map((p) => p.id)];
-}
-
-/**
  * Repositório ou issue solto em cima de um agente. No agente em branco, define o repositório e a
  * issue da tarefa; depois disso (ou se já estão definidos), entra como item extra de contexto.
  */

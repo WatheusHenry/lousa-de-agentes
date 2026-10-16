@@ -143,6 +143,15 @@ export class SettingsService {
     return this.view();
   }
 
+  /** Issues com a label agent-ready que a automação já tratou (não começam de novo). */
+  agentReadySeen(): string[] {
+    return this.get<string[]>('agentReadySeen') ?? [];
+  }
+
+  markAgentReadySeen(ref: string): void {
+    this.set('agentReadySeen', [...this.agentReadySeen().filter((r) => r !== ref), ref].slice(-500));
+  }
+
   /** Grava os projetos escolhidos, buscando os dados de cada um no GitLab. */
   async selectProjects(projectIds: number[]): Promise<SettingsView> {
     const client = this.client();

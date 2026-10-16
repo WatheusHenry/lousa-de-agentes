@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   agentNoteHeader,
   diffStat,
@@ -54,10 +54,10 @@ const PIPELINE_LABEL: Partial<Record<MergeRequest['pipelineStatus'], string>> = 
  * acompanhamento do pipeline por polling, comentários e merge (sempre por decisão humana).
  */
 export class MrService {
-  private timer: ReturnType<typeof setInterval> | null = null;
-  /** Avisado quando estado ou pipeline de um MR mudam (o contexto do agente sugere o log). */
-  onChanged: (mr: MergeRequest) => void = () => {};
-  private polling = false;
+  /** Avisado quando estado ou pipeline de um MR mudam (contexto do agente e automações). */
+  onChanged: (mr: MergeRequest, prev: MergeRequest) => void = () => {};
+  /** Avisado quando um agente abre um MR novo (automação do revisor). */
+  onOpened: (mr: MergeRequest) => void = () => {};
 
   constructor(
     private readonly db: Db,
@@ -101,6 +101,8 @@ export class MrService {
   async openForAgent(agentId: string, opts: { title: string; description?: string }): Promise<MergeRequest> {
     const a = this.db.select().from(agentT).where(eq(agentT.id, agentId)).get();
     if (!a?.worktreePath || !a.branch) throw new MrError('O agente ainda não tem worktree.');
+    if (a.role === 'reviewer')
+      throw new MrError('Revisores não abrem MR: comente os achados com comment_mr.');
     const projectId = a.repos[0];
     const r =
       projectId !== undefined &&
@@ -122,11 +124,25 @@ export class MrService {
       }
     }
 
-    const existing = this.db
-      .select()
-      .from(mrT)
-      .where(and(eq(mrT.agentId, agentId), eq(mrT.sourceBranch, a.branch), eq(mrT.state, 'opened')))
-      .get();
+    // o agente fix trabalha no MR de outro agente: os commits vão para ele
+    const existing = a.mrRef
+      ? this.db
+          .select()
+          .from(mrT)
+          .where(
+            and(
+              eq(mrT.projectId, parseMrRef(a.mrRef).projectId),
+              eq(mrT.iid, parseMrRef(a.mrRef).iid),
+              eq(mrT.state, 'opened'),
+            ),
+          )
+          .get()
+      : this.db
+          .select()
+          .from(mrT)
+          .where(and(eq(mrT.agentId, agentId), eq(mrT.sourceBranch, a.branch), eq(mrT.state, 'opened')))
+          .get();
+    if (a.mrRef && !existing) throw new MrError('O MR desta tarefa não está mais aberto.');
     if (existing) {
       await this.refresh(mrRef(existing.projectId, existing.iid), true);
       return this.get(mrRef(existing.projectId, existing.iid))!;
@@ -169,6 +185,7 @@ export class MrService {
     const mr = toMr(row);
     this.placeNode(agentId, mr);
     this.hub.broadcast(this.store.logActivity(`${a.name} abriu o MR !${mr.iid} em ${r.name}`));
+    this.onOpened(mr);
     return mr;
   }
 
@@ -223,7 +240,7 @@ export class MrService {
     });
     const mr = toMr(row);
     this.hub.broadcast({ type: 'mr.upsert', mr });
-    this.onChanged(mr);
+    this.onChanged(mr, cur);
     if (fresh.state !== cur.state && fresh.state === 'merged')
       this.hub.broadcast(this.store.logActivity(`MR !${mr.iid} mergeado`));
     else if (fresh.pipelineStatus !== cur.pipelineStatus && PIPELINE_LABEL[fresh.pipelineStatus])
@@ -233,29 +250,12 @@ export class MrService {
     return mr;
   }
 
-  /** Polling dos MRs abertos do canvas (webhooks ficam para depois: o app é local). */
+  /** Rodada do poller: MRs abertos do canvas (webhooks ficam para depois: o app é local). */
   async pollOnce(): Promise<void> {
-    if (this.polling) return;
-    this.polling = true;
-    try {
-      for (const mr of this.canvasMrs()) {
-        if (mr.state !== 'opened') continue;
-        await this.refresh(mr.ref).catch(() => {});
-      }
-    } finally {
-      this.polling = false;
+    for (const mr of this.canvasMrs()) {
+      if (mr.state !== 'opened') continue;
+      await this.refresh(mr.ref).catch(() => {});
     }
-  }
-
-  startPolling(everyMs = 30_000): void {
-    this.stopPolling();
-    this.timer = setInterval(() => void this.pollOnce(), everyMs);
-    this.timer.unref();
-  }
-
-  stopPolling(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
   }
 
   /** Merge pela caixa de Ações. Agentes não têm como chamar isto. */
@@ -318,8 +318,10 @@ export class MrService {
     ]);
   }
 
-  /** MR aberto do agente (para a ferramenta comment_mr). */
+  /** MR do agente (ferramenta comment_mr e context.md): o que ele abriu ou o que corrige/revisa. */
   mrOfAgent(agentId: string): MergeRequest | null {
+    const a = this.db.select({ mrRef: agentT.mrRef }).from(agentT).where(eq(agentT.id, agentId)).get();
+    if (a?.mrRef) return this.get(a.mrRef);
     const r = this.db
       .select()
       .from(mrT)
@@ -327,6 +329,45 @@ export class MrService {
       .all()
       .sort((a, b) => b.iid - a.iid)[0];
     return r ? toMr(r) : null;
+  }
+
+  /** MRs abertos do canvas com agente autor (o poller lê a discussão deles). */
+  openAgentMrs(): MergeRequest[] {
+    return this.canvasMrs().filter((m) => m.state === 'opened' && m.agentId);
+  }
+
+  /** Último comentário já visto do MR; nulo se a discussão ainda não foi lida. */
+  seenComment(ref: string): number | null {
+    const { projectId, iid } = parseMrRef(ref);
+    return (
+      this.db
+        .select({ v: mrT.seenCommentId })
+        .from(mrT)
+        .where(and(eq(mrT.projectId, projectId), eq(mrT.iid, iid)))
+        .get()?.v ?? null
+    );
+  }
+
+  markSeen(ref: string, commentId: number): void {
+    const { projectId, iid } = parseMrRef(ref);
+    this.db
+      .update(mrT)
+      .set({ seenCommentId: commentId })
+      .where(and(eq(mrT.projectId, projectId), eq(mrT.iid, iid)))
+      .run();
+  }
+
+  /** Conta mais um agente fix acionado no MR e devolve o total. */
+  bumpFixAttempts(ref: string): number {
+    const { projectId, iid } = parseMrRef(ref);
+    return (
+      this.db
+        .update(mrT)
+        .set({ fixAttempts: sql`${mrT.fixAttempts} + 1` })
+        .where(and(eq(mrT.projectId, projectId), eq(mrT.iid, iid)))
+        .returning({ n: mrT.fixAttempts })
+        .get()?.n ?? 0
+    );
   }
 
   private save(

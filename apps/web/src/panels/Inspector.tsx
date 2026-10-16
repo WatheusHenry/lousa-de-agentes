@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import type { Issue } from '@agent-canvas/shared';
+import { detectRepos, type Issue } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
-import { detectRepos, noteFor, startIssueAgent } from '../actions.ts';
+import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { Markdown } from '../components/Markdown.tsx';
 import { IconAgent, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';

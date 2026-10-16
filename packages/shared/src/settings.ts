@@ -47,11 +47,27 @@ export type SettingsView = z.infer<typeof SettingsView>;
 export const RepoPathInput = z.object({ path: z.string().trim().max(1024).nullable() });
 export type RepoPathInput = z.infer<typeof RepoPathInput>;
 
-/** Interruptores do painel de Automações (as outras regras chegam na Fase 6). */
+/** Interruptores do painel de Automações (seção 9 do plano). */
 export const Automations = z.object({
+  /** Pipeline de MR de agente falhou → agente fix com o log do job no contexto. */
+  fixPipeline: z.boolean(),
+  /** Comentário de revisão no MR → vai para a sessão do agente autor. */
+  reviewComments: z.boolean(),
+  /** MR aberto por agente → agente reviewer comenta no MR. */
+  reviewer: z.boolean(),
   /** Agente concluiu → nota de passagem com decisões, arquivos, MRs e pendências. */
   handoff: z.boolean(),
+  /** Label agent-ready numa issue → a issue entra no canvas e os agentes começam. */
+  agentReady: z.boolean(),
 });
 export type Automations = z.infer<typeof Automations>;
-export const DEFAULT_AUTOMATIONS: Automations = { handoff: true };
+export const DEFAULT_AUTOMATIONS: Automations = {
+  fixPipeline: true,
+  reviewComments: true,
+  reviewer: false,
+  handoff: true,
+  agentReady: false,
+};
+/** Label que coloca uma issue para os agentes (automação agentReady). */
+export const AGENT_READY_LABEL = 'agent-ready';
 export const AutomationsInput = Automations.partial();
