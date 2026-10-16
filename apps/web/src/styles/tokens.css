@@ -1,0 +1,99 @@
+/* Tokens de design copiados do protótipo (docs/prototype/agent-canvas.html). Tema claro, único por decisão. */
+:root {
+  color-scheme: light;
+  --bg: #f2f2f4;
+  --dot: #d6d6db;
+  --surface: #ffffff;
+  --subtle: #f7f7f8;
+  --hover: #f0f0f2;
+  --fg: #1d1d1f;
+  --muted: #6e6e73;
+  --faint: #a1a1a6;
+  --line: #e6e6e9;
+  --line-strong: #d2d2d7;
+  --accent: #0a6cf0;
+  --accent-soft: #e9f1fe;
+  --issue: #e2560b;
+  --issue-soft: #fff0e5;
+  --mr: #7a4ce0;
+  --mr-soft: #f1ecfd;
+  --repo: #0e7a6b;
+  --repo-soft: #e2f4f0;
+  --ok: #0c7a43;
+  --ok-soft: #dbf6e6;
+  --warn: #8a5a00;
+  --warn-soft: #fff3c4;
+  --bad: #c4291c;
+  --bad-soft: #fde7e5;
+  --edge: #c3c3c9;
+  --note: #9a6b00;
+  --note-soft: #fff3c8;
+  --note-bg: #fffcf2;
+  --note-line: #e9c46a;
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --sh-card:
+    0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px -10px rgba(0, 0, 0, 0.12);
+  --sh-float:
+    0 0 0 1px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04), 0 18px 48px -16px rgba(0, 0, 0, 0.24);
+  --sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --track: -0.04em;
+  /* motion */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+@supports (corner-shape: squircle) {
+  :root {
+    --r-xs: 9px;
+    --r-sm: 14px;
+    --r-md: 20px;
+    --r-lg: 26px;
+    --r-xl: 32px;
+  }
+  .btn,
+  .field,
+  .card,
+  .seg,
+  .seg-ind,
+  .badge,
+  .insp,
+  .side,
+  .toolbar,
+  .toast,
+  .focus-sheet,
+  .ico,
+  .iss,
+  .iss-ic,
+  .composer,
+  .f-comp,
+  .l.ask,
+  .l.user,
+  .plan,
+  .chipx,
+  .ctx-add,
+  pre.cmd,
+  .appicon,
+  .tree button,
+  .opt,
+  .opts,
+  .links .lk,
+  .callout,
+  .stat,
+  .fx-note,
+  .diff,
+  .lst-item,
+  .cpop,
+  .cp-it,
+  .cmenu,
+  .tb-grp,
+  .act-card,
+  .rules,
+  .chip-s {
+    corner-shape: squircle;
+  }
+}

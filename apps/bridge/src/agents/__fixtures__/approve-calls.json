@@ -1,0 +1,34 @@
+[
+  {
+    "tool_name": "Bash",
+    "input": {
+      "command": "npm test",
+      "description": "Run npm test in the fixture repo"
+    },
+    "tool_use_id": "toolu_015DCevWGQX9UGxs5jqSGFCo"
+  },
+  {
+    "tool_name": "Bash",
+    "input": {
+      "command": "rm notes.txt",
+      "description": "Delete notes.txt in the fixture repo"
+    },
+    "tool_use_id": "toolu_01NvxE3g3WpXvvLf7KLGLNy7"
+  },
+  {
+    "tool_name": "Write",
+    "input": {
+      "file_path": "/tmp/fixture-repo/bye.txt",
+      "content": "tchau\n"
+    },
+    "tool_use_id": "toolu_01QPKuEk4qCxpWogtRri53E2"
+  },
+  {
+    "tool_name": "Bash",
+    "input": {
+      "command": "git add bye.txt && git commit -m \"bye\" -m \"Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>\" && git log -1 --format='%h %s'",
+      "description": "Stage bye.txt, commit with message bye, show latest commit"
+    },
+    "tool_use_id": "toolu_01Y23Pq8z1nbVijURQif4WD4"
+  }
+]
