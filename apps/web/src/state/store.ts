@@ -13,6 +13,7 @@ import type {
   Issue,
   MergeRequest,
   Note,
+  Question,
   NoteLink,
   ServerMessage,
   SettingsView,
@@ -53,6 +54,8 @@ export interface CanvasState {
   policies: Policy[];
   /** MRs do canvas, por ref (`<projectId>!<iid>`). */
   mergeRequests: Record<string, MergeRequest>;
+  /** Perguntas pendentes dos agentes (ask_human). */
+  questions: Record<string, Question>;
   /** Contexto de cada agente (itens, tokens, sugestões), conforme o bridge manda. */
   contexts: Record<string, AgentContext>;
   /** Muda quando a discussão de um MR ou issue muda no GitLab (para recarregar). */
@@ -104,6 +107,8 @@ export interface CanvasState {
     repos?: number[];
     instruction?: string;
     fromNodeId?: string;
+    maxDepth?: number;
+    openMr?: boolean;
   }): { agentId: string; nodeId: string };
   updateAgent(agentId: string, patch: { repos?: number[]; issueRef?: string | null }): void;
   messageAgent(agentId: string, text: string): void;
@@ -112,6 +117,7 @@ export interface CanvasState {
   stopAgent(agentId: string): void;
   decideApproval(approvalId: string, decision: 'allow' | 'deny', remember?: boolean): void;
   removePolicy(policyId: string): void;
+  answerQuestion(questionId: string, answer: string): void;
   contextAdd(agentId: string, kind: ContextKind, ref: string): void;
   contextRemove(agentId: string, itemId: string): void;
   contextSummarize(agentId: string, itemId: string): void;
@@ -190,6 +196,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   approvals: {},
   policies: [],
   mergeRequests: {},
+  questions: {},
   contexts: {},
   threadVersion: {},
   openIssueRefs: [],
@@ -228,6 +235,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
         approvals: byId(s.approvals.filter((a) => a.status === 'pending')),
         policies: s.policies,
         mergeRequests: Object.fromEntries(s.mergeRequests.map((m) => [m.ref, m])),
+        questions: byId(s.questions),
         selected: st.selected && nodes[st.selected] ? st.selected : null,
         focusId: st.focusId && nodes[st.focusId] ? st.focusId : null,
       };
@@ -304,6 +312,13 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set((s) => ({ policies: s.policies.filter((p) => p.id !== m.policyId) }));
       case 'mr.upsert':
         return set((s) => ({ mergeRequests: { ...s.mergeRequests, [m.mr.ref]: m.mr } }));
+      case 'question.upsert':
+        return set((s) => ({
+          questions:
+            m.question.status === 'pending'
+              ? { ...s.questions, [m.question.id]: m.question }
+              : omit(s.questions, m.question.id),
+        }));
       case 'context.updated':
         return set((s) => ({ contexts: { ...s.contexts, [m.context.agentId]: m.context } }));
       case 'thread.changed':
@@ -457,7 +472,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
     f();
   },
 
-  createAgent({ at, issueRef, repos, instruction, fromNodeId }) {
+  createAgent({ at, issueRef, repos, instruction, fromNodeId, maxDepth, openMr }) {
     const agentId = newId('a');
     const nodeId = newId('n');
     send({
@@ -468,8 +483,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
       ...(issueRef ? { issueRef } : {}),
       repos: repos ?? [],
       ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
-      maxDepth: 0,
-      openMr: true,
+      maxDepth: maxDepth ?? 1,
+      openMr: openMr ?? true,
       x: at.x,
       y: at.y,
     });
@@ -488,6 +503,10 @@ export const useStore = create<CanvasState>()((set, get) => ({
   removePolicy(policyId) {
     set((s) => ({ policies: s.policies.filter((p) => p.id !== policyId) }));
     send({ type: 'policy.remove', policyId });
+  },
+  answerQuestion(questionId, answer) {
+    set((s) => ({ questions: omit(s.questions, questionId) }));
+    send({ type: 'question.answer', questionId, answer });
   },
   contextAdd: (agentId, kind, ref) => send({ type: 'context.add', agentId, kind, ref }),
   contextRemove(agentId, itemId) {

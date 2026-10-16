@@ -17,8 +17,10 @@ import {
 
 const EMPTY: never[] = [];
 
-/** Agente na árvore de equipe (painel da issue, painel do agente). */
+/** Agente na árvore de equipe (painel da issue, painel do agente), com os filhos embaixo. */
 export function AgentTreeItem({ agent: a }: { agent: Agent }) {
+  const agents = useStore((s) => s.agents);
+  const kids = Object.values(agents).filter((x) => x.parentId === a.id);
   const selected = useStore((s) => s.selected);
   const node = useStore((s) => agentNodeOf(s, a.id));
   const repo = useStore((s) => s.settings?.projects.find((p) => p.id === a.repos[0]));
@@ -32,7 +34,56 @@ export function AgentTreeItem({ agent: a }: { agent: Agent }) {
           {roleLabel(a)} · {isBlank(a) ? 'sem instrução' : (repo?.name ?? 'sem repositório')}
         </span>
       </button>
+      {kids.length > 0 && (
+        <ul>
+          {kids.map((k) => (
+            <AgentTreeItem key={k.id} agent={k} />
+          ))}
+        </ul>
+      )}
     </li>
+  );
+}
+
+/** Plano (report_plan) e equipe do agente: a árvore a partir da raiz e o que ele ainda pode criar. */
+function PlanAndTeam({ agent: a }: { agent: Agent }) {
+  const agents = useStore((s) => s.agents);
+  let root = a;
+  while (root.parentId && agents[root.parentId]) root = agents[root.parentId]!;
+  const hasTeam = root.id !== a.id || Object.values(agents).some((x) => x.parentId === a.id);
+  const left = a.maxDepth - a.depth;
+  return (
+    <>
+      {a.plan && a.plan.length > 0 && (
+        <div className="grp">
+          <h4>Plano</h4>
+          <div className="plan" style={{ margin: 0 }}>
+            {a.plan.map((it, j) => (
+              <span key={j} className={`it${it.done ? ' ok' : it.agentId ? ' wip' : ''}`}>
+                <span className="ck">{it.done ? '✓' : ''}</span>
+                <span className="tx">{it.text}</span>
+                {it.agentId && agents[it.agentId] && <span className="who">{agents[it.agentId]!.name}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {(hasTeam || (left > 0 && !isBlank(a))) && (
+        <div className="grp">
+          <h4>Equipe</h4>
+          {hasTeam ? (
+            <ul className="tree">
+              <AgentTreeItem agent={root} />
+            </ul>
+          ) : null}
+          <p className="lab" style={{ margin: 0 }}>
+            {left > 0
+              ? `${a.name} pode criar sub-agentes até ${left} nível${left > 1 ? 's' : ''} abaixo dele.`
+              : `Profundidade ${a.depth} de ${a.maxDepth}: sem novos sub-agentes.`}
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -74,11 +125,12 @@ export function AgentPanel({
       Retomar
     </button>
   ) : null;
-  const stop = live ? (
-    <button className="btn danger" onClick={() => st.stopAgent(a.id)}>
-      Parar
-    </button>
-  ) : null;
+  const stop =
+    live || a.status === 'queued' ? (
+      <button className="btn danger" onClick={() => st.stopAgent(a.id)}>
+        Parar
+      </button>
+    ) : null;
 
   return (
     <>
@@ -168,6 +220,8 @@ export function AgentPanel({
           <span>Turnos</span>
         </div>
       </div>
+
+      <PlanAndTeam agent={a} />
 
       <ContextSection agent={a} />
 

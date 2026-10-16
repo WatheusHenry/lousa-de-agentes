@@ -3554,3 +3554,66 @@ a.btn {
 .meter .lab {
   font-size: 11.5px;
 }
+
+/* ---------- plano do orquestrador (protótipo) ---------- */
+.plan {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  background: var(--subtle);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  white-space: normal;
+}
+.plan b {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.plan .it {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plan .ck {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  color: #fff;
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+}
+.plan .tx {
+  transition: color 200ms ease;
+}
+.plan .it.wip .ck {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  background: radial-gradient(var(--accent) 35%, transparent 40%);
+}
+.plan .it.ok .ck {
+  background: var(--ok);
+  box-shadow: none;
+}
+.plan .it.ok .tx {
+  color: var(--muted);
+}
+.plan .who {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+.sd.queued {
+  background: var(--line-strong);
+}

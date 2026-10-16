@@ -48,6 +48,52 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
           </div>,
         );
         break;
+      case 'plan':
+        out.push(
+          <div key={k} className="plan">
+            <b>Plano</b>
+            {b.items.map((it, j) => (
+              <span key={j} className={`it${it.done ? ' ok' : it.agentId ? ' wip' : ''}`}>
+                <span className="ck">{it.done ? '✓' : ''}</span>
+                <span className="tx">{it.text}</span>
+              </span>
+            ))}
+          </div>,
+        );
+        break;
+      case 'spawn':
+        out.push(
+          <div key={k} className="l tool">
+            <span className="g">●</span> <b>spawn_agent</b>({b.repo})
+            <div className="l out">
+              ⎿ {b.childName} criado: {b.task.length > 120 ? b.task.slice(0, 120) + '…' : b.task}
+            </div>
+          </div>,
+        );
+        break;
+      case 'wait':
+        out.push(
+          <div key={k} className="l dim">
+            {b.state === 'start'
+              ? `⏳ esperando ${b.names.join(', ')}`
+              : `✓ ${b.names.join(', ')} terminaram`}
+          </div>,
+        );
+        break;
+      case 'question':
+        out.push(
+          b.answer === null ? (
+            <div key={k} className="l ask">
+              <b>Pergunta para você:</b> {b.text}
+              <span className="lab"> (responda na aba Ações)</span>
+            </div>
+          ) : (
+            <div key={k} className="l out">
+              ⎿ você respondeu: {b.answer}
+            </div>
+          ),
+        );
+        break;
       case 'context':
         out.push(
           <div key={k} className="l dim">

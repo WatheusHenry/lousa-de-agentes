@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Issue, SettingsView } from '@agent-canvas/shared';
+import type { Issue, Question, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
 import { addIssue, askFixPipeline, newAgentAt } from '../actions.ts';
@@ -22,7 +22,7 @@ import { liveMrs, mrNodeOf, useStore, type CanvasState, type Tab } from '../stat
 
 /** Itens da aba Ações: permissões, MRs prontos ou com pipeline falho e agentes esperando instrução. */
 export function actionsCount(s: CanvasState): number {
-  let n = Object.keys(s.approvals).length;
+  let n = Object.keys(s.approvals).length + Object.keys(s.questions).length;
   for (const m of liveMrs(s)) if (mrReady(m) || mrFailed(m)) n++;
   for (const node of Object.values(s.nodes)) {
     const a = node.type === 'agent' ? s.agents[node.refId] : undefined;
@@ -336,6 +336,7 @@ function ActionsTab() {
   const agents = useStore((s) => s.agents);
   const nodes = useStore((s) => s.nodes);
   const policies = useStore((s) => s.policies);
+  const questions = useStore((s) => s.questions);
   const mergeRequests = useStore((s) => s.mergeRequests);
   const st = useStore.getState();
   const mrs = useMemo(
@@ -392,7 +393,8 @@ function ActionsTab() {
     </>
   );
 
-  if (!pending.length && !idle.length && !ready.length && !failed.length)
+  const asks = Object.values(questions).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (!pending.length && !idle.length && !ready.length && !failed.length && !asks.length)
     return (
       <>
         <div className="empty-act">
@@ -466,6 +468,25 @@ function ActionsTab() {
               </div>
             );
           })}
+        </>
+      )}
+      {asks.length > 0 && (
+        <>
+          <div className="grp-h">
+            <span>Perguntas</span>
+            <span className="cnt">{asks.length}</span>
+          </div>
+          {asks.map((q) => (
+            <QuestionCard
+              key={q.id}
+              q={q}
+              agentName={agents[q.agentId]?.name ?? 'agente'}
+              onOpen={() => {
+                const n = nodeOf(q.agentId);
+                if (n) st.openFocus(n.id);
+              }}
+            />
+          ))}
         </>
       )}
       {ready.length > 0 && (
@@ -562,6 +583,59 @@ function ActionsTab() {
       )}
       {policiesBlock}
     </>
+  );
+}
+
+/** Pergunta de um agente (ask_human): opções sugeridas ou resposta livre. */
+function QuestionCard({ q, agentName, onOpen }: { q: Question; agentName: string; onOpen(): void }) {
+  const [text, setText] = useState('');
+  const answer = (a: string) => a.trim() && useStore.getState().answerQuestion(q.id, a.trim());
+  return (
+    <div className="act-card">
+      <div className="act-top">
+        <span className="sd waiting" />
+        <b>{agentName}</b>
+        <span className="lab">pergunta</span>
+        <button
+          className="btn plain icon xs"
+          aria-label={`Abrir ${agentName}`}
+          title="Abrir agente"
+          style={{ marginLeft: 'auto' }}
+          onClick={onOpen}
+        >
+          <IconExpand />
+        </button>
+      </div>
+      <p className="act-t">{q.text}</p>
+      {q.options.length > 0 && (
+        <div className="act-btns">
+          {q.options.map((o) => (
+            <button key={o} className="btn sm" onClick={() => answer(o)}>
+              {o}
+            </button>
+          ))}
+        </div>
+      )}
+      <form
+        className="act-btns"
+        onSubmit={(e) => {
+          e.preventDefault();
+          answer(text);
+        }}
+      >
+        <input
+          className="field"
+          style={{ flex: 1, minWidth: 0 }}
+          value={text}
+          placeholder="Responder com outro texto"
+          aria-label={`Resposta para ${agentName}`}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <button className="btn sm primary" disabled={!text.trim()}>
+          Responder
+        </button>
+      </form>
+    </div>
   );
 }
 

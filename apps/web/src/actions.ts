@@ -62,7 +62,11 @@ export function newAgentAt(at?: { x: number; y: number }, opts: { repos?: number
 }
 
 /** Inicia um agente para a issue, abaixo do cartão dela. */
-export function startIssueAgent(issueNodeId: string, extra?: string) {
+export function startIssueAgent(
+  issueNodeId: string,
+  extra?: string,
+  opts: { repos?: number[]; maxDepth?: number; openMr?: boolean } = {},
+) {
   const st = useStore.getState();
   const n = st.nodes[issueNodeId];
   if (!n || n.type !== 'issue') return null;
@@ -72,8 +76,30 @@ export function startIssueAgent(issueNodeId: string, extra?: string) {
     issueRef: n.refId,
     instruction: extra?.trim() || 'Resolva a issue.',
     fromNodeId: issueNodeId,
+    ...(opts.repos?.length ? { repos: opts.repos } : {}),
+    ...(opts.maxDepth !== undefined ? { maxDepth: opts.maxDepth } : {}),
+    ...(opts.openMr !== undefined ? { openMr: opts.openMr } : {}),
   });
   return nodeId;
+}
+
+/**
+ * Repositórios que a issue parece tocar: o projeto dela e os projetos escolhidos citados no
+ * título ou na descrição (pelo nome ou pelo caminho).
+ */
+export function detectRepos(
+  issue: { projectId: number; title: string; description: string },
+  projects: { id: number; name: string; pathWithNamespace: string }[],
+): number[] {
+  const text = `${issue.title}\n${issue.description}`.toLowerCase();
+  const cited = projects.filter((p) => {
+    if (p.id === issue.projectId) return false;
+    const names = [p.pathWithNamespace.toLowerCase(), p.name.toLowerCase()];
+    return names.some((n) =>
+      new RegExp(`(^|[^\\w/-])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`).test(text),
+    );
+  });
+  return [issue.projectId, ...cited.map((p) => p.id)];
 }
 
 /**

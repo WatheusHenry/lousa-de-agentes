@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import type { Issue } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
-import { noteFor, startIssueAgent } from '../actions.ts';
+import { detectRepos, noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { Markdown } from '../components/Markdown.tsx';
 import { IconAgent, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
-import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel, repoName } from '../lib/format.ts';
+import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel } from '../lib/format.ts';
 import { askFixPipeline } from '../actions.ts';
 import { DiffStat, MrBadge, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
 import { agentNodeOf, liveAgents, useStore } from '../state/store.ts';
@@ -117,15 +118,6 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
         </dl>
       </div>
       <div className="grp">
-        <h4>Repositórios afetados</h4>
-        <div className="opts">
-          <label className="opt">
-            <input type="checkbox" checked readOnly disabled /> <IconRepo /> {repoName(i)}
-            <small>detectado</small>
-          </label>
-        </div>
-      </div>
-      <div className="grp">
         <h4>Notas</h4>
         {notes.length ? (
           <div className="opts">
@@ -157,23 +149,7 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
           </ul>
         </div>
       )}
-      <div className="grp">
-        <h4>Instruções extras</h4>
-        <textarea className="field" id="c-extra" placeholder="Opcional. Ex.: não alterar o schema do banco" />
-        <p className="lab" style={{ margin: 0 }}>
-          O agente recebe a issue, os comentários e as notas vinculadas em .agent-canvas/context.md.
-        </p>
-      </div>
-      <button
-        className="btn primary"
-        style={{ justifyContent: 'center', padding: 10 }}
-        onClick={() => {
-          const extra = (document.getElementById('c-extra') as HTMLTextAreaElement | null)?.value;
-          startIssueAgent(nodeId, extra);
-        }}
-      >
-        Iniciar agente
-      </button>
+      <IssueStart key={nodeId} nodeId={nodeId} issue={i} />
       <div className="row2">
         <a className="btn" href={i.webUrl} target="_blank" rel="noreferrer noopener">
           Abrir no GitLab
@@ -185,6 +161,89 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
     </>,
   ];
 }
+
+/** Repositórios afetados, autonomia e início: um repositório gera um agente; vários, um orquestrador. */
+function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
+  const projects = useStore((s) => s.settings?.projects ?? NO_PROJECTS);
+  const detected = useMemo(() => detectRepos(issue, projects), [issue, projects]);
+  const [repos, setRepos] = useState<number[]>(detected);
+  const [depth, setDepth] = useState(repos.length > 1 ? 1 : 0);
+  const [openMr, setOpenMr] = useState(true);
+  const [extra, setExtra] = useState('');
+  const toggle = (id: number) => {
+    const next = repos.includes(id) ? repos.filter((r) => r !== id) : [...repos, id];
+    if (!next.length) return;
+    // orquestrador precisa de pelo menos um nível para criar os agentes
+    if (next.length > 1 && depth === 0) setDepth(1);
+    setRepos(next);
+  };
+  const orch = repos.length > 1;
+  return (
+    <>
+      <div className="grp">
+        <h4>Repositórios afetados</h4>
+        <div className="opts">
+          {projects.map((p) => (
+            <label className="opt" key={p.id}>
+              <input type="checkbox" checked={repos.includes(p.id)} onChange={() => toggle(p.id)} />{' '}
+              <IconRepo /> {p.name}
+              {detected.includes(p.id) && (
+                <small>{p.id === issue.projectId ? 'da issue' : 'citado na issue'}</small>
+              )}
+            </label>
+          ))}
+        </div>
+        {orch && (
+          <p className="lab" style={{ margin: 0 }}>
+            Com mais de um repositório, um orquestrador divide o trabalho: um agente por repositório.
+          </p>
+        )}
+      </div>
+      <div className="grp">
+        <h4>Autonomia</h4>
+        <div className="row2">
+          <select
+            className="field"
+            style={{ width: 'auto' }}
+            aria-label="Profundidade de sub-agentes"
+            value={depth}
+            onChange={(e) => setDepth(Number(e.target.value))}
+          >
+            {!orch && <option value={0}>Sem sub-agentes</option>}
+            <option value={1}>Até 1 nível</option>
+            <option value={2}>Até 2 níveis</option>
+            <option value={3}>Até 3 níveis</option>
+          </select>
+          <label className="opt" style={{ border: 0, padding: 0 }}>
+            <input type="checkbox" checked={openMr} onChange={(e) => setOpenMr(e.target.checked)} /> Abrir MR
+            ao final
+          </label>
+        </div>
+      </div>
+      <div className="grp">
+        <h4>Instruções extras</h4>
+        <textarea
+          className="field"
+          value={extra}
+          onChange={(e) => setExtra(e.target.value)}
+          placeholder="Opcional. Ex.: não alterar o schema do banco"
+        />
+        <p className="lab" style={{ margin: 0 }}>
+          O agente recebe a issue, os comentários e as notas vinculadas em .agent-canvas/context.md.
+        </p>
+      </div>
+      <button
+        className="btn primary"
+        style={{ justifyContent: 'center', padding: 10 }}
+        onClick={() => startIssueAgent(nodeId, extra, { repos, maxDepth: depth, openMr })}
+      >
+        {orch ? `Iniciar orquestrador (${repos.length} repositórios)` : 'Iniciar agente'}
+      </button>
+    </>
+  );
+}
+
+const NO_PROJECTS: never[] = [];
 
 function MrPanel(nodeId: string): [ReactNode, ReactNode] {
   const s = useStore.getState();

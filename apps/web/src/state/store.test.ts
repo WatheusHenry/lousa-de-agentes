@@ -207,4 +207,24 @@ describe('store do canvas', () => {
       { type: 'context.summarize', agentId: 'a1', itemId: 'pipeline_log:101!88' },
     ]);
   });
+
+  it('pergunta de agente: entra nas Ações e a resposta vai para o bridge', () => {
+    const st = useStore.getState();
+    st.applyServer({
+      type: 'question.upsert',
+      question: {
+        id: 'q1',
+        agentId: 'a1',
+        text: 'Botão ou link?',
+        options: ['Botão'],
+        answer: null,
+        status: 'pending',
+        createdAt: 'x',
+      },
+    });
+    expect(Object.keys(useStore.getState().questions)).toEqual(['q1']);
+    st.answerQuestion('q1', 'Botão');
+    expect(useStore.getState().questions).toEqual({});
+    expect(sent.at(-1)).toEqual({ type: 'question.answer', questionId: 'q1', answer: 'Botão' });
+  });
 });

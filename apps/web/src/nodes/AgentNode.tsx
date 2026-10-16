@@ -20,7 +20,11 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
   const { ref, onScroll } = useStickToBottom<HTMLDivElement>(events.length);
   if (!agent) return null;
   const blank = isBlank(agent);
-  const sub = blank ? 'sem instrução ainda' : (repo?.name ?? 'sem repositório');
+  const sub = blank
+    ? 'sem instrução ainda'
+    : agent.repos.length > 1
+      ? `${agent.repos.length} repositórios`
+      : (repo?.name ?? 'sem repositório');
 
   return (
     <div className={`card win${fresh ? ' enter' : ''}`}>
