@@ -10,6 +10,15 @@ import {
   type StateSnapshot,
 } from '@agent-canvas/shared';
 
+export interface DirListing {
+  path: string;
+  parent: string | null;
+  home: string;
+  isRepo: boolean;
+  native: boolean;
+  entries: { name: string; path: string; isRepo: boolean }[];
+}
+
 /** Token de sessão do bridge, injetado no index.html (meta tag). */
 export function sessionToken(): string | null {
   return document.querySelector<HTMLMetaElement>(`meta[name="${SESSION_META}"]`)?.content || null;
@@ -58,6 +67,10 @@ export const api = {
   rawEvents: (agentId: string) => call<string[]>(`/api/agents/${encodeURIComponent(agentId)}/raw`),
   comments: (projectId: number, iid: number) =>
     call<IssueComment[]>(`/api/gitlab/issues/${projectId}/${iid}/comments`),
+  dirs: (path?: string, hidden = false) =>
+    call<DirListing>(`/api/fs/dirs?path=${encodeURIComponent(path ?? '')}${hidden ? '&hidden=1' : ''}`),
+  pickNative: (title: string, start?: string) =>
+    call<{ path: string | null }>('/api/fs/pick', { method: 'POST', body: JSON.stringify({ title, start }) }),
   rescanRepos: () => call<SettingsView>('/api/repos/rescan', { method: 'POST' }),
   setRepoPath: (projectId: number, path: string | null) =>
     call<SettingsView>(`/api/repos/${projectId}/path`, { method: 'PUT', body: JSON.stringify({ path }) }),

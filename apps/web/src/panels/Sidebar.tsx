@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Issue, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
+import { FolderPicker } from '../components/FolderPicker.tsx';
 import { addIssue, askFixPipeline, newAgentAt } from '../actions.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
@@ -509,8 +510,7 @@ function ReposTab() {
   const agents = useStore((s) => s.agents);
   const nodes = useStore((s) => s.nodes);
   const [busy, setBusy] = useState<string | null>(null);
-  const [editing, setEditing] = useState<number | null>(null);
-  const [path, setPath] = useState('');
+  const [picking, setPicking] = useState<number | null>(null);
   const activeByRepo = new Map<number, number>();
   for (const n of Object.values(nodes)) {
     const a = n.type === 'agent' ? agents[n.refId] : undefined;
@@ -600,7 +600,7 @@ function ReposTab() {
                 </button>
               </div>
             </div>
-            {!c?.path && editing !== p.id && (
+            {!c?.path && (
               <div className="act-btns" style={{ margin: '-2px 2px 8px 40px' }}>
                 <button
                   className="btn sm"
@@ -610,45 +610,12 @@ function ReposTab() {
                 >
                   {busy === `clone-${p.id}` ? 'Clonando…' : 'Clonar'}
                 </button>
-                <button
-                  className="btn sm plain"
-                  onClick={() => {
-                    setEditing(p.id);
-                    setPath('');
-                  }}
-                >
-                  Informar caminho
+                <button className="btn sm plain" onClick={() => setPicking(p.id)}>
+                  Escolher pasta…
                 </button>
               </div>
             )}
-            {editing === p.id && (
-              <form
-                className="act-btns"
-                style={{ margin: '-2px 2px 8px 40px' }}
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (await run(`path-${p.id}`, () => api.setRepoPath(p.id, path.trim() || null)))
-                    setEditing(null);
-                }}
-              >
-                <input
-                  className="field mono"
-                  style={{ flex: 1, minWidth: 0 }}
-                  autoFocus
-                  value={path}
-                  placeholder="~/projetos/pagamentos"
-                  aria-label={`Caminho do clone de ${p.name}`}
-                  onChange={(e) => setPath(e.target.value)}
-                />
-                <button className="btn sm primary" disabled={!!busy || !path.trim()}>
-                  Salvar
-                </button>
-                <button type="button" className="btn sm plain" onClick={() => setEditing(null)}>
-                  Cancelar
-                </button>
-              </form>
-            )}
-            {c?.manual && editing !== p.id && (
+            {c?.manual && (
               <p className="tip" style={{ margin: '-4px 2px 8px 40px' }}>
                 <button
                   className="link-btn"
@@ -661,6 +628,19 @@ function ReposTab() {
           </div>
         );
       })}
+      {picking !== null && (
+        <FolderPicker
+          title={`Clone de ${settings.projects.find((p) => p.id === picking)?.name ?? ''}`}
+          mode="repo"
+          start={settings.reposDir}
+          onClose={() => setPicking(null)}
+          onPick={async (path) => {
+            const id = picking;
+            setPicking(null);
+            await run(`path-${id}`, () => api.setRepoPath(id, path));
+          }}
+        />
+      )}
       {missing > 0 && (
         <p className="tip">
           <span>

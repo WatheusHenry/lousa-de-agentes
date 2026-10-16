@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -227,6 +227,47 @@ describe('clones locais', () => {
     // projeto com clone não clona de novo
     res = await b.app.inject({ method: 'POST', url: '/api/repos/101/clone', headers: h });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('seletor de pastas', () => {
+  let b: Awaited<ReturnType<typeof makeBridge>>;
+  afterEach(() => b.cleanup());
+
+  it('lista só subpastas, marca os clones e exige o token de sessão', async () => {
+    b = await makeBridge();
+    const dir = mkdtempSync(join(tmpdir(), 'ac-fs-'));
+    mkdirSync(join(dir, 'b-projeto', '.git'), { recursive: true });
+    mkdirSync(join(dir, 'a-docs'));
+    mkdirSync(join(dir, '.oculta'));
+    writeFileSync(join(dir, 'arquivo.txt'), 'x');
+
+    const res = await b.app.inject({
+      url: `/api/fs/dirs?path=${encodeURIComponent(dir)}`,
+      headers: b.headers,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      path: dir,
+      isRepo: false,
+      entries: [
+        { name: 'a-docs', isRepo: false },
+        { name: 'b-projeto', isRepo: true },
+      ],
+    });
+    const hidden = await b.app.inject({
+      url: `/api/fs/dirs?path=${encodeURIComponent(dir)}&hidden=1`,
+      headers: b.headers,
+    });
+    expect(hidden.json().entries.map((e: { name: string }) => e.name)).toContain('.oculta');
+
+    const missing = await b.app.inject({ url: '/api/fs/dirs?path=/nao/existe', headers: b.headers });
+    expect(missing.statusCode).toBe(400);
+    const noToken = await b.app.inject({
+      url: `/api/fs/dirs?path=${encodeURIComponent(dir)}`,
+      headers: { host: b.headers.host },
+    });
+    expect(noToken.statusCode).toBe(401);
   });
 });
 

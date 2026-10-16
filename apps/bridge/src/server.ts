@@ -20,6 +20,7 @@ import { ApprovalService } from './approvals/approval-service.ts';
 import { CanvasError, CanvasStore } from './canvas/canvas-store.ts';
 import type { BridgeConfig } from './config.ts';
 import type { Db } from './db/index.ts';
+import { BrowseError, listDirs, nativePicker, pickNative } from './fs-browse.ts';
 import { GitLabError } from './gitlab/client.ts';
 import { Hub } from './hub.ts';
 import { registerMcp } from './mcp/canvas-server.ts';
@@ -122,6 +123,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof SettingsError) return reply.code(err.statusCode).send({ error: err.message });
+    if (err instanceof BrowseError) return reply.code(400).send({ error: err.message });
     if (err instanceof GitLabError) return reply.code(502).send({ error: err.message });
     if (err instanceof CanvasError || err instanceof AgentError || err instanceof MrError)
       return reply.code(409).send({ error: err.message });
@@ -184,6 +186,20 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return view;
   };
   const projectParam = (req: FastifyRequest) => Number((req.params as { projectId: string }).projectId);
+
+  // ---------- seletor de pastas (o navegador não revela caminhos reais) ----------
+
+  app.get('/api/fs/dirs', async (req) => {
+    const q = req.query as { path?: string; hidden?: string };
+    return { ...listDirs(q.path, q.hidden === '1'), native: nativePicker() !== null };
+  });
+
+  app.post('/api/fs/pick', async (req) => {
+    const b = (req.body ?? {}) as { title?: unknown; start?: unknown };
+    const title = typeof b.title === 'string' ? b.title.slice(0, 120) : 'Escolher pasta';
+    const start = typeof b.start === 'string' ? b.start.slice(0, 1024) : undefined;
+    return { path: await pickNative(title, start) };
+  });
 
   /** Procura de novo os clones (depois de clonar ou mover uma pasta). */
   app.post('/api/repos/rescan', async () => {
