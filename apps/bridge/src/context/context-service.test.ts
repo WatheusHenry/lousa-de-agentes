@@ -45,6 +45,20 @@ class HoldRunner implements AgentRunner {
   }
 }
 
+/** Chama uma ferramenta do MCP do canvas como o claude do agente. */
+async function callTool(opts: RunnerStartOptions, name: string, args: Record<string, unknown>) {
+  const srv = JSON.parse(readFileSync(opts.mcpConfigPath, 'utf8')).mcpServers.canvas;
+  const client = new Client({ name: 'fake-claude', version: '0' });
+  const transport = new StreamableHTTPClientTransport(new URL(srv.url), {
+    requestInit: { headers: srv.headers },
+  });
+  transport.onerror = () => {};
+  await client.connect(transport);
+  const res = await client.callTool({ name, arguments: args });
+  await client.close();
+  return (res.content as { text: string }[])[0]!.text;
+}
+
 describe('contexto dos agentes', () => {
   let b: Awaited<ReturnType<typeof makeBridge>>;
   let runner: HoldRunner;
@@ -198,16 +212,7 @@ describe('contexto dos agentes', () => {
     git(wt, 'add', '.');
     git(wt, 'commit', '-qm', 'x');
     // abre o MR pelo mesmo caminho da ferramenta do agente
-    const srv = JSON.parse(readFileSync(runner.starts[0]!.mcpConfigPath, 'utf8')).mcpServers.canvas;
-    const client = new Client({ name: 'fake-claude', version: '0' });
-    const transport = new StreamableHTTPClientTransport(new URL(srv.url), {
-      requestInit: { headers: srv.headers },
-    });
-    transport.onerror = () => {};
-    await client.connect(transport);
-    const res = await client.callTool({ name: 'open_merge_request', arguments: { title: 'Fix' } });
-    await client.close();
-    expect(JSON.stringify(res.content)).toContain('aberto');
+    expect(await callTool(runner.starts[0]!, 'open_merge_request', { title: 'Fix' })).toContain('aberto');
     const mr = await until(
       () => msgs.find((m): m is Extract<ServerMessage, { type: 'mr.upsert' }> => m.type === 'mr.upsert')?.mr,
       'MR',
@@ -270,6 +275,43 @@ describe('contexto dos agentes', () => {
           (m) => m.type === 'agent.event' && m.event.body.kind === 'context' && m.event.body.notified,
         ),
       'linha de contexto no terminal',
+    );
+  });
+
+  it('write_note: nota de passagem ligada à issue, fora do contexto do autor e no dos outros', async () => {
+    send({ type: 'agent.message', agentId: 'a1', text: 'Resolva.' });
+    await until(() => runner.starts.length === 1, 'início');
+    const text = await callTool(runner.starts[0]!, 'write_note', {
+      body: '**Decisões**: usar event_id.\n**Pendências**: nenhuma.',
+    });
+    expect(text).toContain('Nota de passagem criada no canvas e ligada à issue');
+    const note = await until(
+      () =>
+        msgs.find(
+          (m): m is Extract<ServerMessage, { type: 'note.upsert' }> =>
+            m.type === 'note.upsert' && m.note.isHandoff,
+        )?.note,
+      'nota',
+    );
+    expect(note).toMatchObject({ title: 'Passagem · agente-1', createdBy: 'a1', isHandoff: true });
+    expect(msgs.some((m) => m.type === 'noteLink.upsert' && m.link.noteId === note.id)).toBe(true);
+    // não volta para o contexto do autor
+    expect((await ctx('a1')).items.some((i) => i.ref === note.id)).toBe(false);
+    // um segundo agente da mesma issue recebe a nota
+    send({
+      type: 'agent.create',
+      agentId: 'a2',
+      nodeId: 'n-a2',
+      issueRef: '101#142',
+      repos: [],
+      x: 500,
+      y: 300,
+    });
+    await until(() => msgs.some((m) => m.type === 'agent.upsert' && m.agent.id === 'a2'), 'segundo agente');
+    expect((await ctx('a2')).items).toContainEqual(expect.objectContaining({ kind: 'note', ref: note.id }));
+    // chamar de novo atualiza a mesma nota
+    expect(await callTool(runner.starts[0]!, 'write_note', { body: 'v2' })).toBe(
+      'Nota de passagem atualizada.',
     );
   });
 });

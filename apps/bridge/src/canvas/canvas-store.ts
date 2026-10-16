@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import {
   parseIssueRef,
@@ -204,6 +205,93 @@ export class CanvasStore {
       { type: 'node.upsert', node: toNode(row) },
       this.logActivity(`Issue #${issue.iid} adicionada ao canvas`),
     ];
+  }
+
+  /**
+   * Nota escrita por um agente (ferramenta write_note). A de passagem é uma por agente: chamar
+   * de novo atualiza a mesma. Fica ao lado do agente, ligada a ele por uma aresta e vinculada
+   * à issue, para entrar no contexto dos próximos agentes da issue.
+   */
+  writeAgentNote(o: {
+    agentId: string;
+    agentName: string;
+    title: string;
+    body: string;
+    handoff: boolean;
+    issueRef: string | null;
+  }): { noteId: string; created: boolean; out: ServerMessage[] } {
+    const agentNode = this.liveNodeByRef('agent', o.agentId);
+    const ts = nowIso();
+    const existing = o.handoff
+      ? this.db
+          .select()
+          .from(note)
+          .where(and(eq(note.createdBy, o.agentId), eq(note.isHandoff, true)))
+          .all()
+          .find((n) => this.liveNodeByRef('note', n.id))
+      : undefined;
+    if (existing) {
+      const r = this.db
+        .update(note)
+        .set({ title: o.title, body: o.body, updatedAt: ts })
+        .where(eq(note.id, existing.id))
+        .returning()
+        .get()!;
+      return {
+        noteId: r.id,
+        created: false,
+        out: [
+          { type: 'note.upsert', note: toNote(r) },
+          this.logActivity(`${o.agentName} atualizou a nota de passagem`),
+        ],
+      };
+    }
+    const id = `t_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    const nodeId = `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    const x = (agentNode?.x ?? 0) + 460;
+    const y = (agentNode?.y ?? 0) + 260;
+    const out: ServerMessage[] = [];
+    this.db.transaction((tx) => {
+      tx.insert(note)
+        .values({
+          id,
+          title: o.title,
+          body: o.body,
+          isHandoff: o.handoff,
+          createdBy: o.agentId,
+          createdAt: ts,
+          updatedAt: ts,
+        })
+        .run();
+      tx.insert(node).values({ id: nodeId, type: 'note', refId: id, x, y, createdAt: ts }).run();
+    });
+    const nt = this.db.select().from(note).where(eq(note.id, id)).get()!;
+    const nd = this.db.select().from(node).where(eq(node.id, nodeId)).get()!;
+    out.push({ type: 'note.upsert', note: toNote(nt) }, { type: 'node.upsert', node: toNode(nd) });
+    if (agentNode) {
+      const e: CanvasEdge = {
+        id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+        fromNodeId: agentNode.id,
+        toNodeId: nodeId,
+        kind: 'note',
+      };
+      this.db.insert(edge).values(e).run();
+      out.push({ type: 'edge.upsert', edge: e });
+    }
+    const issueNode = o.issueRef ? this.liveNodeByRef('issue', o.issueRef) : undefined;
+    if (issueNode)
+      out.push(
+        ...this.linkNote(`e_${randomUUID().replace(/-/g, '').slice(0, 16)}`, id, issueNode.id).filter(
+          (m) => m.type !== 'activity',
+        ),
+      );
+    const issue = o.issueRef ? this.cachedIssue(o.issueRef) : null;
+    out.push(
+      this.logActivity(
+        `${o.agentName} deixou ${o.handoff ? 'uma nota de passagem' : `a nota "${o.title}"`}${issue && issueNode ? ` na issue #${issue.iid}` : ''}`,
+      ),
+    );
+    return { noteId: id, created: true, out };
   }
 
   private createNote(

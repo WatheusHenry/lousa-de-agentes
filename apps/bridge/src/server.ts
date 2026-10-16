@@ -301,6 +301,30 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerMcp(app, {
     agentByToken: (t) => supervisor.mcpContext(t),
     approvals,
+    notes: {
+      async write(agentId, input) {
+        const a = supervisor.get(agentId);
+        if (!a) throw new MrError('Agente desconhecido.');
+        const res = store.writeAgentNote({
+          agentId,
+          agentName: a.name,
+          title: input.title ?? (input.handoff ? `Passagem · ${a.name}` : 'Nota'),
+          body: input.body,
+          handoff: input.handoff,
+          issueRef: a.issueRef,
+        });
+        broadcast(res.out);
+        // outros agentes da issue passam a ter a nota no contexto (ou a versão nova dela)
+        if (res.created) {
+          const issueNode =
+            a.issueRef && store.liveNodes().find((n) => n.type === 'issue' && n.refId === a.issueRef);
+          if (issueNode) context.onLinksChanged(issueNode.id, `nota de passagem de ${a.name}`);
+        } else context.onNoteChanged(res.noteId);
+        return res.created
+          ? `Nota ${input.handoff ? 'de passagem ' : ''}criada no canvas${a.issueRef ? ' e ligada à issue' : ''}.`
+          : 'Nota de passagem atualizada.';
+      },
+    },
     gitlab: {
       async openMergeRequest(agentId, opts) {
         const mr = await mrs.openForAgent(agentId, opts);

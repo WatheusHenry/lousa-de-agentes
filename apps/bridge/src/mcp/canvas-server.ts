@@ -8,7 +8,7 @@ export const MCP_SERVER_NAME = 'canvas';
 /** Nome que o `claude` usa para a ferramenta: mcp__<servidor>__<ferramenta>. */
 export const APPROVE_TOOL = `mcp__${MCP_SERVER_NAME}__approve`;
 /** Ferramentas do canvas que o agente usa sem pedir permissão (merge não existe aqui). */
-export const CANVAS_TOOLS = ['open_merge_request', 'comment_issue', 'comment_mr'].map(
+export const CANVAS_TOOLS = ['open_merge_request', 'comment_issue', 'comment_mr', 'write_note'].map(
   (t) => `mcp__${MCP_SERVER_NAME}__${t}`,
 );
 
@@ -28,6 +28,10 @@ export interface McpDeps {
     openMergeRequest(agentId: string, opts: { title: string; description?: string }): Promise<string>;
     commentIssue(agentId: string, body: string): Promise<string>;
     commentMr(agentId: string, body: string): Promise<string>;
+  };
+  /** Notas no canvas escritas pelo agente (a de passagem, principalmente). */
+  notes: {
+    write(agentId: string, input: { title?: string; body: string; handoff: boolean }): Promise<string>;
   };
 }
 
@@ -109,6 +113,25 @@ function buildServer(ctx: McpAgentContext, deps: McpDeps): McpServer {
       inputSchema: { body: z.string().min(1).max(20_000).describe('Texto em Markdown') },
     },
     async ({ body }) => asTool(() => deps.gitlab.commentMr(ctx.agentId, body)),
+  );
+
+  server.registerTool(
+    'write_note',
+    {
+      description:
+        'Escreve uma nota no canvas. Use ao concluir a tarefa para a nota de passagem (handoff, o padrão): ' +
+        'decisões, arquivos tocados, MRs, testes e pendências, em Markdown curto. Ela fica ligada à sua issue ' +
+        'e entra no contexto dos próximos agentes. Chamar de novo atualiza a mesma nota de passagem.',
+      inputSchema: {
+        body: z.string().min(1).max(20_000).describe('Texto da nota em Markdown'),
+        title: z.string().min(1).max(120).optional().describe('Título; o padrão é "Passagem · <seu nome>"'),
+        handoff: z.boolean().optional().describe('false para uma nota comum em vez da nota de passagem'),
+      },
+    },
+    async ({ body, title, handoff }) =>
+      asTool(() =>
+        deps.notes.write(ctx.agentId, { body, handoff: handoff ?? true, ...(title ? { title } : {}) }),
+      ),
   );
   return server;
 }
