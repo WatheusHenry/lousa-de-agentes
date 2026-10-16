@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Agent, AgentEvent, Approval, Policy } from './agents.ts';
 import { Activity, CanvasEdge, CanvasNode, Note, NoteLink } from './canvas.ts';
-import { Issue, IssueRef } from './gitlab.ts';
+import { Issue, IssueRef, MergeRequest, MrRef } from './gitlab.ts';
 import { SettingsView } from './settings.ts';
 
 /** Nome do cabeçalho / parâmetro com o token de sessão do bridge. */
@@ -26,6 +26,8 @@ export const StateSnapshot = z.object({
   /** Pedidos de permissão pendentes. */
   approvals: z.array(Approval),
   policies: z.array(Policy),
+  /** MRs com nó no canvas. */
+  mergeRequests: z.array(MergeRequest),
 });
 export type StateSnapshot = z.infer<typeof StateSnapshot>;
 
@@ -96,6 +98,11 @@ export const ClientMessage = z.discriminatedUnion('type', [
     remember: z.boolean().optional(),
   }),
   z.object({ type: z.literal('policy.remove'), policyId: Id }),
+  /** Merge é sempre uma ação humana, pela caixa de Ações. */
+  z.object({ type: z.literal('mr.merge'), mrRef: MrRef }),
+  z.object({ type: z.literal('mr.refresh'), mrRef: MrRef }),
+  z.object({ type: z.literal('mr.comment'), mrRef: MrRef, body: z.string().min(1).max(20_000) }),
+  z.object({ type: z.literal('issue.comment'), issueRef: IssueRef, body: z.string().min(1).max(20_000) }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -118,6 +125,9 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('approval.upsert'), approval: Approval }),
   z.object({ type: z.literal('policy.upsert'), policy: Policy }),
   z.object({ type: z.literal('policy.remove'), policyId: z.string() }),
+  z.object({ type: z.literal('mr.upsert'), mr: MergeRequest }),
+  /** Discussão nova num MR ou numa issue: quem estiver olhando recarrega. */
+  z.object({ type: z.literal('thread.changed'), target: z.enum(['mr', 'issue']), ref: z.string() }),
   z.object({ type: z.literal('error'), message: z.string(), cause: z.string().optional() }),
   /**
    * Quando o servidor recarrega o estado (ex.: restaurar um nó traz arestas e notas junto),

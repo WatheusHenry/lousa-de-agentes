@@ -293,7 +293,7 @@ export class CanvasStore {
     return [
       { type: 'node.remove', nodeId },
       this.logActivity(
-        `${this.describe(r, true)} ${r.type === 'note' ? 'excluída' : r.type === 'agent' ? 'removido do canvas' : 'removida do canvas'}`,
+        `${this.describe(r, true)} ${r.type === 'note' ? 'excluída' : r.type === 'agent' || r.type === 'mr' ? 'removido do canvas' : 'removida do canvas'}`,
       ),
     ];
   }
@@ -372,6 +372,7 @@ export class CanvasStore {
       const a = this.db.select({ name: agent.name }).from(agent).where(eq(agent.id, n.refId)).get();
       return a?.name ?? (capital ? 'Agente' : 'agente');
     }
+    if (n.type === 'mr') return `MR !${n.refId.split('!')[1] ?? n.refId}`;
     return capital ? 'Item' : 'item';
   }
 }

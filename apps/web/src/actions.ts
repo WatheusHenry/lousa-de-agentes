@@ -103,3 +103,26 @@ export function focusComposer(nodeId: string, tries = 30) {
   }
   if (tries > 0) requestAnimationFrame(() => focusComposer(nodeId, tries - 1));
 }
+
+/** "Abrir MR agora": pede ao agente que abra o MR pela ferramenta do canvas. */
+export function askOpenMr(agentId: string) {
+  useStore
+    .getState()
+    .messageAgent(
+      agentId,
+      'Abra o merge request agora: faça commit do que estiver pronto, rode os testes relevantes e chame a ferramenta open_merge_request. Não faça merge.',
+    );
+}
+
+/** Pipeline falhou: pede ao agente que abriu o MR que corrija e envie de novo. */
+export function askFixPipeline(mrRef: string) {
+  const st = useStore.getState();
+  const mr = st.mergeRequests[mrRef];
+  if (!mr?.agentId) return;
+  st.messageAgent(
+    mr.agentId,
+    `O pipeline do MR !${mr.iid} falhou no GitLab. Rode localmente os testes, o lint e o build do projeto, corrija o que falhar, faça commit e chame open_merge_request de novo para enviar os commits ao mesmo MR.`,
+  );
+  const n = agentNodeOf(st, mr.agentId);
+  if (n) st.openFocus(n.id);
+}

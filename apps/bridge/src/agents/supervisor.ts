@@ -11,6 +11,7 @@ import {
   type Approval,
   type ClientMessage,
   type Note,
+  type MergeRequest,
 } from '@agent-canvas/shared';
 import type { ApprovalService } from '../approvals/approval-service.ts';
 import { DISALLOWED_TOOLS } from '../approvals/rules.ts';
@@ -20,7 +21,7 @@ import type { Db } from '../db/index.ts';
 import { agent as agentT, agentEvent, edge, node, note, noteLink, repo as repoT } from '../db/schema.ts';
 import { createWorktree, slugify } from '../git/worktree.ts';
 import type { Hub } from '../hub.ts';
-import { APPROVE_TOOL, MCP_SERVER_NAME, type McpAgentContext } from '../mcp/canvas-server.ts';
+import { APPROVE_TOOL, CANVAS_TOOLS, MCP_SERVER_NAME, type McpAgentContext } from '../mcp/canvas-server.ts';
 import type { SettingsService } from '../settings.ts';
 import type { AgentProcess, AgentRunner } from './runner.ts';
 import { parseLine } from './stream-parser.ts';
@@ -63,6 +64,8 @@ export interface SupervisorDeps {
   home: string;
   bridgePort: number;
   model?: string;
+  /** MR que o agente já abriu, para o context.md. */
+  mrOfAgent?: (agentId: string) => MergeRequest | null;
 }
 
 /** Ciclo de vida dos agentes: worktree, contexto, processo, eventos, status e permissões. */
@@ -362,7 +365,7 @@ export class Supervisor {
           mcpConfigPath: this.writeMcpConfig(agentId),
           permissionPromptTool: APPROVE_TOOL,
           appendSystemPrompt: ROLE_PROMPT,
-          allowedTools: this.d.approvals.allowedTools(repoId),
+          allowedTools: [...CANVAS_TOOLS, ...this.d.approvals.allowedTools(repoId)],
           disallowedTools: DISALLOWED_TOOLS,
           ...(this.d.model ? { model: this.d.model } : {}),
         },
@@ -416,6 +419,7 @@ export class Supervisor {
         },
         issue: issueCtx,
         notes: this.notesFor(a),
+        mr: { openOnFinish: a.openMr, current: this.d.mrOfAgent?.(a.id) ?? null },
       }),
     );
   }

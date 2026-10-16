@@ -1,11 +1,13 @@
 import {
   issueRef,
+  parseAgentNote,
+  type MrDiffFile,
   type GitLabProject,
   type GitLabUser,
   type Issue,
   type IssueComment,
 } from '@agent-canvas/shared';
-import { GitLabError, type GitLabClient } from './client.ts';
+import { GitLabError, type GitLabClient, type GitLabMr } from './client.ts';
 
 /** Dados de exemplo, os mesmos do protótipo (docs/prototype/agent-canvas.html). */
 export const DEMO_USER: GitLabUser = {
@@ -126,7 +128,20 @@ const BASE_TIME = Date.parse('2026-10-01T12:00:00Z');
 
 /** Implementação com dados de exemplo. Usada nos testes e no modo demonstração. */
 export class MockGitLabClient implements GitLabClient {
-  constructor(private readonly opts: { failAuth?: boolean } = {}) {}
+  private extraComments = new Map<string, IssueComment[]>();
+  private mrs = new Map<string, GitLabMr & { createdAt: number; mergeable: boolean }>();
+  private nextMrIid = 88;
+  private nextNoteId = 9000;
+
+  constructor(
+    private readonly opts: {
+      failAuth?: boolean;
+      /** Quanto tempo o pipeline simulado fica rodando antes de passar. */
+      pipelineMs?: number;
+      /** Pipeline simulado falha em vez de passar. */
+      pipelineFails?: boolean;
+    } = {},
+  ) {}
 
   async currentUser(): Promise<GitLabUser> {
     if (this.opts.failAuth) throw new GitLabError('Token inválido, expirado ou revogado.', 401);
@@ -165,12 +180,107 @@ export class MockGitLabClient implements GitLabClient {
     const project = DEMO_PROJECTS.find((p) => p.id === projectId);
     const issue = DEMO_ISSUES.find((i) => i.iid === iid && i.project === project?.name);
     if (!issue) throw new GitLabError('Não encontrado no GitLab. Confira a URL da instância.', 404);
-    return issue.comments.map((c, n) => ({
+    const base = issue.comments.map((c, n) => ({
       id: iid * 100 + n,
       author: c.who,
       body: c.text,
       createdAt: new Date(BASE_TIME - (issue.comments.length - n) * DAY).toISOString(),
       isAgent: false,
     }));
+    return [...base, ...(this.extraComments.get(`i${projectId}#${iid}`) ?? [])];
+  }
+
+  async commentOnIssue(projectId: number, iid: number, body: string): Promise<void> {
+    await this.listIssueComments(projectId, iid);
+    this.addComment(`i${projectId}#${iid}`, body);
+  }
+
+  async createMergeRequest(
+    projectId: number,
+    o: { sourceBranch: string; targetBranch: string; title: string; description: string },
+  ): Promise<GitLabMr> {
+    const project = await this.getProject(projectId);
+    if ([...this.mrs.values()].some((m) => m.sourceBranch === o.sourceBranch && m.state === 'opened'))
+      throw new GitLabError('Já existe um MR aberto para este branch.', 409);
+    const iid = this.nextMrIid++;
+    const mr = {
+      iid,
+      ...o,
+      state: 'opened' as const,
+      pipelineStatus: 'running' as const,
+      webUrl: `${project.webUrl}/-/merge_requests/${iid}`,
+      updatedAt: new Date().toISOString(),
+      createdAt: Date.now(),
+      mergeable: true,
+    };
+    this.mrs.set(`${projectId}!${iid}`, mr);
+    return this.view(mr);
+  }
+
+  async getMergeRequest(projectId: number, iid: number): Promise<GitLabMr> {
+    return this.view(this.mr(projectId, iid));
+  }
+
+  /** O mock não tem os commits: o serviço de MRs usa o diff do worktree local. */
+  async listMergeRequestDiffs(projectId: number, iid: number): Promise<MrDiffFile[]> {
+    this.mr(projectId, iid);
+    return [];
+  }
+
+  async listMergeRequestComments(projectId: number, iid: number): Promise<IssueComment[]> {
+    this.mr(projectId, iid);
+    return this.extraComments.get(`m${projectId}!${iid}`) ?? [];
+  }
+
+  async commentOnMergeRequest(projectId: number, iid: number, body: string): Promise<void> {
+    this.mr(projectId, iid);
+    this.addComment(`m${projectId}!${iid}`, body);
+  }
+
+  async mergeMergeRequest(projectId: number, iid: number): Promise<GitLabMr> {
+    const m = this.mr(projectId, iid);
+    if (m.state !== 'opened')
+      throw new GitLabError('O GitLab recusou a operação: o MR não está aberto.', 405);
+    if (this.view(m).pipelineStatus !== 'success')
+      throw new GitLabError('O GitLab recusou a operação: o pipeline ainda não passou.', 405);
+    m.state = 'merged';
+    m.updatedAt = new Date().toISOString();
+    return this.view(m);
+  }
+
+  private mr(projectId: number, iid: number) {
+    const m = this.mrs.get(`${projectId}!${iid}`);
+    if (!m) throw new GitLabError('Não encontrado no GitLab. Confira a URL da instância.', 404);
+    return m;
+  }
+
+  /** O pipeline simulado roda por `pipelineMs` e depois passa (ou falha). */
+  private view(m: GitLabMr & { createdAt: number }): GitLabMr {
+    const done = Date.now() - m.createdAt >= (this.opts.pipelineMs ?? 20_000);
+    const pipelineStatus = done ? (this.opts.pipelineFails ? 'failed' : 'success') : 'running';
+    return {
+      iid: m.iid,
+      title: m.title,
+      description: m.description,
+      sourceBranch: m.sourceBranch,
+      targetBranch: m.targetBranch,
+      state: m.state,
+      pipelineStatus,
+      webUrl: m.webUrl,
+      updatedAt: m.updatedAt,
+    };
+  }
+
+  private addComment(key: string, raw: string): void {
+    const agent = parseAgentNote(raw);
+    const list = this.extraComments.get(key) ?? [];
+    list.push({
+      id: this.nextNoteId++,
+      author: agent?.agent ?? DEMO_USER.username,
+      body: agent?.body ?? raw,
+      createdAt: new Date().toISOString(),
+      isAgent: !!agent,
+    });
+    this.extraComments.set(key, list);
   }
 }

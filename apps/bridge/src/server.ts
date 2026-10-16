@@ -22,10 +22,11 @@ import type { Db } from './db/index.ts';
 import { GitLabError } from './gitlab/client.ts';
 import { Hub } from './hub.ts';
 import { registerMcp } from './mcp/canvas-server.ts';
+import { MrError, MrService } from './mrs/mr-service.ts';
 import type { Session } from './session.ts';
 import { SettingsError, type SettingsService } from './settings.ts';
 
-export const SERVER_VERSION = '0.2.0';
+export const SERVER_VERSION = '0.3.0';
 
 export interface ServerDeps {
   config: Pick<BridgeConfig, 'port' | 'allowedOrigins' | 'webDist'>;
@@ -37,6 +38,8 @@ export interface ServerDeps {
   home: string;
   /** Modelo dos agentes (padrão do Claude Code quando ausente). */
   model?: string;
+  /** Intervalo do polling de pipelines (desligado quando ausente, como nos testes). */
+  pollMrsEveryMs?: number;
   logger?: boolean;
 }
 
@@ -45,6 +48,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const store = new CanvasStore(db);
   const hub = new Hub();
   const approvals = new ApprovalService(db, hub);
+  const mrs = new MrService(db, hub, store, settings);
   const supervisor = new Supervisor({
     db,
     hub,
@@ -55,6 +59,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     home: deps.home,
     bridgePort: config.port,
     ...(deps.model ? { model: deps.model } : {}),
+    mrOfAgent: (id) => mrs.mrOfAgent(id),
   });
 
   const app = Fastify({
@@ -117,7 +122,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof SettingsError) return reply.code(err.statusCode).send({ error: err.message });
     if (err instanceof GitLabError) return reply.code(502).send({ error: err.message });
-    if (err instanceof CanvasError || err instanceof AgentError)
+    if (err instanceof CanvasError || err instanceof AgentError || err instanceof MrError)
       return reply.code(409).send({ error: err.message });
     app.log.error(err);
     const status = (err as { statusCode?: number }).statusCode;
@@ -138,6 +143,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     agentEvents: supervisor.recentEvents(),
     approvals: approvals.pending(),
     policies: approvals.policies(),
+    mergeRequests: mrs.canvasMrs(),
   });
 
   // ---------- HTTP ----------
@@ -208,7 +214,32 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   /** Modo "saída bruta": as linhas do stream-json como vieram do claude. */
   app.get('/api/agents/:id/raw', async (req) => supervisor.rawEvents((req.params as { id: string }).id));
 
-  registerMcp(app, { agentByToken: (t) => supervisor.mcpContext(t), approvals });
+  app.get('/api/mrs/:ref/diff', async (req) => mrs.diff((req.params as { ref: string }).ref));
+  app.get('/api/mrs/:ref/comments', async (req) => mrs.comments((req.params as { ref: string }).ref));
+
+  registerMcp(app, {
+    agentByToken: (t) => supervisor.mcpContext(t),
+    approvals,
+    gitlab: {
+      async openMergeRequest(agentId, opts) {
+        const mr = await mrs.openForAgent(agentId, opts);
+        return `MR !${mr.iid} aberto: ${mr.webUrl} (${mr.sourceBranch} → ${mr.targetBranch}). O pipeline é acompanhado pelo canvas; o merge é do usuário.`;
+      },
+      async commentIssue(agentId, body) {
+        const a = supervisor.get(agentId);
+        if (!a?.issueRef) throw new MrError('Você não está ligado a nenhuma issue.');
+        await mrs.commentIssue(a.issueRef, body, a.name);
+        return 'Comentário publicado na issue.';
+      },
+      async commentMr(agentId, body) {
+        const a = supervisor.get(agentId);
+        const mr = mrs.mrOfAgent(agentId);
+        if (!a || !mr) throw new MrError('Você ainda não abriu um MR. Use open_merge_request primeiro.');
+        await mrs.comment(mr.ref, body, a.name);
+        return `Comentário publicado no MR !${mr.iid}.`;
+      },
+    },
+  });
 
   // ---------- WebSocket ----------
 
@@ -228,10 +259,19 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       } catch {
         return send({ type: 'error', message: 'Mensagem inválida.' });
       }
-      if (msg.type.startsWith('agent.') || msg.type === 'approval.decide' || msg.type === 'policy.remove') {
+      if (
+        msg.type.startsWith('agent.') ||
+        msg.type.startsWith('mr.') ||
+        msg.type === 'issue.comment' ||
+        msg.type === 'approval.decide' ||
+        msg.type === 'policy.remove'
+      ) {
         void handleAgentMessage(msg).catch((err) => {
           const known =
-            err instanceof AgentError || err instanceof SettingsError || err instanceof GitLabError;
+            err instanceof AgentError ||
+            err instanceof SettingsError ||
+            err instanceof GitLabError ||
+            err instanceof MrError;
           if (!known) app.log.error(err);
           send({ type: 'error', message: known ? (err as Error).message : 'Erro ao falar com o agente.' });
         });
@@ -269,6 +309,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   async function handleAgentMessage(msg: ClientMessage): Promise<void> {
     if (msg.type === 'approval.decide') return approvals.decide(msg.approvalId, msg.decision, msg.remember);
     if (msg.type === 'policy.remove') return approvals.removePolicy(msg.policyId);
+    if (msg.type === 'mr.merge') return void (await mrs.merge(msg.mrRef));
+    if (msg.type === 'mr.refresh') return void (await mrs.refresh(msg.mrRef, true));
+    if (msg.type === 'mr.comment') return mrs.comment(msg.mrRef, msg.body);
+    if (msg.type === 'issue.comment') return mrs.commentIssue(msg.issueRef, msg.body);
     if (msg.type.startsWith('agent.')) return supervisor.handle(msg as Parameters<Supervisor['handle']>[0]);
   }
 
@@ -293,7 +337,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     );
   }
 
+  if (deps.pollMrsEveryMs) mrs.startPolling(deps.pollMrsEveryMs);
+
   app.addHook('preClose', async () => {
+    mrs.stopPolling();
     supervisor.shutdown();
     for (const ws of hub.clients) ws.terminate();
   });

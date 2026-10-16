@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import type { MrDiffFile } from '@agent-canvas/shared';
 
 const exec = promisify(execFile);
 
@@ -101,4 +102,36 @@ export function excludeCanvasDir(worktree: string): void {
 export async function commitsSince(worktree: string, base: string): Promise<string[]> {
   const out = await tryGit(worktree, 'log', '--oneline', `${base}..HEAD`);
   return out ? out.split('\n').filter(Boolean) : [];
+}
+
+/** Envia o branch do worktree para o remoto `origin`, com as credenciais git do usuário. */
+export async function pushBranch(worktree: string, branch: string): Promise<void> {
+  await git(worktree, 'push', '--quiet', '-u', 'origin', `${branch}:${branch}`);
+}
+
+/** Diff do branch atual em relação à base, separado por arquivo (para quando o GitLab não traz). */
+export async function localDiff(worktree: string, base: string): Promise<MrDiffFile[]> {
+  let ref = base;
+  for (const candidate of [`origin/${base}`, base]) {
+    if (await tryGit(worktree, 'rev-parse', '--verify', '--quiet', `${candidate}^{commit}`)) {
+      ref = candidate;
+      break;
+    }
+  }
+  const out = (await tryGit(worktree, 'diff', '--no-color', '--no-ext-diff', `${ref}...HEAD`)) ?? '';
+  const files: MrDiffFile[] = [];
+  for (const block of out.split(/^diff --git /m).slice(1)) {
+    const lines = block.split('\n');
+    const m = /^a\/(.+?) b\/(.+)$/.exec(lines[0] ?? '');
+    const hunk = lines.findIndex((l) => l.startsWith('@@'));
+    files.push({
+      oldPath: m?.[1] ?? '',
+      newPath: m?.[2] ?? '',
+      diff: hunk >= 0 ? lines.slice(hunk).join('\n') + '\n' : '',
+      newFile: lines.some((l) => l.startsWith('new file mode')),
+      deletedFile: lines.some((l) => l.startsWith('deleted file mode')),
+      renamedFile: lines.some((l) => l.startsWith('rename from')),
+    });
+  }
+  return files;
 }

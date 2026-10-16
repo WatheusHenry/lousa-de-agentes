@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { addIssue, giveContext, newAgentAt, newNoteAt } from '../actions.ts';
 import { IssueNode } from '../nodes/IssueNode.tsx';
+import { MrNode } from '../nodes/MrNode.tsx';
 import { NoteNode } from '../nodes/NoteNode.tsx';
 import { AgentNode } from '../nodes/AgentNode.tsx';
 import { useStore } from '../state/store.ts';
@@ -19,7 +20,7 @@ import { EdgeMarkers, FloatingEdge } from './FloatingEdge.tsx';
 import { toFlowEdge, toFlowNode, type FlowNode } from './flow.ts';
 import { bindViewport, fit, screenToFlow } from './viewport.ts';
 
-const nodeTypes = { issue: IssueNode, note: NoteNode, agent: AgentNode };
+const nodeTypes = { issue: IssueNode, note: NoteNode, agent: AgentNode, mr: MrNode };
 const edgeTypes = { floating: FloatingEdge };
 const VIEW_KEY = 'ac-viewport';
 
@@ -47,7 +48,7 @@ export function Canvas() {
     setNodes((prev) => {
       const byId = new Map(prev.map((n) => [n.id, n]));
       return Object.values(storeNodes)
-        .filter((n) => n.type === 'issue' || n.type === 'note' || n.type === 'agent')
+        .filter((n) => n.type in nodeTypes)
         .map((n) => toFlowNode(n, selected === n.id, byId.get(n.id)));
     });
   }, [storeNodes, selected]);

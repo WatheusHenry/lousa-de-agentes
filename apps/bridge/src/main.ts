@@ -27,6 +27,7 @@ const app = await buildServer({
   session,
   settings,
   runner: new CliRunner(),
+  pollMrsEveryMs: 30_000,
   home: config.home,
   ...(process.env.AGENT_CANVAS_MODEL ? { model: process.env.AGENT_CANVAS_MODEL } : {}),
   logger: true,

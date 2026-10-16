@@ -3,7 +3,10 @@ import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { IconAgent, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel, repoName } from '../lib/format.ts';
-import { liveAgents, useStore } from '../state/store.ts';
+import { askFixPipeline } from '../actions.ts';
+import { DiffStat, MrBadge, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
+import { agentNodeOf, liveAgents, useStore } from '../state/store.ts';
+import { focusNode } from '../canvas/viewport.ts';
 
 /** Painel flutuante da direita: detalhes do item selecionado, ajuda ou automações. */
 export function Inspector() {
@@ -15,6 +18,7 @@ export function Inspector() {
   useStore((s) => s.noteLinks);
   useStore((s) => s.nodes);
   useStore((s) => s.agents);
+  useStore((s) => s.mergeRequests);
   const close = () => {
     useStore.getState().select(null);
     useStore.getState().setPanel(null);
@@ -30,6 +34,8 @@ export function Inspector() {
   } else if (node?.type === 'agent') {
     kicker = 'Agente';
     body = <AgentPanel agentId={node.refId} nodeId={node.id} />;
+  } else if (node?.type === 'mr') {
+    [kicker, body] = MrPanel(node.id);
   } else if (panel === 'help') {
     kicker = 'Como funciona';
     body = <Help />;
@@ -168,6 +174,90 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
       </button>
       <div className="row2">
         <a className="btn" href={i.webUrl} target="_blank" rel="noreferrer noopener">
+          Abrir no GitLab
+        </a>
+        <button className="btn plain danger" onClick={() => s.removeNode(nodeId)}>
+          Remover do canvas
+        </button>
+      </div>
+    </>,
+  ];
+}
+
+function MrPanel(nodeId: string): [ReactNode, ReactNode] {
+  const s = useStore.getState();
+  const n = s.nodes[nodeId]!;
+  const m = s.mergeRequests[n.refId];
+  if (!m) return ['MR', <p className="lab">Carregando dados do GitLab…</p>];
+  const agent = m.agentId ? s.agents[m.agentId] : undefined;
+  const agentNode = agent ? agentNodeOf(s, agent.id) : undefined;
+  const issue = m.issueRef ? s.issues[m.issueRef] : undefined;
+  return [
+    <span className="badge mrb">MR !{m.iid}</span>,
+    <>
+      <div className="grp">
+        <h3>{m.title}</h3>
+        <div>
+          <button className="btn primary" onClick={() => s.openFocus(nodeId)}>
+            Ver diff e discussão
+          </button>
+        </div>
+        <dl className="kv">
+          <dt>Projeto</dt>
+          <dd className="mono">{m.projectPath}</dd>
+          <dt>Branch</dt>
+          <dd className="mono">
+            {m.sourceBranch} → {m.targetBranch}
+          </dd>
+          <dt>Status</dt>
+          <dd>
+            <MrBadge mr={m} />
+          </dd>
+          <dt>Mudanças</dt>
+          <dd>
+            <DiffStat add={m.additions} del={m.deletions} />
+          </dd>
+          {agent && (
+            <>
+              <dt>Aberto por</dt>
+              <dd>
+                {agentNode ? (
+                  <button className="btn sm" onClick={() => focusNode(agentNode.id)}>
+                    {agent.name}
+                  </button>
+                ) : (
+                  agent.name
+                )}
+              </dd>
+            </>
+          )}
+          {issue && (
+            <>
+              <dt>Fecha</dt>
+              <dd>#{issue.iid}</dd>
+            </>
+          )}
+        </dl>
+      </div>
+      {mrReady(m) && (
+        <button
+          className="btn primary"
+          style={{ justifyContent: 'center', padding: 10 }}
+          onClick={() => s.mergeMr(m.ref)}
+        >
+          Aprovar e mergear
+        </button>
+      )}
+      {mrFailed(m) && agent && (
+        <button className="btn" style={{ justifyContent: 'center' }} onClick={() => askFixPipeline(m.ref)}>
+          Pedir correção a {agent.name}
+        </button>
+      )}
+      <p className="lab" style={{ margin: 0 }}>
+        O status do pipeline atualiza sozinho a cada 30 segundos. Agentes nunca fazem merge.
+      </p>
+      <div className="row2">
+        <a className="btn" href={m.webUrl} target="_blank" rel="noreferrer noopener">
           Abrir no GitLab
         </a>
         <button className="btn plain danger" onClick={() => s.removeNode(nodeId)}>
