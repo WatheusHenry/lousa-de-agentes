@@ -82,6 +82,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     context,
   });
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
+  mrs.onChanged = (mr) => {
+    if (mr.agentId) void context.broadcastView(mr.agentId);
+  };
 
   const app = Fastify({
     // a URL do WebSocket leva o token de sessão: o log grava só o caminho
@@ -318,7 +321,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         if (res.created) {
           const issueNode =
             a.issueRef && store.liveNodes().find((n) => n.type === 'issue' && n.refId === a.issueRef);
-          if (issueNode) context.onLinksChanged(issueNode.id, `nota de passagem de ${a.name}`);
+          if (issueNode) context.onLinksChanged(issueNode.id, `nota de passagem de ${a.name}`, agentId);
         } else context.onNoteChanged(res.noteId);
         return res.created
           ? `Nota ${input.handoff ? 'de passagem ' : ''}criada no canvas${a.issueRef ? ' e ligada à issue' : ''}.`

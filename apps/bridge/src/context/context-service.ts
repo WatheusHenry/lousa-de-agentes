@@ -599,7 +599,7 @@ export class ContextService {
   }
 
   /** Vínculos mudaram num nó (nota ligada ou desligada de uma issue ou de um agente). */
-  onLinksChanged(targetNodeId: string, label: string): void {
+  onLinksChanged(targetNodeId: string, label: string, exceptAgentId?: string): void {
     const n = this.d.store.anyNode(targetNodeId);
     if (!n) return;
     const agents =
@@ -608,7 +608,7 @@ export class ContextService {
         : n.type === 'issue'
           ? this.d.db.select().from(agentT).where(eq(agentT.issueRef, n.refId)).all()
           : [];
-    for (const a of agents) this.changed(a.id, [label]);
+    for (const a of agents) if (a.id !== exceptAgentId) this.changed(a.id, [label]);
   }
 
   /**

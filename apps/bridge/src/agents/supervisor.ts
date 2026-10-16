@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import {
@@ -40,8 +40,11 @@ const toAgent = (r: Row): Agent => ({ ...r });
 
 interface Live {
   proc: AgentProcess;
-  /** Mensagens enviadas que ainda não tiveram o evento result. */
-  pendingTurns: number;
+  /**
+   * Há um turno em andamento. Mensagens enviadas durante o turno entram nele (o claude junta
+   * tudo num só result), então não se conta um turno por mensagem.
+   */
+  turnOpen: boolean;
   pausing: boolean;
   stopping: boolean;
   /** A entrada já foi fechada: o processo está terminando. */
@@ -252,7 +255,7 @@ export class Supervisor {
     }
     if (l && !l.stopping) {
       l.pausing = false;
-      l.pendingTurns++;
+      l.turnOpen = true;
       l.proc.send(text);
       if (a.status !== 'waiting') this.setStatus(agentId, 'running');
       return;
@@ -387,7 +390,7 @@ export class Supervisor {
       );
       this.live.set(agentId, {
         proc,
-        pendingTurns: 1,
+        turnOpen: true,
         pausing: false,
         stopping: false,
         inputClosed: false,
@@ -418,14 +421,18 @@ export class Supervisor {
   async contextChanged(agentId: string, labels: string[]): Promise<void> {
     const a = this.get(agentId);
     if (!a?.worktreePath || this.closed) return;
+    const file = join(a.worktreePath, '.agent-canvas', 'context.md');
+    const before = existsSync(file) ? readFileSync(file, 'utf8') : '';
     await this.refreshContext(a);
+    // nada mudou no que o agente lê (ex.: a nota de passagem dele mesmo): não interrompe
+    if (readFileSync(file, 'utf8') === before) return;
     const notice = `O contexto foi atualizado: ${labels.join('; ')}. Releia .agent-canvas/context.md.`;
     const l = this.live.get(agentId);
     let notified = false;
     if (l && !l.stopping && !l.pausing) {
       if (l.inputClosed) l.afterExit = l.afterExit ? `${l.afterExit}\n\n${notice}` : notice;
       else {
-        l.pendingTurns++;
+        l.turnOpen = true;
         l.proc.send(notice);
         if (a.status !== 'waiting') this.setStatus(agentId, 'running');
       }
@@ -482,13 +489,25 @@ export class Supervisor {
     if (!p.events.length && p.turn === undefined && !p.controlResponse) this.rawOnly(agentId, line);
 
     if (p.turn) this.onTurnEnd(agentId, p.turn);
+    else {
+      const l = this.live.get(agentId);
+      if (
+        l &&
+        !l.turnOpen &&
+        !l.stopping &&
+        p.events.some((e) => e.kind === 'text' || e.kind === 'tool_use')
+      ) {
+        l.turnOpen = true;
+        this.setStatus(agentId, 'running');
+      }
+    }
   }
 
   private onTurnEnd(agentId: string, turn: NonNullable<ReturnType<typeof parseLine>['turn']>): void {
     const l = this.live.get(agentId);
     const a = this.get(agentId);
     if (!a) return;
-    if (l) l.pendingTurns = Math.max(0, l.pendingTurns - 1);
+    if (l) l.turnOpen = false;
     if (l?.stopping) return;
     if (l?.pausing) {
       closeInput(l);
@@ -502,12 +521,11 @@ export class Supervisor {
       this.setStatus(agentId, 'error');
       return;
     }
-    if (!l || l.pendingTurns === 0) {
-      // sem mensagens na fila: o processo termina; a próxima mensagem retoma a sessão
-      if (l) closeInput(l);
-      this.setStatus(agentId, 'done');
-      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} concluiu o turno`));
-    }
+    // o processo termina; a próxima mensagem retoma a sessão. Se uma mensagem chegou no
+    // instante do result, o claude ainda a processa antes de sair e onLine reabre o turno.
+    if (l) closeInput(l);
+    this.setStatus(agentId, 'done');
+    this.d.hub.broadcast(this.d.store.logActivity(`${a.name} concluiu o turno`));
   }
 
   private onExit(

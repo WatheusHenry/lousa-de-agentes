@@ -276,6 +276,21 @@ describe('contexto dos agentes', () => {
         ),
       'linha de contexto no terminal',
     );
+    // o claude junta o aviso ao turno em andamento e emite um só result: o agente conclui
+    runner.h!.onLine(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        result: 'ok',
+        session_id: 's',
+        usage: {},
+      }),
+    );
+    await until(
+      () => msgs.some((m) => m.type === 'agent.upsert' && m.agent.id === 'a1' && m.agent.status === 'done'),
+      'agente concluído com um só result',
+    );
   });
 
   it('write_note: nota de passagem ligada à issue, fora do contexto do autor e no dos outros', async () => {
@@ -297,6 +312,9 @@ describe('contexto dos agentes', () => {
     expect(msgs.some((m) => m.type === 'noteLink.upsert' && m.link.noteId === note.id)).toBe(true);
     // não volta para o contexto do autor
     expect((await ctx('a1')).items.some((i) => i.ref === note.id)).toBe(false);
+    // nem gera aviso de releitura para ele (o context.md dele não mudou)
+    await new Promise((r) => setTimeout(r, 100));
+    expect(runner.sent.some((t) => t.includes('nota de passagem'))).toBe(false);
     // um segundo agente da mesma issue recebe a nota
     send({
       type: 'agent.create',

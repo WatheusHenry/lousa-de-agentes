@@ -55,6 +55,8 @@ const PIPELINE_LABEL: Partial<Record<MergeRequest['pipelineStatus'], string>> = 
  */
 export class MrService {
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Avisado quando estado ou pipeline de um MR mudam (o contexto do agente sugere o log). */
+  onChanged: (mr: MergeRequest) => void = () => {};
   private polling = false;
 
   constructor(
@@ -206,6 +208,7 @@ export class MrService {
     });
     const mr = toMr(row);
     this.hub.broadcast({ type: 'mr.upsert', mr });
+    this.onChanged(mr);
     if (fresh.state !== cur.state && fresh.state === 'merged')
       this.hub.broadcast(this.store.logActivity(`MR !${mr.iid} mergeado`));
     else if (fresh.pipelineStatus !== cur.pipelineStatus && PIPELINE_LABEL[fresh.pipelineStatus])
