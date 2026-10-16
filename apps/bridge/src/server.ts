@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import {
   ClientMessage,
   ProjectSelectionInput,
+  RepoPathInput,
   SESSION_HEADER,
   SESSION_META,
   SESSION_QUERY,
@@ -177,6 +178,31 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   app.get('/api/repos', async () => settings.repos());
+
+  const settingsChanged = (view: ReturnType<SettingsService['view']>) => {
+    broadcast([{ type: 'settings.updated', settings: view }]);
+    return view;
+  };
+  const projectParam = (req: FastifyRequest) => Number((req.params as { projectId: string }).projectId);
+
+  /** Procura de novo os clones (depois de clonar ou mover uma pasta). */
+  app.post('/api/repos/rescan', async () => {
+    settings.locateClones();
+    return settingsChanged(settings.view());
+  });
+
+  app.put('/api/repos/:projectId/path', async (req) => {
+    const parsed = RepoPathInput.safeParse(req.body);
+    if (!parsed.success) throw new SettingsError('Caminho inválido.');
+    return settingsChanged(settings.setClonePath(projectParam(req), parsed.data.path || null));
+  });
+
+  app.post('/api/repos/:projectId/clone', async (req) => {
+    const view = await settings.cloneProject(projectParam(req));
+    const r = settings.repos().find((x) => x.gitlabProjectId === projectParam(req));
+    broadcast([store.logActivity(`${r?.name ?? 'Projeto'} clonado em ${r?.localPath ?? ''}`)]);
+    return settingsChanged(view);
+  });
 
   /** Issues abertas dos projetos escolhidos. Atualiza o cache local a cada chamada. */
   app.get('/api/gitlab/issues', async () => {

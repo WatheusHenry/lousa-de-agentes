@@ -37,12 +37,18 @@ Na primeira vez aparece a tela de configuração:
 
 1. **URL da instância** do GitLab (ex.: `https://gitlab.com` ou a URL da sua empresa).
 2. **Token de acesso pessoal** com escopo `api` (GitLab → Preferências → Access tokens). O bridge valida com `GET /user` antes de salvar e recusa token inválido.
-3. **Pasta dos repositórios locais**: onde ficam seus clones (`<pasta>/<nome-do-projeto>` ou `<pasta>/<grupo>/<projeto>`). Cada agente trabalha num worktree criado a partir deles.
+3. **Pasta dos repositórios locais**: onde ficam seus clones. Não precisa seguir nenhum padrão de nomes: o bridge procura em até 4 níveis de subpastas e reconhece cada projeto pelo remoto do git (`git@…:grupo/projeto.git` ou `https://…/grupo/projeto.git`). Deixe vazio para procurar na sua pasta pessoal (3 níveis). Cada agente trabalha num worktree criado a partir do clone.
 4. Escolha os **projetos** cujas issues abertas aparecem no canvas.
 
 Sem token à mão, use **Usar dados de exemplo**: o canvas funciona com os mesmos dados fictícios do protótipo.
 
 Para abrir a configuração de novo, clique em "GitLab conectado" no rodapé da barra lateral.
+
+A aba **Repos** mostra onde está o clone de cada projeto. Para o que faltar:
+
+- **Clonar**: `git clone` na pasta dos repositórios (ou em `~/projetos`), com a sua chave SSH ou o credential helper do git. O token do GitLab nunca é usado para clonar, porque ficaria gravado no `.git/config`.
+- **Informar caminho**: aponta um clone que está em outro lugar. Se o remoto dele for de outro projeto, o bridge recusa.
+- **Procurar de novo**: depois de clonar ou mover uma pasta pelo terminal. Ao iniciar um agente num projeto sem clone, o bridge também procura de novo sozinho.
 
 ### Onde ficam os dados
 

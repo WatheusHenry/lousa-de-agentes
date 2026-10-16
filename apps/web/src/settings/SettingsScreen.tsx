@@ -69,7 +69,7 @@ function GitLabStep({
         mode,
         ...(mode === 'gitlab' ? { baseUrl: baseUrl.trim() } : {}),
         ...(mode === 'gitlab' && token.trim() ? { token: token.trim() } : {}),
-        ...(reposDir.trim() ? { reposDir: reposDir.trim() } : {}),
+        reposDir: reposDir.trim(),
       });
       setToken('');
       onSaved(view);
@@ -138,11 +138,12 @@ function GitLabStep({
           className="field mono"
           value={reposDir}
           onChange={(e) => setReposDir(e.target.value)}
-          placeholder="~/code"
+          placeholder="~/projetos (vazio: procura na sua pasta pessoal)"
           spellCheck={false}
         />
         <span className="hint">
-          Onde ficam os clones. Os agentes vão trabalhar em worktrees a partir deles.
+          Onde ficam os clones. O app procura em subpastas e reconhece cada projeto pelo remoto do git, então
+          o nome da pasta não importa. O que faltar dá para clonar ou apontar na aba Repos.
         </span>
       </label>
       {error && (

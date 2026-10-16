@@ -58,6 +58,10 @@ export const api = {
   rawEvents: (agentId: string) => call<string[]>(`/api/agents/${encodeURIComponent(agentId)}/raw`),
   comments: (projectId: number, iid: number) =>
     call<IssueComment[]>(`/api/gitlab/issues/${projectId}/${iid}/comments`),
+  rescanRepos: () => call<SettingsView>('/api/repos/rescan', { method: 'POST' }),
+  setRepoPath: (projectId: number, path: string | null) =>
+    call<SettingsView>(`/api/repos/${projectId}/path`, { method: 'PUT', body: JSON.stringify({ path }) }),
+  cloneRepo: (projectId: number) => call<SettingsView>(`/api/repos/${projectId}/clone`, { method: 'POST' }),
   mrDiff: (ref: string) => call<MrDiffFile[]>(`/api/mrs/${encodeURIComponent(ref)}/diff`),
   mrComments: (ref: string) => call<IssueComment[]>(`/api/mrs/${encodeURIComponent(ref)}/comments`),
 };

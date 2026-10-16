@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -150,6 +152,81 @@ describe('configuração do GitLab', () => {
     const res = await b.app.inject({ url: '/api/gitlab/projects', headers: b.headers });
     expect(res.statusCode).toBe(502);
     expect(res.json().error).toMatch(/erro 500/);
+  });
+});
+
+describe('clones locais', () => {
+  let b: Awaited<ReturnType<typeof makeBridge>>;
+  afterEach(() => b.cleanup());
+
+  it('acha o clone pelo remoto, procura de novo e aceita caminho informado', async () => {
+    b = await makeBridge(() => new MockGitLabClient());
+    const dir = mkdtempSync(join(tmpdir(), 'ac-clones-'));
+    const repo = (path: string, remote: string) => {
+      mkdirSync(path, { recursive: true });
+      execFileSync('git', ['init', '-q', path]);
+      execFileSync('git', ['-C', path, 'remote', 'add', 'origin', remote]);
+    };
+    // pasta com outro nome e um nível a mais: só o remoto identifica
+    repo(join(dir, 'empresa', 'pagamentos'), 'git@gitlab.example.com:grupo/payments-api.git');
+    const h = b.headers;
+    await b.app.inject({
+      method: 'POST',
+      url: '/api/settings/gitlab',
+      headers: h,
+      payload: {
+        mode: 'gitlab',
+        baseUrl: 'https://gitlab.example.com',
+        token: 'glpat-x-123456',
+        reposDir: dir,
+      },
+    });
+    let view = (
+      await b.app.inject({
+        method: 'PUT',
+        url: '/api/settings/projects',
+        headers: h,
+        payload: { projectIds: [101, 102] },
+      })
+    ).json();
+    expect(view.clones).toEqual([
+      { projectId: 101, path: join(dir, 'empresa', 'pagamentos'), manual: false },
+      { projectId: 102, path: null, manual: false },
+    ]);
+
+    // clonado depois: "Procurar de novo" acha sem escolher os projetos outra vez
+    repo(join(dir, 'front'), 'https://gitlab.example.com/grupo/web-app.git');
+    view = (await b.app.inject({ method: 'POST', url: '/api/repos/rescan', headers: h })).json();
+    expect(view.clones[1]).toMatchObject({ projectId: 102, path: join(dir, 'front') });
+
+    // caminho informado: precisa ser git e do projeto certo
+    const other = join(dir, 'outro');
+    repo(other, 'git@gitlab.example.com:grupo/outro.git');
+    let res = await b.app.inject({
+      method: 'PUT',
+      url: '/api/repos/102/path',
+      headers: h,
+      payload: { path: other },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/não aponta para grupo\/web-app/);
+    res = await b.app.inject({
+      method: 'PUT',
+      url: '/api/repos/102/path',
+      headers: h,
+      payload: { path: dir },
+    });
+    expect(res.json().error).toMatch(/não é um repositório git/);
+    const copy = join(dir, 'copia-web');
+    repo(copy, 'git@gitlab.example.com:grupo/web-app.git');
+    view = (
+      await b.app.inject({ method: 'PUT', url: '/api/repos/102/path', headers: h, payload: { path: copy } })
+    ).json();
+    expect(view.clones[1]).toEqual({ projectId: 102, path: copy, manual: true });
+
+    // projeto com clone não clona de novo
+    res = await b.app.inject({ method: 'POST', url: '/api/repos/101/clone', headers: h });
+    expect(res.statusCode).toBe(400);
   });
 });
 

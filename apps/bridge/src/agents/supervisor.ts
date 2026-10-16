@@ -328,11 +328,18 @@ export class Supervisor {
         throw new AgentError(
           'Escolha um repositório: arraste um da aba Repos ou uma issue para cima do agente.',
         );
-      const r = this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, repoId)).get();
+      const findRepo = () => this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, repoId)).get();
+      let r = findRepo();
       if (!r) throw new AgentError('Projeto não está entre os escolhidos nas configurações.');
+      if (!r.localPath) {
+        // pode ter sido clonado depois de escolher os projetos
+        this.d.settings.locateClones();
+        r = findRepo()!;
+        this.d.hub.broadcast({ type: 'settings.updated', settings: this.d.settings.view() });
+      }
       if (!r.localPath)
         throw new AgentError(
-          `Não achei o clone de ${r.pathWithNamespace} na pasta dos repositórios. Clone o projeto lá e escolha os projetos de novo.`,
+          `Não achei o clone de ${r.pathWithNamespace}. Na aba Repos, use Clonar ou Informar caminho.`,
         );
 
       if (!a.worktreePath) {

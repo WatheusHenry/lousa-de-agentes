@@ -9,7 +9,8 @@ export const GitLabSettingsInput = z.object({
   mode: GitLabMode.default('gitlab'),
   baseUrl: z.url({ protocol: /^https?$/ }).optional(),
   token: z.string().trim().min(8).max(512).optional(),
-  reposDir: z.string().trim().min(1).max(1024).optional(),
+  /** Vazio = procurar os clones na pasta pessoal do usuário. */
+  reposDir: z.string().trim().max(1024).optional(),
 });
 export type GitLabSettingsInput = z.input<typeof GitLabSettingsInput>;
 
@@ -36,6 +37,11 @@ export const SettingsView = z.object({
   tokenSource: z.enum(['secrets-file', 'env']).nullable(),
   user: GitLabUser.nullable(),
   projects: z.array(GitLabProject),
+  /** Clone local de cada projeto escolhido; `manual` quando o usuário informou o caminho. */
+  clones: z.array(z.object({ projectId: z.number(), path: z.string().nullable(), manual: z.boolean() })),
   configured: z.boolean(),
 });
 export type SettingsView = z.infer<typeof SettingsView>;
+
+export const RepoPathInput = z.object({ path: z.string().trim().max(1024).nullable() });
+export type RepoPathInput = z.infer<typeof RepoPathInput>;
