@@ -27,6 +27,7 @@ export function claudeArgs(o: RunnerStartOptions): string[] {
     o.appendSystemPrompt,
     ...(o.allowedTools.length ? ['--allowedTools', o.allowedTools.join(',')] : []),
     ...(o.disallowedTools.length ? ['--disallowedTools', o.disallowedTools.join(',')] : []),
+    ...(o.addDirs?.length ? ['--add-dir', ...o.addDirs] : []),
     ...(o.model ? ['--model', o.model] : []),
   ];
 }

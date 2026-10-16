@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Tipos de item de contexto (seção 7 do plano). */
-export const ContextKind = z.enum(['issue', 'repo', 'note', 'file', 'pipeline_log', 'mr_diff']);
+export const ContextKind = z.enum(['issue', 'repo', 'note', 'file', 'pipeline_log', 'mr_diff', 'plan']);
 export type ContextKind = z.infer<typeof ContextKind>;
 
 /** Orçamento recomendado de tokens do contexto de um agente. */

@@ -29,6 +29,17 @@ const app = await buildServer({
   settings,
   runner: new CliRunner(),
   pollMrsEveryMs: 30_000,
+  limits: {
+    ...(Number(process.env.AGENT_CANVAS_MAX_AGENTS) > 0
+      ? { maxRunning: Number(process.env.AGENT_CANVAS_MAX_AGENTS) }
+      : {}),
+    ...(Number(process.env.AGENT_CANVAS_MAX_AGENT_MINUTES) > 0
+      ? { maxAgentMinutes: Number(process.env.AGENT_CANVAS_MAX_AGENT_MINUTES) }
+      : {}),
+    ...(Number(process.env.AGENT_CANVAS_TREE_TOKEN_BUDGET) > 0
+      ? { treeTokenBudget: Number(process.env.AGENT_CANVAS_TREE_TOKEN_BUDGET) }
+      : {}),
+  },
   summarizer: new CliSummarizer(process.env.AGENT_CANVAS_SUMMARY_MODEL || 'haiku'),
   ...(Number(process.env.AGENT_CANVAS_CONTEXT_BUDGET) > 0
     ? { contextBudget: Number(process.env.AGENT_CANVAS_CONTEXT_BUDGET) }

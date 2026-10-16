@@ -1,0 +1,329 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
+import type { Agent, Question, ServerMessage } from '@agent-canvas/shared';
+import { MockGitLabClient } from '../gitlab/mock-client.ts';
+import { makeBridge } from '../test-utils.ts';
+import type { AgentProcess, AgentRunner, RunnerHandlers, RunnerStartOptions } from './runner.ts';
+
+const TEST_PORT = 4995;
+const git = (cwd: string, ...a: string[]) =>
+  execFileSync('git', ['-c', 'user.email=t@e.com', '-c', 'user.name=T', ...a], { cwd, stdio: 'pipe' })
+    .toString()
+    .trim();
+const line = (o: unknown) => JSON.stringify(o);
+const init = (sid: string) =>
+  line({ type: 'system', subtype: 'init', session_id: sid, model: 'f', cwd: '/w' });
+const result = (sid: string, text: string) =>
+  line({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: sid, usage: {} });
+
+async function callTool(opts: RunnerStartOptions, name: string, args: Record<string, unknown>) {
+  const srv = JSON.parse(readFileSync(opts.mcpConfigPath, 'utf8')).mcpServers.canvas;
+  const client = new Client({ name: 'fake-claude', version: '0' });
+  const transport = new StreamableHTTPClientTransport(new URL(srv.url), {
+    requestInit: { headers: srv.headers },
+  });
+  transport.onerror = () => {};
+  client.onerror = () => {};
+  await client.connect(transport);
+  const res = await client.callTool({ name, arguments: args }, undefined, { timeout: 60_000 });
+  await client.close();
+  return { text: (res.content as { text: string }[])[0]!.text, isError: !!res.isError };
+}
+
+/** Runner roteirizado por papel: o orquestrador divide, os filhos implementam e abrem MR. */
+class ScriptRunner implements AgentRunner {
+  starts: RunnerStartOptions[] = [];
+  log: string[] = [];
+  turn: (opts: RunnerStartOptions, h: RunnerHandlers) => Promise<void> = async () => {};
+  start(opts: RunnerStartOptions, h: RunnerHandlers): AgentProcess {
+    this.starts.push(opts);
+    let alive = true;
+    let sent = 0;
+    const exit = () => {
+      if (alive) {
+        alive = false;
+        setTimeout(() => h.onExit({ code: 0, signal: null, stderr: '' }), 5);
+      }
+    };
+    return {
+      // como o claude, mensagens que chegam durante o turno entram nele: só a primeira roda o roteiro
+      send: () => {
+        if (sent++ === 0) void this.turn(opts, h).catch((e) => this.log.push(String(e)));
+      },
+      interrupt: () => {},
+      endInput: exit,
+      kill: exit,
+    };
+  }
+}
+
+describe('orquestração', () => {
+  let b: Awaited<ReturnType<typeof makeBridge>>;
+  let runner: ScriptRunner;
+  let ws: WebSocket;
+  let msgs: ServerMessage[];
+  let reposDir: string;
+  const send = (m: object) => ws.send(JSON.stringify(m));
+  async function until<T>(fn: () => T | undefined | false | null, what: string, tries = 600): Promise<T> {
+    for (let i = 0; i < tries; i++) {
+      const v = fn();
+      if (v) return v;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error(
+      `esperando ${what}; log: ${runner.log.join(' | ')}; msgs: ${msgs
+        .map((m) => m.type)
+        .slice(-30)
+        .join(', ')}`,
+    );
+  }
+  const agents = () => {
+    const out = new Map<string, Agent>();
+    for (const m of msgs) if (m.type === 'agent.upsert') out.set(m.agent.id, m.agent);
+    return [...out.values()];
+  };
+  const byName = (n: string) => agents().find((a) => a.name === n);
+
+  beforeEach(async () => {
+    runner = new ScriptRunner();
+    const client = new MockGitLabClient({ pipelineMs: 50 });
+    // um agente rodando por vez: o orquestrador coordenando não conta, os filhos vão pela fila
+    b = await makeBridge(() => client, runner, TEST_PORT, { limits: { maxRunning: 1 } });
+    reposDir = mkdtempSync(join(tmpdir(), 'ac-orq-'));
+    for (const name of ['payments-api', 'web-app']) {
+      const repo = join(reposDir, name);
+      mkdirSync(repo);
+      writeFileSync(join(repo, 'README.md'), `# ${name}\n`);
+      git(repo, 'init', '-q', '-b', 'main');
+      git(repo, 'add', '.');
+      git(repo, 'commit', '-qm', 'inicial');
+      const origin = join(reposDir, `${name}.git`);
+      execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
+      git(repo, 'remote', 'add', 'origin', origin);
+      git(repo, 'push', '-q', 'origin', 'main');
+    }
+    const h = b.headers;
+    await b.app.inject({
+      method: 'POST',
+      url: '/api/settings/gitlab',
+      headers: h,
+      payload: { mode: 'gitlab', baseUrl: 'https://gitlab.example.com', token: 'glpat-teste-1', reposDir },
+    });
+    await b.app.inject({
+      method: 'PUT',
+      url: '/api/settings/projects',
+      headers: h,
+      payload: { projectIds: [101, 102] },
+    });
+    await b.app.inject({ url: '/api/gitlab/issues', headers: h });
+    await b.app.listen({ host: '127.0.0.1', port: TEST_PORT });
+    msgs = [];
+    ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/ws?token=${b.session.token}`, {
+      origin: 'http://localhost:5173',
+    });
+    ws.on('message', (d) => msgs.push(JSON.parse(String(d))));
+    await new Promise((r) => ws.once('open', r));
+    send({ type: 'issue.place', nodeId: 'n-issue', issueRef: '101#142', x: 0, y: 0 });
+    send({
+      type: 'note.create',
+      nodeId: 'n-note',
+      note: { id: 't1', title: 'Contrato', body: 'Campo idempotencyKey.' },
+      x: 400,
+      y: 0,
+    });
+  });
+  afterEach(async () => {
+    ws.terminate();
+    await new Promise((r) => setTimeout(r, 100));
+    await b.cleanup();
+  });
+
+  it('issue com dois repositórios: orquestrador, plano, dois agentes na fila, dois MRs e o resumo na issue', async () => {
+    const res: Record<string, { text: string; isError: boolean }> = {};
+    let question: Promise<{ text: string; isError: boolean }> | null = null;
+    runner.turn = async (opts, h) => {
+      h.onLine(init(opts.sessionId));
+      if (opts.appendSystemPrompt.includes('Você é o orquestrador')) {
+        res.plan = await callTool(opts, 'report_plan', {
+          items: [
+            { text: 'payments-api: chave de idempotência' },
+            { text: 'web-app: mandar a chave' },
+            { text: 'Comentar o resumo na issue' },
+          ],
+        });
+        // a nota ligada ao orquestrador é herdada pelos filhos
+        send({ type: 'note.link', edgeId: 'e-n', noteId: 't1', targetNodeId: agentNode('agente-1') });
+        await new Promise((r) => setTimeout(r, 30));
+        res.spawn1 = await callTool(opts, 'spawn_agent', {
+          repo: 'payments-api',
+          task: 'Implementar a chave de idempotência no webhook.',
+        });
+        res.spawn2 = await callTool(opts, 'spawn_agent', {
+          repo: 'grupo/web-app',
+          task: 'Mandar a chave no checkout.',
+        });
+        res.badRepo = await callTool(opts, 'spawn_agent', { repo: 'shared-contracts', task: 'x' });
+        res.wait = await callTool(opts, 'wait_for_agents', {});
+        res.comment = await callTool(opts, 'comment_issue', {
+          body: 'Resumo: dois MRs. Ordem: payments-api, depois web-app.',
+        });
+        h.onLine(result(opts.sessionId, 'Feito.'));
+        return;
+      }
+      // filho: commit, MR e (no web-app) uma pergunta e uma tentativa de neto
+      const name = opts.cwd.includes(agentId('agente-2')) ? 'agente-2' : 'agente-3';
+      writeFileSync(join(opts.cwd, `${name}.txt`), 'x\n');
+      git(opts.cwd, 'add', '.');
+      git(opts.cwd, 'commit', '-qm', name);
+      if (name === 'agente-3') {
+        res.grandchild = await callTool(opts, 'spawn_agent', { repo: 'web-app', task: 'testes' });
+        question = callTool(opts, 'ask_human', { question: 'Botão ou link?', options: ['Botão', 'Link'] });
+        res.answer = await question;
+      }
+      res[`mr-${name}`] = await callTool(opts, 'open_merge_request', { title: `MR ${name}` });
+      h.onLine(result(opts.sessionId, `${name} terminou.`));
+    };
+    const agentNode = (n: string) =>
+      msgs.find(
+        (m): m is Extract<ServerMessage, { type: 'node.upsert' }> =>
+          m.type === 'node.upsert' && m.node.refId === byName(n)?.id,
+      )!.node.id;
+    const agentId = (n: string) => byName(n)?.id ?? '???';
+
+    send({
+      type: 'agent.create',
+      agentId: 'a1',
+      nodeId: 'n-a1',
+      edgeId: 'e-a1',
+      issueRef: '101#142',
+      repos: [101, 102],
+      instruction: 'Resolva.',
+      maxDepth: 1,
+      openMr: true,
+      x: 0,
+      y: 300,
+    });
+
+    // orquestrador: pasta própria (não é git) e leitura dos dois clones
+    await until(() => runner.starts.length >= 1, 'orquestrador');
+    const o = runner.starts[0]!;
+    expect(byName('agente-1')).toMatchObject({ role: 'orchestrator', depth: 0, maxDepth: 1 });
+    expect(existsSync(join(o.cwd, '.git'))).toBe(false);
+    expect(o.addDirs).toEqual([join(reposDir, 'payments-api'), join(reposDir, 'web-app')]);
+    const octx = readFileSync(join(o.cwd, '.agent-canvas', 'context.md'), 'utf8');
+    expect(octx).toContain('## Repositório grupo/payments-api (índice)');
+    expect(octx).toContain('## Repositório grupo/web-app (índice)');
+    expect(octx).toContain('Você pode criar sub-agentes');
+
+    // o segundo filho espera na fila até o primeiro terminar
+    await until(() => byName('agente-3')?.status === 'queued' || res.wait, 'fila', 1000);
+
+    // a pergunta do agente-3 vai para a caixa de Ações
+    const q = await until(
+      () =>
+        msgs.find(
+          (m): m is Extract<ServerMessage, { type: 'question.upsert' }> =>
+            m.type === 'question.upsert' && m.question.status === 'pending',
+        )?.question as Question | undefined,
+      'pergunta',
+      1500,
+    );
+    expect(q).toMatchObject({ text: 'Botão ou link?', options: ['Botão', 'Link'] });
+    await until(() => byName('agente-3')?.status === 'waiting', 'aguardando resposta');
+    send({ type: 'question.answer', questionId: q.id, answer: 'Botão' });
+
+    await until(() => res.comment, 'comentário do orquestrador', 1500);
+    expect(res.plan!.isError).toBe(false);
+    expect(res.spawn1!.text).toContain('agente-2 criado para payments-api');
+    expect(res.badRepo).toMatchObject({ isError: true });
+    expect(res.badRepo!.text).toContain('não está entre os escolhidos. Opções: payments-api, web-app');
+    expect(res.grandchild).toMatchObject({ isError: true });
+    expect(res.grandchild!.text).toContain('Profundidade máxima (1)');
+    expect(res.answer!.text).toBe('Botão');
+    // resumo da espera: os dois filhos, com branch e MR
+    expect(res.wait!.text).toMatch(/## agente-2 \(payments-api\): done[\s\S]*MR !\d+/);
+    expect(res.wait!.text).toMatch(/## agente-3 \(web-app\): done[\s\S]*MR !\d+[\s\S]*agente-3 terminou/);
+    expect(res.comment!.text).toBe('Comentário publicado na issue.');
+
+    // árvore: filhos com o pai, arestas de spawn, worktrees nos repositórios certos
+    const [c1, c2] = [byName('agente-2')!, byName('agente-3')!];
+    expect(c1).toMatchObject({ parentId: 'a1', role: 'main', depth: 1, repos: [101] });
+    expect(c2).toMatchObject({ parentId: 'a1', role: 'main', depth: 1, repos: [102] });
+    expect(msgs.filter((m) => m.type === 'edge.upsert' && m.edge.kind === 'spawn')).toHaveLength(2);
+    expect(git(join(reposDir, 'web-app'), 'branch', '--list', c2.branch!)).toContain(c2.branch!);
+    // contexto do filho: o plano do pai e a nota herdada
+    const cctx = readFileSync(join(c2.worktreePath!, '.agent-canvas', 'context.md'), 'utf8');
+    expect(cctx).toContain('## Plano de agente-1, que criou você');
+    expect(cctx).toContain('Campo idempotencyKey.');
+    expect(cctx).toContain('Você não pode criar sub-agentes');
+    expect(cctx).not.toContain('chame `write_note`'); // passagem só na raiz
+    // plano: passos ligados aos filhos e marcados quando terminaram
+    const plan = byName('agente-1')!.plan!;
+    expect(plan.slice(0, 2)).toEqual([
+      { text: 'payments-api: chave de idempotência', done: true, agentId: c1.id },
+      { text: 'web-app: mandar a chave', done: true, agentId: c2.id },
+    ]);
+    // MR do web-app fecha a issue de outro projeto com a referência completa
+    const mrs = msgs
+      .filter((m): m is Extract<ServerMessage, { type: 'mr.upsert' }> => m.type === 'mr.upsert')
+      .map((m) => m.mr);
+    const webMr = mrs.find((m) => m.projectId === 102)!;
+    expect(webMr.description).toContain('Closes grupo/payments-api#142');
+    expect(mrs.find((m) => m.projectId === 101)!.description).toContain('Closes #142');
+    await until(() => byName('agente-1')?.status === 'done', 'orquestrador concluído');
+  }, 30_000);
+
+  it('sub-agente no mesmo repositório: branch a partir do branch do pai, sem MR próprio', async () => {
+    let spawned = '';
+    let waited = '';
+    runner.turn = async (opts, h) => {
+      h.onLine(init(opts.sessionId));
+      if (opts.cwd.endsWith('a1')) {
+        writeFileSync(join(opts.cwd, 'pai.txt'), 'pai\n');
+        git(opts.cwd, 'add', '.');
+        git(opts.cwd, 'commit', '-qm', 'pai');
+        spawned = (await callTool(opts, 'spawn_agent', { repo: 'payments-api', task: 'Escrever os testes.' }))
+          .text;
+        waited = (await callTool(opts, 'wait_for_agents', {})).text;
+        h.onLine(result(opts.sessionId, 'ok'));
+        return;
+      }
+      // o filho vê o commit do pai
+      expect(readFileSync(join(opts.cwd, 'pai.txt'), 'utf8')).toBe('pai\n');
+      writeFileSync(join(opts.cwd, 'testes.txt'), 't\n');
+      git(opts.cwd, 'add', '.');
+      git(opts.cwd, 'commit', '-qm', 'testes');
+      h.onLine(result(opts.sessionId, 'testes prontos'));
+    };
+    send({
+      type: 'agent.create',
+      agentId: 'a1',
+      nodeId: 'n-a1',
+      issueRef: '101#142',
+      repos: [],
+      instruction: 'Resolva.',
+      maxDepth: 1,
+      openMr: true,
+      x: 0,
+      y: 300,
+    });
+    await until(() => waited, 'espera do pai', 1500);
+    const parent = byName('agente-1')!;
+    const sub = byName('agente-2')!;
+    expect(parent.role).toBe('main');
+    expect(sub).toMatchObject({ role: 'sub', parentId: 'a1', openMr: false, depth: 1 });
+    expect(sub.branch!.startsWith(`${parent.branch}-`)).toBe(true);
+    expect(spawned).toContain('agente-2 criado para payments-api');
+    expect(waited).toContain(`Branch: ${sub.branch}`);
+    expect(waited).toContain('testes prontos');
+    // o pai consegue juntar o branch do filho (mesmo repositório)
+    git(parent.worktreePath!, 'merge', '-q', '--no-edit', sub.branch!);
+    expect(existsSync(join(parent.worktreePath!, 'testes.txt'))).toBe(true);
+  }, 30_000);
+});

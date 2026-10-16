@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Agent, AgentEvent, Approval, Policy } from './agents.ts';
+import { Agent, AgentEvent, Approval, Policy, Question } from './agents.ts';
 import { Activity, CanvasEdge, CanvasNode, Note, NoteLink } from './canvas.ts';
 import { AgentContext, ContextKind } from './context.ts';
 import { Issue, IssueRef, MergeRequest, MrRef } from './gitlab.ts';
@@ -29,6 +29,8 @@ export const StateSnapshot = z.object({
   policies: z.array(Policy),
   /** MRs com nó no canvas. */
   mergeRequests: z.array(MergeRequest),
+  /** Perguntas pendentes dos agentes (ask_human). */
+  questions: z.array(Question),
 });
 export type StateSnapshot = z.infer<typeof StateSnapshot>;
 
@@ -74,9 +76,10 @@ export const ClientMessage = z.discriminatedUnion('type', [
     nodeId: Id,
     edgeId: Id.optional(),
     issueRef: IssueRef.optional(),
-    repos: z.array(z.number().int().positive()).max(1),
+    /** Mais de um repositório: o agente é um orquestrador, que cria um agente por repositório. */
+    repos: z.array(z.number().int().positive()).max(8),
     instruction: z.string().max(20_000).optional(),
-    maxDepth: z.number().int().min(0).max(3).default(0),
+    maxDepth: z.number().int().min(0).max(3).default(1),
     openMr: z.boolean().default(false),
     x: Coord,
     y: Coord,
@@ -113,6 +116,11 @@ export const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('context.remove'), agentId: Id, itemId: z.string().min(1).max(600) }),
   z.object({ type: z.literal('context.summarize'), agentId: Id, itemId: z.string().min(1).max(600) }),
   z.object({ type: z.literal('context.unsummarize'), agentId: Id, itemId: z.string().min(1).max(600) }),
+  z.object({
+    type: z.literal('question.answer'),
+    questionId: Id,
+    answer: z.string().trim().min(1).max(5_000),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
@@ -145,5 +153,6 @@ export const ServerMessage = z.discriminatedUnion('type', [
    */
   z.object({ type: z.literal('state.snapshot'), state: StateSnapshot }),
   z.object({ type: z.literal('context.updated'), context: AgentContext }),
+  z.object({ type: z.literal('question.upsert'), question: Question }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;

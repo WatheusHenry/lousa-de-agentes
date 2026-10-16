@@ -21,10 +21,12 @@ export interface ContextInput {
   mr?: { openOnFinish: boolean; current: MergeRequest | null };
   /** Pedir a nota de passagem ao concluir (automação ligada). */
   handoff?: boolean;
+  /** Profundidade disponível e sub-agentes já criados. */
+  team?: string;
 }
 
 /** Ordem das seções no arquivo: o que o usuário escreveu primeiro, depois o material de apoio. */
-const ORDER: ContextKind[] = ['issue', 'note', 'repo', 'file', 'mr_diff', 'pipeline_log'];
+const ORDER: ContextKind[] = ['plan', 'issue', 'note', 'repo', 'file', 'mr_diff', 'pipeline_log'];
 
 /**
  * Monta o `.agent-canvas/context.md` do agente com os itens de contexto escolhidos. O que vem
@@ -61,6 +63,7 @@ export function buildContext(c: ContextInput): string {
       '- O merge é sempre feito pelo usuário.',
     );
   }
+  if (c.team) parts.push('', '## Equipe', '', c.team);
   if (c.handoff)
     parts.push(
       '',

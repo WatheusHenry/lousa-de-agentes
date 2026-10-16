@@ -97,7 +97,7 @@ export const agent = sqliteTable('agent', {
   worktreePath: text('worktree_path'),
   sessionId: text('session_id'),
   status: text('status', {
-    enum: ['idle', 'running', 'waiting', 'coordinating', 'paused', 'done', 'stopped', 'error'],
+    enum: ['idle', 'queued', 'running', 'waiting', 'coordinating', 'paused', 'done', 'stopped', 'error'],
   }).notNull(),
   error: text('error'),
   depth: integer('depth').notNull().default(0),
@@ -107,6 +107,8 @@ export const agent = sqliteTable('agent', {
   outputTokens: integer('output_tokens').notNull().default(0),
   contextTokens: integer('context_tokens').notNull().default(0),
   costUsd: real('cost_usd').notNull().default(0),
+  /** Plano em checklist publicado com report_plan. */
+  plan: text('plan', { mode: 'json' }).$type<{ text: string; done: boolean; agentId?: string | null }[]>(),
   createdAt: text('created_at').notNull(),
 });
 
@@ -180,7 +182,7 @@ export const contextItem = sqliteTable(
   {
     agentId: text('agent_id').notNull(),
     kind: text('kind', {
-      enum: ['issue', 'repo', 'note', 'file', 'pipeline_log', 'mr_diff'],
+      enum: ['issue', 'repo', 'note', 'file', 'pipeline_log', 'mr_diff', 'plan'],
     }).notNull(),
     ref: text('ref').notNull(),
     added: integer('added', { mode: 'boolean' }).notNull().default(false),
@@ -193,3 +195,14 @@ export const contextItem = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.agentId, t.kind, t.ref] })],
 );
+
+/** Perguntas dos agentes ao usuário (ask_human), respondidas na aba Ações. */
+export const question = sqliteTable('question', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull(),
+  text: text('text').notNull(),
+  options: text('options', { mode: 'json' }).$type<string[]>().notNull(),
+  answer: text('answer'),
+  status: text('status', { enum: ['pending', 'answered', 'cancelled'] }).notNull(),
+  createdAt: text('created_at').notNull(),
+});

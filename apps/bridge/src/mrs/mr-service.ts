@@ -136,8 +136,12 @@ export class MrService {
     const body = (opts.description ?? '').trim();
     // o agente às vezes já escreve "Closes #iid"; não repete
     const alreadyCloses =
-      issue && new RegExp(`\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #${issue.iid}\\b`, 'i').test(body);
-    const closes = issue && issue.projectId === projectId && !alreadyCloses ? `\n\nCloses #${issue.iid}` : '';
+      issue &&
+      new RegExp(`\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) [\\w./-]*#${issue.iid}\\b`, 'i').test(body);
+    // issue de outro projeto (agente criado por um orquestrador): referência completa
+    const issuePath =
+      issue && issue.projectId !== projectId ? this.store.cachedIssue(a.issueRef!)?.projectPath : null;
+    const closes = issue && !alreadyCloses ? `\n\nCloses ${issuePath ?? ''}#${issue.iid}` : '';
     const description = `${body}${closes}\n\n_Aberto por ${a.name} no Agent Canvas._`.trim();
     const client = this.settings.client();
     // um MR aberto para o branch fora do canvas (ou numa execução anterior) é adotado

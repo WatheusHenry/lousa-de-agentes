@@ -49,6 +49,8 @@ export type Activity = z.infer<typeof Activity>;
 /** Status do agente (usado a partir da Fase 2). */
 export const AgentStatus = z.enum([
   'idle',
+  /** Esperando vaga: o supervisor limita os agentes rodando ao mesmo tempo. */
+  'queued',
   'running',
   'waiting',
   'coordinating',

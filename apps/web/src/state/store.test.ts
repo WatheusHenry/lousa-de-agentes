@@ -36,6 +36,7 @@ const empty: StateSnapshot = {
   notes: [],
   noteLinks: [],
   mergeRequests: [],
+  questions: [],
   issues: [issue],
   activity: [],
   agents: [],

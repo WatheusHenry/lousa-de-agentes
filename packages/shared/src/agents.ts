@@ -4,6 +4,15 @@ import { AgentStatus } from './canvas.ts';
 export const AgentRole = z.enum(['main', 'orchestrator', 'sub', 'reviewer', 'fix']);
 export type AgentRole = z.infer<typeof AgentRole>;
 
+/** Um passo do plano publicado com report_plan. */
+export const PlanItem = z.object({
+  text: z.string(),
+  done: z.boolean(),
+  /** Agente responsável pelo passo (um filho criado com spawn_agent), se houver. */
+  agentId: z.string().nullable().optional(),
+});
+export type PlanItem = z.infer<typeof PlanItem>;
+
 export const Agent = z.object({
   id: z.string(),
   name: z.string(),
@@ -30,6 +39,8 @@ export const Agent = z.object({
   /** Tamanho do contexto no último turno (entrada + cache). */
   contextTokens: z.number(),
   costUsd: z.number(),
+  /** Plano em checklist (report_plan). */
+  plan: z.array(PlanItem).nullable(),
   createdAt: z.string(),
 });
 export type Agent = z.infer<typeof Agent>;
@@ -72,6 +83,24 @@ export const AgentEventBody = z.discriminatedUnion('kind', [
     terminalReason: z.string().nullable(),
   }),
   z.object({ kind: z.literal('error'), message: z.string() }),
+  z.object({ kind: z.literal('plan'), items: z.array(PlanItem) }),
+  /** O agente criou um sub-agente com spawn_agent. */
+  z.object({
+    kind: z.literal('spawn'),
+    childId: z.string(),
+    childName: z.string(),
+    repo: z.string(),
+    task: z.string(),
+  }),
+  /** wait_for_agents: começou ou terminou de esperar os filhos. */
+  z.object({ kind: z.literal('wait'), state: z.enum(['start', 'end']), names: z.array(z.string()) }),
+  /** ask_human: pergunta ao usuário e a resposta. */
+  z.object({
+    kind: z.literal('question'),
+    questionId: z.string(),
+    text: z.string(),
+    answer: z.string().nullable(),
+  }),
   /** O bridge regravou o context.md (e avisou o agente, se ele estava rodando). */
   z.object({ kind: z.literal('context'), labels: z.array(z.string()), notified: z.boolean() }),
 ]);
@@ -109,3 +138,16 @@ export const Policy = z.object({
   createdAt: z.string(),
 });
 export type Policy = z.infer<typeof Policy>;
+
+/** Pergunta de um agente ao usuário (ask_human), respondida na aba Ações. */
+export const Question = z.object({
+  id: z.string(),
+  agentId: z.string(),
+  text: z.string(),
+  /** Respostas sugeridas; o usuário também pode escrever outra. */
+  options: z.array(z.string()),
+  answer: z.string().nullable(),
+  status: z.enum(['pending', 'answered', 'cancelled']),
+  createdAt: z.string(),
+});
+export type Question = z.infer<typeof Question>;

@@ -15,7 +15,8 @@ import {
   type ServerMessage,
   type StateSnapshot,
 } from '@agent-canvas/shared';
-import { AgentError, Supervisor } from './agents/supervisor.ts';
+import { AgentError, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
+import { QuestionService } from './agents/questions.ts';
 import type { AgentRunner } from './agents/runner.ts';
 import { ApprovalService } from './approvals/approval-service.ts';
 import { CanvasError, CanvasStore } from './canvas/canvas-store.ts';
@@ -48,6 +49,7 @@ export interface ServerDeps {
   /** Resumidor de itens pesados (o padrão roda `claude -p` com um modelo pequeno). */
   summarizer?: Summarizer;
   contextBudget?: number;
+  limits?: Partial<SupervisorLimits>;
   /** Espera antes de avisar o agente que o contexto mudou (os testes usam 0). */
   contextDebounceMs?: number;
   logger?: boolean;
@@ -69,6 +71,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     ...(deps.contextBudget ? { budget: deps.contextBudget } : {}),
     ...(deps.contextDebounceMs !== undefined ? { debounceMs: deps.contextDebounceMs } : {}),
   });
+  const questions = new QuestionService(db, hub);
   const supervisor = new Supervisor({
     db,
     hub,
@@ -80,7 +83,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     bridgePort: config.port,
     ...(deps.model ? { model: deps.model } : {}),
     context,
+    questions,
+    mrOfAgent: (id) => mrs.mrOfAgent(id),
+    ...(deps.limits ? { limits: deps.limits } : {}),
   });
+  supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
   mrs.onChanged = (mr) => {
     if (mr.agentId) void context.broadcastView(mr.agentId);
@@ -174,6 +181,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     approvals: approvals.pending(),
     policies: approvals.policies(),
     mergeRequests: mrs.canvasMrs(),
+    questions: questions.pending(),
   });
 
   // ---------- HTTP ----------
@@ -304,6 +312,19 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerMcp(app, {
     agentByToken: (t) => supervisor.mcpContext(t),
     approvals,
+    orchestration: {
+      async spawn(agentId, input) {
+        const child = await supervisor.spawn(agentId, input);
+        const st = supervisor.get(child.id)!;
+        return `${child.name} criado para ${input.repo} (${st.status === 'queued' ? 'na fila, começa quando houver vaga' : 'trabalhando'}). Use wait_for_agents para esperar.`;
+      },
+      wait: (agentId, ids) => supervisor.waitFor(agentId, ids),
+      async plan(agentId, items) {
+        supervisor.reportPlan(agentId, items);
+        return 'Plano publicado no canvas.';
+      },
+      ask: (agentId, question, options) => supervisor.ask(agentId, question, options),
+    },
     notes: {
       async write(agentId, input) {
         const a = supervisor.get(agentId);
@@ -373,6 +394,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         msg.type.startsWith('context.') ||
         msg.type === 'issue.comment' ||
         msg.type === 'approval.decide' ||
+        msg.type === 'question.answer' ||
         msg.type === 'policy.remove'
       ) {
         void handleAgentMessage(msg).catch((err) => {
@@ -428,6 +450,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   async function handleAgentMessage(msg: ClientMessage): Promise<void> {
     if (msg.type === 'approval.decide') return approvals.decide(msg.approvalId, msg.decision, msg.remember);
     if (msg.type === 'policy.remove') return approvals.removePolicy(msg.policyId);
+    if (msg.type === 'question.answer') return questions.answer(msg.questionId, msg.answer);
     if (msg.type === 'mr.merge') return void (await mrs.merge(msg.mrRef));
     if (msg.type === 'mr.refresh') return void (await mrs.refresh(msg.mrRef, true));
     if (msg.type === 'mr.comment') return mrs.comment(msg.mrRef, msg.body);

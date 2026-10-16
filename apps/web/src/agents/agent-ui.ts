@@ -3,6 +3,7 @@ import type { Agent, AgentStatus } from '@agent-canvas/shared';
 export const statusLabel = (s: AgentStatus): string =>
   ({
     idle: 'Pronto',
+    queued: 'Na fila',
     running: 'Trabalhando',
     waiting: 'Aguardando você',
     coordinating: 'Coordenando',
@@ -17,6 +18,7 @@ export const statusShort = (s: AgentStatus): string => (s === 'waiting' ? 'Aguar
 export const statusTone = (s: AgentStatus): string =>
   ({
     idle: '',
+    queued: '',
     running: 'info live',
     waiting: 'warn',
     coordinating: 'info',

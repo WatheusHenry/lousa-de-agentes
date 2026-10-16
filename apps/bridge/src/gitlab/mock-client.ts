@@ -201,7 +201,12 @@ export class MockGitLabClient implements GitLabClient {
     o: { sourceBranch: string; targetBranch: string; title: string; description: string },
   ): Promise<GitLabMr> {
     const project = await this.getProject(projectId);
-    if ([...this.mrs.values()].some((m) => m.sourceBranch === o.sourceBranch && m.state === 'opened'))
+    if (
+      [...this.mrs.entries()].some(
+        ([k, m]) =>
+          k.startsWith(`${projectId}!`) && m.sourceBranch === o.sourceBranch && m.state === 'opened',
+      )
+    )
       throw new GitLabError('Já existe um MR aberto para este branch.', 409);
     const iid = this.nextMrIid++;
     const mr = {
@@ -224,7 +229,10 @@ export class MockGitLabClient implements GitLabClient {
 
   async findOpenMergeRequest(projectId: number, sourceBranch: string): Promise<GitLabMr | null> {
     await this.getProject(projectId);
-    const m = [...this.mrs.values()].find((x) => x.sourceBranch === sourceBranch && x.state === 'opened');
+    // o mesmo nome de branch pode existir em projetos diferentes (agentes da mesma issue)
+    const m = [...this.mrs.entries()].find(
+      ([k, x]) => k.startsWith(`${projectId}!`) && x.sourceBranch === sourceBranch && x.state === 'opened',
+    )?.[1];
     return m ? this.view(m) : null;
   }
 

@@ -9,6 +9,7 @@ import { CliRunner } from './agents/cli-runner.ts';
 import type { AgentRunner } from './agents/runner.ts';
 import { buildServer } from './server.ts';
 import type { Summarizer } from './context/summarize.ts';
+import type { SupervisorLimits } from './agents/supervisor.ts';
 import { Session } from './session.ts';
 import { SettingsService } from './settings.ts';
 
@@ -19,7 +20,7 @@ export async function makeBridge(
   makeClient: (url: string, token: string) => GitLabClient = () => new MockGitLabClient(),
   runner: AgentRunner = new CliRunner(),
   port = TEST_PORT,
-  opts: { summarizer?: Summarizer; contextDebounceMs?: number } = {},
+  opts: { summarizer?: Summarizer; contextDebounceMs?: number; limits?: Partial<SupervisorLimits> } = {},
 ) {
   const home = mkdtempSync(join(tmpdir(), 'agent-canvas-test-'));
   const { db, sqlite, close } = openDb(':memory:');
@@ -34,6 +35,7 @@ export async function makeBridge(
     runner,
     home,
     contextDebounceMs: opts.contextDebounceMs ?? 0,
+    ...(opts.limits ? { limits: opts.limits } : {}),
     summarizer: opts.summarizer ?? {
       summarize: async () => {
         throw new Error('resumo não configurado neste teste');

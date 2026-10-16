@@ -51,6 +51,8 @@ export async function createWorktree(opts: {
   agentId: string;
   branchName: string;
   defaultBranch: string | null;
+  /** A base é um branch local (o do agente pai): sem fetch e sem preferir origin/. */
+  localBase?: boolean;
 }): Promise<Worktree> {
   const { repoPath, root, agentId } = opts;
   if (!existsSync(join(repoPath, '.git'))) throw new GitError(`${repoPath} não é um repositório git.`);
@@ -60,9 +62,9 @@ export async function createWorktree(opts: {
 
   const def = opts.defaultBranch || (await tryGit(repoPath, 'symbolic-ref', '--short', 'HEAD')) || 'main';
   // tenta atualizar o branch padrão; sem rede, usa o que houver localmente
-  await tryGit(repoPath, 'fetch', '--quiet', 'origin', def);
+  if (!opts.localBase) await tryGit(repoPath, 'fetch', '--quiet', 'origin', def);
   let base = def;
-  for (const candidate of [`origin/${def}`, def, 'HEAD']) {
+  for (const candidate of opts.localBase ? [def] : [`origin/${def}`, def, 'HEAD']) {
     if (await tryGit(repoPath, 'rev-parse', '--verify', '--quiet', `${candidate}^{commit}`)) {
       base = candidate;
       break;

@@ -13,6 +13,8 @@ export interface RunnerStartOptions {
   appendSystemPrompt: string;
   allowedTools: string[];
   disallowedTools: string[];
+  /** Pastas extras que o agente pode ler (o orquestrador lê os clones dos repositórios). */
+  addDirs?: string[];
   model?: string;
 }
 

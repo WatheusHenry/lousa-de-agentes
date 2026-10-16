@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import {
   type Agent,
+  type AgentRole,
+  type ContextKind,
+  type MergeRequest,
+  type PlanItem,
+  type Question,
   type AgentEvent,
   type AgentEventBody,
   type AgentStatus,
@@ -20,12 +25,23 @@ import { createWorktree, slugify } from '../git/worktree.ts';
 import type { Hub } from '../hub.ts';
 import { APPROVE_TOOL, CANVAS_TOOLS, MCP_SERVER_NAME, type McpAgentContext } from '../mcp/canvas-server.ts';
 import type { SettingsService } from '../settings.ts';
+import type { QuestionService } from './questions.ts';
 import type { AgentProcess, AgentRunner } from './runner.ts';
 import { parseLine } from './stream-parser.ts';
 
 export class AgentError extends Error {}
 
-const ROLE_PROMPT = readFileSync(new URL('./roles/main.md', import.meta.url), 'utf8');
+const rolePrompt = (name: string) => readFileSync(new URL(`./roles/${name}.md`, import.meta.url), 'utf8');
+/** Prompt de sistema de cada papel (reviewer e fix chegam com as automações da Fase 6). */
+const ROLE_PROMPTS: Record<AgentRole, string> = {
+  main: rolePrompt('main'),
+  orchestrator: rolePrompt('orchestrator'),
+  sub: rolePrompt('sub'),
+  reviewer: rolePrompt('main'),
+  fix: rolePrompt('main'),
+};
+/** Estados em que um filho já não está trabalhando (wait_for_agents devolve). */
+const SETTLED: AgentStatus[] = ['done', 'error', 'stopped', 'paused', 'idle'];
 const EVENTS_PER_AGENT = 300;
 /**
  * O Claude Code descreve uma interrupção ao modelo como "o usuário não quer prosseguir".
@@ -51,7 +67,25 @@ interface Live {
   inputClosed: boolean;
   /** Mensagem que chegou enquanto o processo terminava; vai na retomada logo depois. */
   afterExit: string | null;
+  /** Tempo máximo do agente (limite do supervisor). */
+  timer: ReturnType<typeof setTimeout> | null;
 }
+
+/** Limites globais do supervisor (seção 8 do plano). */
+export interface SupervisorLimits {
+  /** Agentes rodando ao mesmo tempo; o resto fica na fila. Coordenando não conta. */
+  maxRunning: number;
+  /** Tempo máximo de um processo de agente, em minutos; depois disso ele é pausado. */
+  maxAgentMinutes: number;
+  /** Tokens (entrada + saída) somados de uma árvore de agentes. */
+  treeTokenBudget: number;
+}
+
+export const DEFAULT_LIMITS: SupervisorLimits = {
+  maxRunning: 4,
+  maxAgentMinutes: 60,
+  treeTokenBudget: 5_000_000,
+};
 
 export interface SupervisorDeps {
   db: Db;
@@ -65,7 +99,22 @@ export interface SupervisorDeps {
   bridgePort: number;
   model?: string;
   /** Monta o context.md com os itens de contexto do agente. */
-  context: { render(agentId: string): Promise<string> };
+  context: {
+    render(agentId: string): Promise<string>;
+    /** Itens que o sub-agente recebe ao nascer (plano do pai e o que o pai passou). */
+    seed(agentId: string, items: { kind: ContextKind; ref: string }[]): void;
+  };
+  questions: QuestionService;
+  /** MR do agente, para o resumo do wait_for_agents. */
+  mrOfAgent?: (agentId: string) => MergeRequest | null;
+  limits?: Partial<SupervisorLimits>;
+}
+
+/** Fila de agentes esperando vaga para rodar. */
+interface Queued {
+  agentId: string;
+  text: string;
+  resume: boolean;
 }
 
 /** Ciclo de vida dos agentes: worktree, contexto, processo, eventos, status e permissões. */
@@ -74,15 +123,21 @@ export class Supervisor {
   private mcpTokens = new Map<string, string>(); // token → agentId
   /** Mudanças de contexto de agentes parados, avisadas na próxima mensagem. */
   private contextNotices = new Map<string, string[]>();
+  private queue: Queued[] = [];
+  /** wait_for_agents em andamento: quem espera, quais filhos e como responder. */
+  private waiters: { callerId: string; ids: string[]; done: (cancelled: string | null) => void }[] = [];
+  private readonly limits: SupervisorLimits;
   private closed = false;
 
   constructor(private readonly d: SupervisorDeps) {
+    this.limits = { ...DEFAULT_LIMITS, ...d.limits };
     d.approvals.onChange = (agentId, a) => this.onApproval(agentId, a);
+    d.questions.onChange = (q) => this.onQuestion(q);
     // agentes que estavam rodando quando o bridge parou: ficam pausados, prontos para retomar
     const stale = d.db
       .select()
       .from(agentT)
-      .where(inArray(agentT.status, ['running', 'waiting', 'coordinating']))
+      .where(inArray(agentT.status, ['running', 'waiting', 'coordinating', 'queued']))
       .all();
     for (const a of stale) {
       this.setStatus(a.id, a.sessionId ? 'paused' : 'idle', 'O bridge reiniciou. Retome para continuar.');
@@ -174,10 +229,12 @@ export class Supervisor {
         .from(agentT)
         .get()?.n ?? 0;
     const instruction = msg.instruction?.trim() || null;
+    // mais de um repositório: um orquestrador divide o trabalho em um agente por repositório
+    const role: AgentRole = repos.length > 1 ? 'orchestrator' : 'main';
     const row: Row = {
       id: msg.agentId,
       name: `agente-${count + 1}`,
-      role: 'main',
+      role,
       parentId: null,
       issueRef: msg.issueRef ?? null,
       repos,
@@ -195,6 +252,7 @@ export class Supervisor {
       outputTokens: 0,
       contextTokens: 0,
       costUsd: 0,
+      plan: null,
       createdAt: nowIso(),
     };
     const n = {
@@ -215,7 +273,9 @@ export class Supervisor {
     ]);
     if (issue) this.linkIssue(row.id, msg.issueRef!, msg.edgeId);
     this.d.hub.broadcast(
-      this.d.store.logActivity(`${row.name} criado${issue ? ` para a issue #${issue.iid}` : ''}`),
+      this.d.store.logActivity(
+        `${row.name} criado${role === 'orchestrator' ? ' como orquestrador' : ''}${issue ? ` para a issue #${issue.iid}` : ''}`,
+      ),
     );
     if (instruction) {
       this.event(row.id, { kind: 'user_message', text: instruction });
@@ -230,6 +290,7 @@ export class Supervisor {
     if (msg.repos) {
       this.checkRepos(msg.repos);
       set.repos = msg.repos;
+      set.role = msg.repos.length > 1 ? 'orchestrator' : 'main';
     }
     if (msg.issueRef !== undefined) {
       const issue = msg.issueRef ? this.d.store.cachedIssue(msg.issueRef) : null;
@@ -273,6 +334,8 @@ export class Supervisor {
     if (!l) return;
     l.pausing = true;
     this.d.approvals.cancelForAgent(agentId, 'O usuário pausou o agente.');
+    this.d.questions.cancelForAgent(agentId);
+    this.cancelWait(agentId, 'A espera foi cancelada: o usuário pausou você.');
     l.proc.interrupt();
   }
 
@@ -294,13 +357,16 @@ export class Supervisor {
   stop(agentId: string, reason: string): void {
     const l = this.live.get(agentId);
     this.d.approvals.cancelForAgent(agentId, reason);
+    this.d.questions.cancelForAgent(agentId);
+    this.cancelWait(agentId, 'A espera foi cancelada: o agente foi parado.');
+    this.queue = this.queue.filter((q) => q.agentId !== agentId);
     const a = this.get(agentId);
     if (!a) return;
     if (l) {
       l.stopping = true;
       l.proc.kill();
     }
-    if (!['done', 'stopped', 'error', 'idle'].includes(a.status) || l) {
+    if (!['done', 'stopped', 'error', 'idle'].includes(a.status) || l || a.status === 'queued') {
       this.setStatus(agentId, 'stopped', reason);
       this.d.hub.broadcast(this.d.store.logActivity(`${a.name} parado`));
     }
@@ -313,14 +379,68 @@ export class Supervisor {
 
   shutdown(): void {
     this.closed = true;
+    this.queue = [];
+    for (const w of this.waiters) w.done('O bridge foi encerrado.');
+    this.waiters = [];
     for (const [id, l] of this.live) {
       l.stopping = true;
+      if (l.timer) clearTimeout(l.timer);
       l.proc.kill();
       this.setStatus(id, 'paused', 'O bridge foi encerrado. Retome para continuar.');
     }
   }
 
   // ---------- execução ----------
+
+  /** Processos rodando que contam no limite (coordenando, esperando os filhos, não conta). */
+  private runningCount(): number {
+    let n = 0;
+    for (const id of this.live.keys()) if (this.get(id)?.status !== 'coordinating') n++;
+    return n;
+  }
+
+  /** Começa o próximo da fila, se houver vaga. */
+  private drainQueue(): void {
+    while (this.queue.length && this.runningCount() < this.limits.maxRunning && !this.closed) {
+      const q = this.queue.shift()!;
+      void this.launch(q.agentId, q.text, q.resume).catch(() => {});
+    }
+  }
+
+  /** Tokens (entrada + saída) somados da árvore do agente, a partir da raiz. */
+  treeTokens(agentId: string): number {
+    const all = this.agents();
+    let root = all.find((a) => a.id === agentId);
+    while (root?.parentId) root = all.find((a) => a.id === root!.parentId) ?? root;
+    if (!root) return 0;
+    const ids = new Set([root.id]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const a of all)
+        if (a.parentId && ids.has(a.parentId) && !ids.has(a.id)) {
+          ids.add(a.id);
+          grew = true;
+        }
+    }
+    return all.filter((a) => ids.has(a.id)).reduce((s, a) => s + a.inputTokens + a.outputTokens, 0);
+  }
+
+  private repoRow(projectId: number) {
+    const find = () => this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, projectId)).get();
+    let r = find();
+    if (!r) throw new AgentError('Projeto não está entre os escolhidos nas configurações.');
+    if (!r.localPath) {
+      // pode ter sido clonado depois de escolher os projetos
+      this.d.settings.locateClones();
+      r = find()!;
+      this.d.hub.broadcast({ type: 'settings.updated', settings: this.d.settings.view() });
+    }
+    if (!r.localPath)
+      throw new AgentError(
+        `Não achei o clone de ${r.pathWithNamespace}. Na aba Repos, use Clonar ou Informar caminho.`,
+      );
+    return r as typeof r & { localPath: string };
+  }
 
   private async launch(agentId: string, text: string, resume: boolean): Promise<void> {
     let a = this.mustGet(agentId);
@@ -330,35 +450,54 @@ export class Supervisor {
         throw new AgentError(
           'Escolha um repositório: arraste um da aba Repos ou uma issue para cima do agente.',
         );
-      const findRepo = () => this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, repoId)).get();
-      let r = findRepo();
-      if (!r) throw new AgentError('Projeto não está entre os escolhidos nas configurações.');
-      if (!r.localPath) {
-        // pode ter sido clonado depois de escolher os projetos
-        this.d.settings.locateClones();
-        r = findRepo()!;
-        this.d.hub.broadcast({ type: 'settings.updated', settings: this.d.settings.view() });
-      }
-      if (!r.localPath)
+      if (this.treeTokens(agentId) > this.limits.treeTokenBudget)
         throw new AgentError(
-          `Não achei o clone de ${r.pathWithNamespace}. Na aba Repos, use Clonar ou Informar caminho.`,
+          `A árvore deste agente passou do orçamento de ${Math.round(this.limits.treeTokenBudget / 1000)}k tokens (AGENT_CANVAS_TREE_TOKEN_BUDGET).`,
         );
+      if (this.runningCount() >= this.limits.maxRunning) {
+        // sem vaga: entra na fila e começa quando outro agente terminar
+        this.queue.push({ agentId, text, resume });
+        this.setStatus(agentId, 'queued', `na fila: ${this.limits.maxRunning} agentes já estão rodando`);
+        return;
+      }
+      const repos = a.repos.map((id) => this.repoRow(id));
+      const r = repos[0]!;
 
       if (!a.worktreePath) {
-        this.setStatus(agentId, 'running', 'preparando o worktree');
-        const issue = a.issueRef ? this.d.store.cachedIssue(a.issueRef) : null;
-        const branchName = issue
-          ? `agent/${issue.iid}-${slugify(issue.title)}`
-          : `agent/${slugify(a.title)}-${agentId.slice(-4)}`;
-        const wt = await createWorktree({
-          repoPath: r.localPath,
-          root: join(this.d.home, 'worktrees'),
+        this.setStatus(
           agentId,
-          branchName,
-          defaultBranch: r.defaultBranch,
-        });
-        a = this.save(agentId, { worktreePath: wt.path, branch: wt.branch });
-        this.d.hub.broadcast(this.d.store.logActivity(`${a.name} trabalhando em ${r.name} · ${wt.branch}`));
+          'running',
+          a.role === 'orchestrator' ? 'preparando o espaço de trabalho' : 'preparando o worktree',
+        );
+        if (a.role === 'orchestrator') {
+          // o orquestrador não escreve código: pasta própria e leitura dos clones (--add-dir)
+          const ws = join(this.d.home, 'workspaces', agentId);
+          mkdirSync(ws, { recursive: true });
+          a = this.save(agentId, { worktreePath: ws });
+          this.d.hub.broadcast(
+            this.d.store.logActivity(`${a.name} coordenando ${repos.map((x) => x.name).join(', ')}`),
+          );
+        } else {
+          const issue = a.issueRef ? this.d.store.cachedIssue(a.issueRef) : null;
+          const parent = a.parentId ? this.get(a.parentId) : null;
+          // sub-agente no mesmo repositório do pai: branch a partir do branch do pai
+          const fromParent = a.role === 'sub' && parent?.branch && parent.repos[0] === repoId;
+          const branchName = fromParent
+            ? `${parent.branch}-${slugify(a.title, 3)}`
+            : issue
+              ? `agent/${issue.iid}-${slugify(issue.title)}`
+              : `agent/${slugify(a.title)}-${agentId.slice(-4)}`;
+          const wt = await createWorktree({
+            repoPath: r.localPath,
+            root: join(this.d.home, 'worktrees'),
+            agentId,
+            branchName,
+            defaultBranch: fromParent ? parent.branch : r.defaultBranch,
+            ...(fromParent ? { localBase: true } : {}),
+          });
+          a = this.save(agentId, { worktreePath: wt.path, branch: wt.branch });
+          this.d.hub.broadcast(this.d.store.logActivity(`${a.name} trabalhando em ${r.name} · ${wt.branch}`));
+        }
       }
 
       await this.refreshContext(a);
@@ -378,9 +517,10 @@ export class Supervisor {
           resume: started,
           mcpConfigPath: this.writeMcpConfig(agentId),
           permissionPromptTool: APPROVE_TOOL,
-          appendSystemPrompt: ROLE_PROMPT,
+          appendSystemPrompt: ROLE_PROMPTS[a.role],
           allowedTools: [...CANVAS_TOOLS, ...this.d.approvals.allowedTools(repoId)],
           disallowedTools: DISALLOWED_TOOLS,
+          ...(a.role === 'orchestrator' ? { addDirs: repos.map((x) => x.localPath) } : {}),
           ...(this.d.model ? { model: this.d.model } : {}),
         },
         {
@@ -388,6 +528,16 @@ export class Supervisor {
           onExit: (info) => this.onExit(agentId, info),
         },
       );
+      const timer = setTimeout(() => {
+        const cur = this.get(agentId);
+        if (!this.live.has(agentId) || cur?.status === 'coordinating') return;
+        this.event(agentId, {
+          kind: 'error',
+          message: `Passou do tempo máximo de ${this.limits.maxAgentMinutes} min (AGENT_CANVAS_MAX_AGENT_MINUTES). Pausado; retome para continuar.`,
+        });
+        this.pause(agentId);
+      }, this.limits.maxAgentMinutes * 60_000);
+      timer.unref?.();
       this.live.set(agentId, {
         proc,
         turnOpen: true,
@@ -395,6 +545,7 @@ export class Supervisor {
         stopping: false,
         inputClosed: false,
         afterExit: null,
+        timer,
       });
       this.save(agentId, { error: null });
       this.setStatus(agentId, 'running');
@@ -535,7 +686,11 @@ export class Supervisor {
     if (this.closed) return;
     const l = this.live.get(agentId);
     this.live.delete(agentId);
+    if (l?.timer) clearTimeout(l.timer);
     this.d.approvals.cancelForAgent(agentId, 'O processo do agente terminou.');
+    this.d.questions.cancelForAgent(agentId);
+    this.cancelWait(agentId, 'O processo terminou durante a espera.');
+    queueMicrotask(() => this.drainQueue());
     if (l?.afterExit && !l.stopping) {
       // erros da retomada já viram evento e status dentro do launch
       void this.launch(agentId, l.afterExit, true).catch(() => {});
@@ -572,8 +727,254 @@ export class Supervisor {
       this.d.hub.broadcast(
         this.d.store.logActivity(`${a.name} pediu permissão: ${ap.toolName}(${ap.summary})`),
       );
-    } else if (a.status === 'waiting' && !this.d.approvals.hasPending(agentId) && this.live.has(agentId)) {
+    } else if (
+      a.status === 'waiting' &&
+      !this.d.approvals.hasPending(agentId) &&
+      !this.d.questions.hasPending(agentId) &&
+      this.live.has(agentId)
+    ) {
       this.setStatus(agentId, 'running');
+    }
+  }
+
+  // ---------- orquestração (ferramentas do MCP do canvas) ----------
+
+  /**
+   * spawn_agent: cria um filho num repositório, com uma tarefa. Recusa além da profundidade
+   * escolhida pelo usuário. O filho herda a issue, as notas ligadas aos agentes acima dele e o
+   * plano do pai, e começa na hora (ou entra na fila).
+   */
+  async spawn(
+    parentId: string,
+    input: { repo: string; task: string; context?: { kind: ContextKind; ref: string }[] },
+  ): Promise<Agent> {
+    const p = this.mustGet(parentId);
+    if (p.depth >= p.maxDepth)
+      throw new AgentError(
+        p.maxDepth === 0
+          ? 'O usuário não liberou sub-agentes para esta tarefa. Faça o trabalho você mesmo.'
+          : `Profundidade máxima (${p.maxDepth}) atingida: faça esta parte você mesmo.`,
+      );
+    if (this.treeTokens(parentId) > this.limits.treeTokenBudget)
+      throw new AgentError('A árvore de agentes passou do orçamento de tokens; termine com o que já tem.');
+    const want = input.repo.trim().toLowerCase();
+    const project = this.d.settings
+      .projects()
+      .find(
+        (x) =>
+          String(x.id) === want ||
+          x.name.toLowerCase() === want ||
+          x.pathWithNamespace.toLowerCase() === want,
+      );
+    if (!project)
+      throw new AgentError(
+        `Repositório "${input.repo}" não está entre os escolhidos. Opções: ${this.d.settings
+          .projects()
+          .map((x) => x.name)
+          .join(', ')}.`,
+      );
+    if (p.role === 'orchestrator' && !p.repos.includes(project.id))
+      throw new AgentError(`${project.name} não está entre os repositórios desta tarefa.`);
+    const count =
+      this.d.db
+        .select({ n: sql<number>`count(*)` })
+        .from(agentT)
+        .get()?.n ?? 0;
+    const siblings = this.d.db.select().from(agentT).where(eq(agentT.parentId, parentId)).all().length;
+    const id = `a_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    const role: AgentRole = p.role === 'orchestrator' || project.id !== p.repos[0] ? 'main' : 'sub';
+    const task = input.task.trim();
+    const row: Row = {
+      id,
+      name: `agente-${count + 1}`,
+      role,
+      parentId,
+      issueRef: p.issueRef,
+      repos: [project.id],
+      instruction: task,
+      title: task.split('\n')[0]!.slice(0, 80),
+      branch: null,
+      worktreePath: null,
+      sessionId: null,
+      status: 'idle',
+      error: null,
+      depth: p.depth + 1,
+      maxDepth: p.maxDepth,
+      // sub-agente no mesmo repositório entrega pelo branch; o pai abre o MR
+      openMr: role === 'sub' ? false : p.openMr,
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 0,
+      costUsd: 0,
+      plan: null,
+      createdAt: nowIso(),
+    };
+    const pn = this.d.db
+      .select()
+      .from(node)
+      .where(and(eq(node.type, 'agent'), eq(node.refId, parentId), isNull(node.removedAt)))
+      .get();
+    const n = {
+      id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      type: 'agent' as const,
+      refId: id,
+      x: (pn?.x ?? 0) + (siblings % 3) * 436 - (siblings >= 3 ? 0 : 0),
+      y: (pn?.y ?? 0) + 420 + Math.floor(siblings / 3) * 400,
+      createdAt: nowIso(),
+    };
+    const e = {
+      id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      fromNodeId: pn?.id ?? '',
+      toNodeId: n.id,
+      kind: 'spawn' as const,
+    };
+    this.d.db.transaction((tx) => {
+      tx.insert(agentT).values(row).run();
+      tx.insert(node).values(n).run();
+      if (pn) tx.insert(edge).values(e).run();
+    });
+    this.d.hub.broadcast([
+      { type: 'agent.upsert', agent: toAgent(row) },
+      { type: 'node.upsert', node: n },
+      ...(pn ? [{ type: 'edge.upsert' as const, edge: e }] : []),
+      this.d.store.logActivity(`${p.name} criou ${row.name} para ${project.name}`),
+    ]);
+    // contexto do filho: o plano do pai e o que o pai passou
+    this.d.context.seed(id, [
+      ...(p.plan?.length ? [{ kind: 'plan' as const, ref: parentId }] : []),
+      ...(input.context ?? []),
+    ]);
+    // liga o passo do plano que cita o repositório ao filho
+    if (p.plan) {
+      const idx = p.plan.findIndex(
+        (it) => !it.agentId && !it.done && it.text.toLowerCase().includes(project.name.toLowerCase()),
+      );
+      if (idx >= 0)
+        this.savePlan(
+          parentId,
+          p.plan.map((it, k) => (k === idx ? { ...it, agentId: id } : it)),
+        );
+    }
+    this.event(parentId, { kind: 'spawn', childId: id, childName: row.name, repo: project.name, task });
+    this.event(id, { kind: 'user_message', text: task });
+    void this.launch(id, task, false).catch(() => {});
+    return toAgent(row);
+  }
+
+  /**
+   * wait_for_agents: espera os filhos (todos ou os pedidos) pararem de trabalhar e devolve um
+   * resumo de cada um. Enquanto isso o chamador fica "coordenando" e não conta no limite.
+   */
+  async waitFor(callerId: string, ids?: string[]): Promise<string> {
+    const caller = this.mustGet(callerId);
+    const children = this.agents().filter((a) => a.parentId === callerId);
+    const targets = ids?.length
+      ? children.filter((c) => ids.includes(c.id) || ids.includes(c.name))
+      : children;
+    if (!targets.length) return 'Você não tem agentes filhos para esperar.';
+    const names = targets.map((t) => t.name);
+    const settled = () => targets.every((t) => SETTLED.includes(this.get(t.id)!.status));
+    if (!settled()) {
+      this.event(callerId, { kind: 'wait', state: 'start', names });
+      if (caller.status !== 'waiting') this.setStatus(callerId, 'coordinating');
+      this.drainQueue();
+      const reason = await new Promise<string | null>((resolve) => {
+        this.waiters.push({
+          callerId,
+          ids: targets.map((t) => t.id),
+          done: resolve,
+        });
+      });
+      if (reason) return reason;
+      this.event(callerId, { kind: 'wait', state: 'end', names });
+      if (this.live.has(callerId)) this.setStatus(callerId, 'running');
+    }
+    return targets.map((t) => this.childSummary(t.id)).join('\n\n');
+  }
+
+  private childSummary(id: string): string {
+    const a = this.mustGet(id);
+    const project = this.d.settings.projects().find((x) => x.id === a.repos[0]);
+    const last = this.events(id, undefined, 400).find((e) => e.body.kind === 'result');
+    const result = last?.body.kind === 'result' ? (last.body.text ?? '') : '';
+    const mr = this.d.mrOfAgent?.(id);
+    return [
+      `## ${a.name} (${project?.name ?? 'sem repositório'}): ${a.status}`,
+      a.branch ? `Branch: ${a.branch}` : null,
+      mr ? `MR !${mr.iid} (${mr.state}, pipeline: ${mr.pipelineStatus}): ${mr.webUrl}` : null,
+      a.error ? `Erro: ${a.error}` : null,
+      result ? `Resposta final:\n${result.slice(0, 2000)}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  /** Confere as esperas depois de qualquer mudança de status. */
+  private checkWaiters(): void {
+    for (const w of [...this.waiters]) {
+      if (w.ids.every((id) => SETTLED.includes(this.get(id)?.status ?? 'done'))) {
+        this.waiters.splice(this.waiters.indexOf(w), 1);
+        w.done(null);
+      }
+    }
+  }
+
+  private cancelWait(callerId: string, why: string): void {
+    for (const w of this.waiters.filter((x) => x.callerId === callerId)) {
+      this.waiters.splice(this.waiters.indexOf(w), 1);
+      w.done(why);
+    }
+  }
+
+  /** report_plan: publica o plano em checklist (terminal e painel). */
+  reportPlan(agentId: string, items: PlanItem[]): void {
+    const a = this.mustGet(agentId);
+    const old = a.plan ?? [];
+    // mantém o vínculo passo → filho quando o texto do passo não mudou
+    const plan = items.map((it) => ({
+      text: it.text,
+      done: it.done,
+      agentId: it.agentId ?? old.find((o) => o.text === it.text)?.agentId ?? null,
+    }));
+    this.savePlan(agentId, plan, true);
+    this.event(agentId, { kind: 'plan', items: plan });
+  }
+
+  /**
+   * Grava o plano. Só um report_plan do pai avisa os filhos (o plano está no contexto deles);
+   * ligar um passo a um filho ou marcar como feito não interrompe ninguém.
+   */
+  private savePlan(agentId: string, plan: PlanItem[], notifyChildren = false): void {
+    this.save(agentId, { plan });
+    if (notifyChildren)
+      for (const c of this.agents().filter((x) => x.parentId === agentId)) this.onPlanChanged?.(c.id);
+  }
+
+  /** O serviço de contexto avisa os filhos que o plano do pai mudou. */
+  onPlanChanged: ((childId: string) => void) | null = null;
+
+  /** ask_human: pergunta ao usuário pela aba Ações e espera a resposta. */
+  async ask(agentId: string, text: string, options: string[]): Promise<string> {
+    this.mustGet(agentId);
+    const answer = await this.d.questions.ask(agentId, text, options);
+    return answer ?? 'A pergunta foi cancelada (o agente foi pausado ou parado).';
+  }
+
+  private onQuestion(q: Question): void {
+    if (this.closed) return;
+    const a = this.get(q.agentId);
+    if (!a) return;
+    this.event(q.agentId, { kind: 'question', questionId: q.id, text: q.text, answer: q.answer });
+    if (q.status === 'pending') {
+      this.setStatus(q.agentId, 'waiting');
+      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} perguntou: ${q.text.slice(0, 80)}`));
+    } else if (
+      a.status === 'waiting' &&
+      !this.d.approvals.hasPending(q.agentId) &&
+      !this.d.questions.hasPending(q.agentId) &&
+      this.live.has(q.agentId)
+    ) {
+      this.setStatus(q.agentId, 'running');
     }
   }
 
@@ -640,6 +1041,19 @@ export class Supervisor {
     if (!a || (a.status === status && !note)) return;
     this.save(id, { status });
     this.event(id, { kind: 'status', status, ...(note ? { note } : {}) });
+    if (status === 'done' && a.parentId) {
+      // passo do plano do pai ligado a este filho
+      const p = this.get(a.parentId);
+      if (p?.plan?.some((it) => it.agentId === id && !it.done))
+        this.savePlan(
+          p.id,
+          p.plan.map((it) => (it.agentId === id ? { ...it, done: true } : it)),
+        );
+    }
+    if (a.status !== status) {
+      this.checkWaiters();
+      if (status === 'coordinating') this.drainQueue();
+    }
   }
 
   private event(

@@ -123,7 +123,7 @@ export class ContextService {
   /** Pasta de onde ler arquivos do projeto: o worktree do agente ou, antes dele, o clone. */
   private dirFor(a: AgentRow, projectId: number | undefined = a.repos[0]): string | null {
     if (projectId === undefined) return null;
-    if (projectId === a.repos[0] && a.worktreePath) return a.worktreePath;
+    if (projectId === a.repos[0] && a.worktreePath && a.role !== 'orchestrator') return a.worktreePath;
     return (
       this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, projectId)).get()?.localPath ?? null
     );
@@ -131,15 +131,27 @@ export class ContextService {
 
   // ---------- quais itens ----------
 
-  /** Nós do canvas cujas notas ligadas viram contexto do agente: o dele e o da issue. */
+  /** Agentes acima deste (pai, avô…): as notas ligadas a eles são herdadas. */
+  private ancestors(a: AgentRow): string[] {
+    const out: string[] = [];
+    let cur = a.parentId;
+    while (cur && !out.includes(cur)) {
+      out.push(cur);
+      cur = this.d.db.select({ p: agentT.parentId }).from(agentT).where(eq(agentT.id, cur)).get()?.p ?? null;
+    }
+    return out;
+  }
+
+  /** Nós do canvas cujas notas ligadas viram contexto do agente: o dele, os dos agentes acima e o da issue. */
   private targetNodes(a: AgentRow): string[] {
+    const agents = new Set([a.id, ...this.ancestors(a)]);
     return this.d.db
       .select()
       .from(node)
       .where(isNull(node.removedAt))
       .all()
       .filter(
-        (n) => (n.type === 'agent' && n.refId === a.id) || (n.type === 'issue' && n.refId === a.issueRef),
+        (n) => (n.type === 'agent' && agents.has(n.refId)) || (n.type === 'issue' && n.refId === a.issueRef),
       )
       .map((n) => n.id);
   }
@@ -163,8 +175,9 @@ export class ContextService {
       if (!excluded.has(id) && !out.has(id)) out.set(id, r);
     };
     if (a.issueRef) put({ kind: 'issue', ref: a.issueRef, source: 'link', removable: false });
-    if (a.repos[0] !== undefined)
-      put({ kind: 'repo', ref: String(a.repos[0]), source: 'link', removable: false });
+    // o orquestrador recebe o índice de cada repositório da tarefa
+    for (const id of a.role === 'orchestrator' ? a.repos : a.repos.slice(0, 1))
+      put({ kind: 'repo', ref: String(id), source: 'link', removable: false });
     const agentNode = this.agentNodeId(a);
     const targets = this.targetNodes(a);
     if (targets.length) {
@@ -293,6 +306,24 @@ export class ContextService {
             : '(sem mudanças)';
           return { label: `diff do !${iid}`, heading: `Diff do MR !${iid}`, body, external: true };
         });
+      case 'plan': {
+        const p = this.d.db.select().from(agentT).where(eq(agentT.id, ref)).get();
+        if (!p) throw new ContextError('Agente do plano não existe mais.');
+        const lines = (p.plan ?? []).map((it) => {
+          const who = it.agentId ? this.agentName(it.agentId) : null;
+          return `- [${it.done ? 'x' : ' '}] ${it.text}${who ? ` (${who === a.name ? 'você' : who})` : ''}`;
+        });
+        return {
+          label: `plano de ${p.name}`,
+          heading: `Plano de ${p.name}, que criou você`,
+          body: [
+            `${p.name} dividiu o trabalho assim. A sua parte é a tarefa da primeira mensagem.`,
+            '',
+            ...(lines.length ? lines : ['(sem plano publicado)']),
+          ].join('\n'),
+          external: false,
+        };
+      }
       case 'pipeline_log':
         return this.cached(`pipeline_log:${ref}@`, 60_000, async () => {
           const { projectId, iid } = parseMrRef(ref);
@@ -359,7 +390,7 @@ export class ContextService {
 
   private header(a: AgentRow) {
     const r =
-      a.repos[0] !== undefined
+      a.repos[0] !== undefined && a.role !== 'orchestrator'
         ? this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, a.repos[0])).get()
         : null;
     return {
@@ -370,9 +401,25 @@ export class ContextService {
             branch: a.branch ?? '(ainda não criado)',
           }
         : null,
-      mr: { openOnFinish: a.openMr, current: this.d.mrs.mrOfAgent(a.id) },
-      handoff: this.d.settings.automations().handoff,
+      ...(a.role === 'orchestrator'
+        ? {}
+        : { mr: { openOnFinish: a.openMr, current: this.d.mrs.mrOfAgent(a.id) } }),
+      // a nota de passagem é da raiz (agente da issue ou orquestrador), como no plano
+      handoff: this.d.settings.automations().handoff && a.depth === 0,
+      team: this.team(a),
     };
+  }
+
+  /** Profundidade e sub-agentes, para o agente saber se pode delegar. */
+  private team(a: AgentRow): string {
+    const left = a.maxDepth - a.depth;
+    const kids = this.d.db.select().from(agentT).where(eq(agentT.parentId, a.id)).all();
+    return [
+      left > 0
+        ? `- Você pode criar sub-agentes com \`spawn_agent\` (até ${left} nível${left > 1 ? 's' : ''} abaixo de você).`
+        : '- Você não pode criar sub-agentes nesta tarefa.',
+      ...kids.map((k) => `- ${k.name}: ${k.status}${k.branch ? `, branch ${k.branch}` : ''}`),
+    ].join('\n');
   }
 
   /** O context.md do agente, como vai para o worktree. */
@@ -485,6 +532,12 @@ export class ContextService {
       .values({ agentId, kind, ref, createdAt: nowIso(), ...set })
       .onConflictDoUpdate({ target: [ctxT.agentId, ctxT.kind, ctxT.ref], set })
       .run();
+  }
+
+  /** Itens com que um sub-agente nasce (o plano do pai e o que o pai passou no spawn_agent). */
+  seed(agentId: string, items: { kind: ContextKind; ref: string }[]): void {
+    for (const it of items.slice(0, 20))
+      this.upsert(agentId, it.kind, it.ref, { added: true, excluded: false });
   }
 
   async add(agentId: string, kind: ContextKind, ref: string): Promise<void> {
