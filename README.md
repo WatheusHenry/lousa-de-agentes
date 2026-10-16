@@ -7,16 +7,16 @@ Canvas para orquestrar agentes do Claude Code a partir de issues e repositórios
 
 ## Estado atual
 
-| Fase                | O que entrega                                                                        | Estado    |
-| ------------------- | ------------------------------------------------------------------------------------ | --------- |
-| 0 · Base            | Monorepo, bridge com token de sessão, tela de configuração do GitLab                 | pronta    |
-| 1 · Canvas          | Issues reais no canvas, notas, vínculos, desfazer, persistência                      | pronta    |
-| 2 · Um agente real  | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela aba Ações     | pronta    |
-| 3 · MRs e pipelines | Agente abre o MR, nó no canvas com pipeline ao vivo, diff, discussão, merge humano   | pronta    |
-| 4 · Contexto        | Itens de contexto, medidor de tokens, resumo, sugestões, releitura ao vivo, passagem | pronta    |
-| 5 · Orquestração    | Orquestrador para issues com vários repositórios, sub-agentes, plano, perguntas      | pronta    |
-| 6 · Automações      | Poller, agentes de correção e revisão, comentários ao autor, label agent-ready       | pronta    |
-| 7 · Robustez        | Retomada depois de reiniciar, limpeza de worktrees, testes ponta a ponta             | ainda não |
+| Fase                | O que entrega                                                                        | Estado |
+| ------------------- | ------------------------------------------------------------------------------------ | ------ |
+| 0 · Base            | Monorepo, bridge com token de sessão, tela de configuração do GitLab                 | pronta |
+| 1 · Canvas          | Issues reais no canvas, notas, vínculos, desfazer, persistência                      | pronta |
+| 2 · Um agente real  | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela aba Ações     | pronta |
+| 3 · MRs e pipelines | Agente abre o MR, nó no canvas com pipeline ao vivo, diff, discussão, merge humano   | pronta |
+| 4 · Contexto        | Itens de contexto, medidor de tokens, resumo, sugestões, releitura ao vivo, passagem | pronta |
+| 5 · Orquestração    | Orquestrador para issues com vários repositórios, sub-agentes, plano, perguntas      | pronta |
+| 6 · Automações      | Poller, agentes de correção e revisão, comentários ao autor, label agent-ready       | pronta |
+| 7 · Robustez        | Retomada depois de reiniciar, limpeza de worktrees, testes ponta a ponta             | pronta |
 
 ## Requisitos
 
@@ -57,32 +57,33 @@ A aba **Repos** mostra onde está o clone de cada projeto. Para o que faltar:
 
 Tudo em `~/.agent-canvas` (mude com `AGENT_CANVAS_HOME`):
 
-| Arquivo           | Conteúdo                                                                                 |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| `agent-canvas.db` | SQLite: canvas, notas, cache de issues, configurações não secretas                       |
-| `secrets.json`    | Token do GitLab, permissão `0600`. Nunca vai para o banco, para logs ou para o navegador |
-| `session.json`    | Token de sessão do bridge da execução atual (`0600`), lido pelo Vite em dev              |
-| `worktrees/<id>`  | Um git worktree por agente, num branch `agent/<iid>-<slug>`                              |
-| `agents/<id>/`    | Config MCP do agente (`0600`), com o token que identifica o agente no bridge             |
+| Arquivo           | Conteúdo                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `agent-canvas.db` | SQLite: canvas, notas, cache de issues, configurações não secretas                         |
+| `secrets.json`    | Token do GitLab, permissão `0600`. Nunca vai para o banco, para logs ou para o navegador   |
+| `session.json`    | Token de sessão do bridge (`0600`), lido pelo Vite em dev; vale entre reinícios por 7 dias |
+| `worktrees/<id>`  | Um git worktree por agente, num branch `agent/<iid>-<slug>`                                |
+| `agents/<id>/`    | Config MCP do agente (`0600`), com o token que identifica o agente no bridge               |
 
 Em vez de salvar o token pela tela, você pode criar um `.env` na raiz do repositório com `AGENT_CANVAS_GITLAB_TOKEN=glpat-…`. A variável tem prioridade e nunca é gravada em disco pelo app.
 
 ### Variáveis de ambiente
 
-| Variável                         | Padrão            | Uso                                                       |
-| -------------------------------- | ----------------- | --------------------------------------------------------- |
-| `AGENT_CANVAS_HOME`              | `~/.agent-canvas` | Pasta de dados                                            |
-| `AGENT_CANVAS_PORT`              | `4317`            | Porta do bridge                                           |
-| `AGENT_CANVAS_WEB_PORT`          | `5173`            | Porta do Vite                                             |
-| `AGENT_CANVAS_GITLAB_TOKEN`      | —                 | Token do GitLab (alternativa ao arquivo de segredos)      |
-| `AGENT_CANVAS_ALLOWED_ORIGINS`   | —                 | Origens extras aceitas pelo bridge, separadas por vírgula |
-| `AGENT_CANVAS_MODEL`             | padrão do Claude  | Modelo dos agentes (`sonnet`, `opus`, `haiku`…)           |
-| `AGENT_CANVAS_SUMMARY_MODEL`     | `haiku`           | Modelo do botão Resumir                                   |
-| `AGENT_CANVAS_CONTEXT_BUDGET`    | `60000`           | Tokens recomendados no contexto de um agente              |
-| `AGENT_CANVAS_MAX_AGENTS`        | `4`               | Agentes rodando ao mesmo tempo                            |
-| `AGENT_CANVAS_MAX_AGENT_MINUTES` | `60`              | Tempo máximo de um agente antes de ser pausado            |
-| `AGENT_CANVAS_TREE_TOKEN_BUDGET` | `5000000`         | Tokens de uma árvore de agentes                           |
-| `AGENT_CANVAS_CLAUDE_BIN`        | `claude`          | Caminho do executável do Claude Code                      |
+| Variável                         | Padrão            | Uso                                                         |
+| -------------------------------- | ----------------- | ----------------------------------------------------------- |
+| `AGENT_CANVAS_HOME`              | `~/.agent-canvas` | Pasta de dados                                              |
+| `AGENT_CANVAS_PORT`              | `4317`            | Porta do bridge                                             |
+| `AGENT_CANVAS_WEB_PORT`          | `5173`            | Porta do Vite                                               |
+| `AGENT_CANVAS_GITLAB_TOKEN`      | —                 | Token do GitLab (alternativa ao arquivo de segredos)        |
+| `AGENT_CANVAS_ALLOWED_ORIGINS`   | —                 | Origens extras aceitas pelo bridge, separadas por vírgula   |
+| `AGENT_CANVAS_MODEL`             | padrão do Claude  | Modelo dos agentes (`sonnet`, `opus`, `haiku`…)             |
+| `AGENT_CANVAS_SUMMARY_MODEL`     | `haiku`           | Modelo do botão Resumir                                     |
+| `AGENT_CANVAS_CONTEXT_BUDGET`    | `60000`           | Tokens recomendados no contexto de um agente                |
+| `AGENT_CANVAS_MAX_AGENTS`        | `4`               | Agentes rodando ao mesmo tempo                              |
+| `AGENT_CANVAS_MAX_AGENT_MINUTES` | `60`              | Tempo máximo de um agente antes de ser pausado              |
+| `AGENT_CANVAS_TREE_TOKEN_BUDGET` | `5000000`         | Tokens de uma árvore de agentes                             |
+| `AGENT_CANVAS_CLAUDE_BIN`        | `claude`          | Caminho do executável do Claude Code                        |
+| `AGENT_CANVAS_AUTO_RESUME`       | `1`               | `0` deixa pausados os agentes interrompidos por um reinício |
 
 ## Usando o canvas (Fase 1)
 
@@ -176,12 +177,33 @@ O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado
 
 ![Agente de correção deixando o pipeline verde](docs/screenshots/fase-6/agente-de-correcao.png)
 
+## Robustez (Fase 7)
+
+- **Reinício do bridge**: canvas, notas, histórico dos agentes, MRs, regras e pedidos de permissão ficam no SQLite. Se o bridge cair (crash, `kill -9`, `tsx watch` recarregando) ou for desligado, quem estava trabalhando volta sozinho quando ele sobe de novo: o bridge retoma cada sessão com `--resume` e avisa o agente que houve um reinício. Com `AGENT_CANVAS_AUTO_RESUME=0`, eles ficam **Pausados** para você retomar.
+- **Pedidos e perguntas pendentes** continuam na aba Ações depois do reinício. Quando o agente retomado pede a mesma coisa de novo, o pedido antigo é reaproveitado; se você já respondeu enquanto ele voltava, a resposta vale na hora.
+- **O que não pode voltar** fica como **Erro**, com o motivo: worktree apagado, sessão que o `claude` não acha mais, `claude` fora do PATH.
+- **A página reconecta sozinha**: o token de sessão vale entre reinícios (por 7 dias), e depois da reconexão o estado é recarregado inteiro. Não precisa recarregar a página.
+- **Limpeza de pastas**: na aba **Repos**, a seção "Pastas de agentes removidos" lista os worktrees (e pastas de orquestrador) de agentes que saíram do canvas, com os arquivos sem commit e os commits não enviados. Apagar pede confirmação, avisa o que se perde e usa `git worktree remove`; o branch continua no clone.
+- **Testes**: além dos testes de cada parte (`pnpm test`), `pnpm e2e` roda o caminho completo com o cliente do GitLab de verdade: configurar, abrir o MR pelo agente (push), acompanhar o pipeline, diff, comentário e reinício do bridge. Sem variáveis, usa um GitLab falso embutido cujo pipeline roda `npm test`. Para rodar contra um projeto de sandbox seu:
+
+  ```sh
+  AGENT_CANVAS_E2E_GITLAB_URL=https://gitlab.com \
+  AGENT_CANVAS_E2E_GITLAB_TOKEN=<token só do sandbox, escopo api> \
+  AGENT_CANVAS_E2E_PROJECT_ID=<id> AGENT_CANVAS_E2E_ISSUE_IID=<issue aberta> \
+  AGENT_CANVAS_E2E_REPOS_DIR=<pasta com o clone do sandbox> pnpm e2e
+  ```
+
+  O agente do teste é um roteiro (não gasta o Claude): commita um arquivo novo, abre o MR e, no fim, o teste fecha o MR e apaga o branch no sandbox.
+
+![Bridge de volta depois de um kill -9, com o mesmo pedido de permissão](docs/screenshots/fase-7/depois-do-reinicio.png)
+
 ## Scripts
 
 | Comando                                          | O que faz                                                                                 |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | `pnpm dev`                                       | Bridge + front-end com recarga automática                                                 |
 | `pnpm test`                                      | Vitest em todos os pacotes                                                                |
+| `pnpm e2e`                                       | Teste ponta a ponta com GitLab (falso, ou o seu sandbox com `AGENT_CANVAS_E2E_*`)         |
 | `pnpm lint`                                      | ESLint                                                                                    |
 | `pnpm format` / `pnpm format:check`              | Prettier                                                                                  |
 | `pnpm typecheck`                                 | `tsc` em todos os pacotes                                                                 |
@@ -248,6 +270,11 @@ docs/         plano e protótipo
 | Label `agent-ready` "nova"                                          | Toda issue aberta com a label e sem agente dispara uma vez (a lista das que já dispararam fica nas configurações)                                                                          | O poller não sabe quando a label foi colocada; a regra começa desligada para não surpreender.                                                                                                                                                                |
 | Tabelas `automation` e `thread_comment`                             | Interruptores nas configurações; `merge_request_cache` guarda o último comentário visto e as tentativas de correção; `agent.mr_ref` liga fix e revisor ao MR                               | As discussões são lidas do GitLab na hora; só o "até onde já li" precisa ficar guardado.                                                                                                                                                                     |
 | Mensagens de MR do cliente                                          | Mais `mr.fix` (criar ou retomar o agente de correção)                                                                                                                                      | Botão **Criar agente para corrigir** da caixa de Ações e do painel do MR.                                                                                                                                                                                    |
+| Token de sessão aleatório por execução                              | O mesmo token vale entre reinícios por 7 dias (arquivo `0600` na pasta de dados)                                                                                                           | Um crash ou o `tsx watch` não obrigam mais a recarregar a página; o token continua só no HTML da própria origem.                                                                                                                                             |
+| Pedidos de permissão depois do reinício                             | Ficam pendentes e são reaproveitados quando o agente pede a mesma coisa (ferramenta e entrada iguais); os que ele não repetir são negados quando o turno acaba                             | O plano pede para não perder aprovações; negar tudo no reinício obrigaria o usuário a aprovar de novo.                                                                                                                                                       |
+| Desligar o bridge pausa os agentes                                  | Desligar (Ctrl+C) e cair são tratados igual: na volta, os agentes retomam                                                                                                                  | Em dev, o `tsx watch` reinicia o bridge a cada mudança de código; pausar tudo a cada vez atrapalharia.                                                                                                                                                       |
+| Limpeza de worktrees                                                | Apaga só a pasta (`git worktree remove`); o branch fica no clone                                                                                                                           | O branch pode ter commits que não foram enviados; apagar a pasta já libera o espaço.                                                                                                                                                                         |
+| Teste ponta a ponta com GitLab de sandbox                           | `pnpm e2e` com um agente de roteiro; contra o GitLab falso embutido quando não há sandbox configurado                                                                                      | O teste não usa o token do usuário sem que ele configure; o roteiro deixa o teste rápido e sem custo, e o fluxo com o Claude real foi conferido nos aceites de cada fase.                                                                                    |
 | TypeScript                                                          | Fixado em `~6.0`                                                                                                                                                                           | O TypeScript 7 (versão nativa) ainda não é suportado pelo `typescript-eslint`.                                                                                                                                                                               |
 
 ## Diferenças em relação ao protótipo
@@ -265,16 +292,16 @@ O visual (tokens, cartões, janelas de agente, painéis, menu, aviso, foco) foi 
 - O canvas usa o React Flow: pan, zoom e arrasto vêm dele, e o crédito "React Flow" fica visível no canto, como pede a licença para quem não assina o plano Pro.
 - O texto da nota cresce com o conteúdo (até 320 px) em vez de rolar.
 
-Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots/fase-2`](docs/screenshots/fase-2), [`docs/screenshots/fase-3`](docs/screenshots/fase-3), [`docs/screenshots/fase-4`](docs/screenshots/fase-4), [`docs/screenshots/fase-5`](docs/screenshots/fase-5) e [`docs/screenshots/fase-6`](docs/screenshots/fase-6).
+Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots/fase-2`](docs/screenshots/fase-2), [`docs/screenshots/fase-3`](docs/screenshots/fase-3), [`docs/screenshots/fase-4`](docs/screenshots/fase-4), [`docs/screenshots/fase-5`](docs/screenshots/fase-5), [`docs/screenshots/fase-6`](docs/screenshots/fase-6) e [`docs/screenshots/fase-7`](docs/screenshots/fase-7).
 
 ## Limitações conhecidas
 
-- Se o bridge reiniciar (por exemplo, com o `tsx watch` em dev), o token de sessão muda e é preciso recarregar a página. O aviso "Sem conexão com o bridge" tem o botão para isso.
+- Depois de 7 dias sem o bridge subir, o token de sessão é trocado e a página precisa ser recarregada (o aviso "Sem conexão com o bridge" tem o botão).
 - A lista de issues traz até 300 issues abertas por projeto.
 - O Markdown segue o GFM (títulos, listas, checklists, tabelas, código). HTML dentro do texto aparece escapado, e imagens viram links: o conteúdo vem do GitLab e não é confiável. Referências do GitLab como `#123`, `!45` e `@usuario` ficam como texto.
-- Se o bridge cair no meio de um turno, os agentes que estavam trabalhando voltam como **Pausado**; **Retomar** continua a sessão. A recuperação automática é da Fase 7.
+- Se o bridge morrer de vez (`kill -9`, falta de energia), os processos `claude` dos agentes ficam sem o bridge até terminar o turno; o pedido que estavam fazendo cai e é repetido na retomada. O trabalho no meio de um comando interrompido é refeito pelo agente.
 - O polling é de 30 segundos para MRs e 60 para issues (webhooks não alcançam um app local). Uma falha de pipeline ou um comentário pode levar esse tempo para virar trabalho de agente.
 - O merge usa as opções padrão do projeto no GitLab (sem squash forçado); o branch de origem é apagado no merge.
 - A estimativa de tokens é aproximada (caracteres ÷ 3,5); o número real só existe depois do turno.
 - Resumir usa a sua instalação do `claude` (e a sua cota) com um modelo pequeno.
-- Worktrees de agentes removidos não são apagados (a limpeza com confirmação é da Fase 7). Para apagar à mão: `git worktree remove ~/.agent-canvas/worktrees/<id>` no clone.
+- Branches de agentes não são apagados pela limpeza (só as pastas). Para apagar: `git branch -D <branch>` no clone.

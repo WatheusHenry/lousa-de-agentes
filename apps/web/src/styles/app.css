@@ -3639,3 +3639,12 @@ a.btn {
 .side .callout .btn {
   margin-left: 0;
 }
+.act-card.leftover b {
+  white-space: nowrap;
+}
+.act-card.leftover .lab {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
