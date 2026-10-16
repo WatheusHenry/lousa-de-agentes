@@ -65,6 +65,8 @@ export interface CanvasState {
   tab: Tab;
   filter: Filter;
   query: string;
+  /** Projeto escolhido na aba Issues (null = todos). */
+  issueProject: number | null;
   sideHidden: boolean;
   sideOpen: boolean;
   focusId: string | null;
@@ -116,6 +118,7 @@ export interface CanvasState {
   setTab(t: Tab): void;
   setFilter(f: Filter): void;
   setQuery(q: string): void;
+  setIssueProject(id: number | null): void;
   setSideHidden(v: boolean): void;
   setSideOpen(v: boolean): void;
   openFocus(id: string | null): void;
@@ -148,6 +151,15 @@ function send(m: ClientMessage) {
   sender?.send(m);
 }
 
+const readIssueProject = (): number | null => {
+  try {
+    const v = Number(localStorage.getItem('ac-issue-project'));
+    return Number.isInteger(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+};
+
 const readSideHidden = () => {
   try {
     return localStorage.getItem('ac-side-hidden') === '1';
@@ -179,6 +191,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   tab: 'issues',
   filter: 'all',
   query: '',
+  issueProject: readIssueProject(),
   sideHidden: readSideHidden(),
   sideOpen: false,
   focusId: null,
@@ -475,6 +488,15 @@ export const useStore = create<CanvasState>()((set, get) => ({
   setTab: (t) => set({ tab: t }),
   setFilter: (f) => set({ filter: f }),
   setQuery: (q) => set({ query: q }),
+  setIssueProject(id) {
+    try {
+      if (id === null) localStorage.removeItem('ac-issue-project');
+      else localStorage.setItem('ac-issue-project', String(id));
+    } catch {
+      /* armazenamento indisponível: só não lembra */
+    }
+    set({ issueProject: id });
+  },
   setSideHidden(v) {
     try {
       localStorage.setItem('ac-side-hidden', v ? '1' : '0');

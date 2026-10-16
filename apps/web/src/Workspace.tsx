@@ -1,6 +1,5 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useEffect, useRef } from 'react';
-import { api, ApiError } from './api/http.ts';
 import { Canvas } from './canvas/Canvas.tsx';
 import { closeMenu, ContextMenu, isMenuOpen } from './canvas/ContextMenu.tsx';
 import { Toolbar } from './canvas/Toolbar.tsx';
@@ -10,25 +9,10 @@ import { Inspector } from './panels/Inspector.tsx';
 import { Sidebar } from './panels/Sidebar.tsx';
 import { Toast } from './panels/Toast.tsx';
 import { newAgentAt } from './actions.ts';
+import { refreshIssues } from './state/issues.ts';
 import { hasPendingUndo, liveAgents, liveMrs, useStore } from './state/store.ts';
 
 const ISSUES_EVERY_MS = 60_000;
-
-async function refreshIssues() {
-  const st = useStore.getState();
-  st.setIssuesLoading(true);
-  try {
-    const { issues, errors } = await api.issues();
-    useStore
-      .getState()
-      .setIssues(issues, errors.length ? errors.map((e) => `${e.project}: ${e.error}`).join(' · ') : null);
-  } catch (err) {
-    useStore.setState({
-      issuesLoading: false,
-      issuesError: err instanceof ApiError ? err.message : 'Falha ao buscar issues.',
-    });
-  }
-}
 
 /** Nome do espaço de trabalho no topo: o grupo em comum dos projetos, ou o primeiro projeto. */
 function workspaceName(paths: string[]): string {

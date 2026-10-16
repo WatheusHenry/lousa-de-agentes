@@ -1,4 +1,5 @@
 import { memo, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { Markdown } from '../components/Markdown.tsx';
 import type { Agent, AgentEvent } from '@agent-canvas/shared';
 import { useStore } from '../state/store.ts';
 import { fmtUsd } from './agent-ui.ts';
@@ -41,8 +42,9 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         break;
       case 'text':
         out.push(
-          <div key={k} className="l txt">
-            <span className="g">●</span> {b.text}
+          <div key={k} className="l txt md-line">
+            <span className="g">●</span>
+            <Markdown compact>{b.text}</Markdown>
           </div>,
         );
         break;

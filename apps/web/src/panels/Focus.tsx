@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Markdown } from '../components/Markdown.tsx';
 import type { IssueComment, MrDiffFile } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { noteFor, startIssueAgent } from '../actions.ts';
@@ -229,7 +230,13 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           </div>
           <section>
             <h4>Descrição</h4>
-            <p className="fx-p pre">{desc || 'Sem descrição.'}</p>
+            {desc ? (
+              <Markdown className="fx-p" baseUrl={issue.webUrl.replace(/\/-\/issues\/\d+$/, '')}>
+                {desc}
+              </Markdown>
+            ) : (
+              <p className="fx-p">Sem descrição.</p>
+            )}
           </section>
           {crit.length > 0 && (
             <section>
@@ -300,7 +307,7 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           )}
           <section>
             <h4>Discussão</h4>
-            <Thread {...thread} />
+            <Thread {...thread} baseUrl={issue.webUrl.replace(/\/-\/issues\/\d+$/, '')} />
           </section>
         </div>
       </div>
@@ -361,7 +368,16 @@ function useThread(ref: string | null, load: () => Promise<IssueComment[]>) {
   return { comments, error };
 }
 
-function Thread({ comments, error }: { comments: IssueComment[] | null; error: string | null }) {
+function Thread({
+  comments,
+  error,
+  baseUrl,
+}: {
+  comments: IssueComment[] | null;
+  error: string | null;
+  /** URL do projeto, para links relativos nos comentários. */
+  baseUrl?: string;
+}) {
   if (error)
     return (
       <p className="lab" style={{ margin: 0, color: 'var(--bad)' }}>
@@ -393,7 +409,9 @@ function Thread({ comments, error }: { comments: IssueComment[] | null; error: s
               {c.isAgent && <span className="badge info">agente</span>}
               <time dateTime={c.createdAt}>{timeAgo(c.createdAt)}</time>
             </div>
-            <p style={{ whiteSpace: 'pre-wrap' }}>{c.body}</p>
+            <Markdown className="cm-body" baseUrl={baseUrl}>
+              {c.body}
+            </Markdown>
           </div>
         </div>
       ))}
@@ -533,7 +551,9 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           {description && (
             <section>
               <h4>Descrição</h4>
-              <p className="fx-p pre">{description}</p>
+              <Markdown className="fx-p" baseUrl={mr.webUrl.replace(/\/-\/merge_requests\/\d+$/, '')}>
+                {description}
+              </Markdown>
             </section>
           )}
           <section>
@@ -564,7 +584,7 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           </section>
           <section>
             <h4>Discussão</h4>
-            <Thread {...thread} />
+            <Thread {...thread} baseUrl={mr.webUrl.replace(/\/-\/merge_requests\/\d+$/, '')} />
           </section>
         </div>
       </div>

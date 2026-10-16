@@ -3,6 +3,7 @@ import type { Issue, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
 import { addIssue, askFixPipeline, newAgentAt } from '../actions.ts';
+import { refreshIssues } from '../state/issues.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
   IconAgent,
@@ -82,6 +83,7 @@ export function Sidebar() {
             />
           </div>
         )}
+        {tab === 'issues' && <ProjectPicker />}
         {tab === 'issues' && (
           <div className="chips" role="group" aria-label="Filtrar issues">
             {(
@@ -138,6 +140,10 @@ function IssuesTab() {
   const loading = useStore((s) => s.issuesLoading);
   const error = useStore((s) => s.issuesError);
   const agents = useStore((s) => s.agents);
+  const project = useStore((s) => s.issueProject);
+  const projects = useStore((s) => s.settings?.projects);
+  // projeto escolhido que saiu das configurações: mostra todos
+  const projectId = projects?.some((p) => p.id === project) ? project : null;
 
   // agentes ativos por issue (só os que estão no canvas)
   const activity = useMemo(() => {
@@ -160,6 +166,7 @@ function IssuesTab() {
     const list = refs
       .map((r) => issues[r])
       .filter((i): i is Issue => !!i)
+      .filter((i) => projectId === null || i.projectId === projectId)
       .filter(
         (i) =>
           !query ||
@@ -168,7 +175,7 @@ function IssuesTab() {
       .filter((i) => (filter === 'bug' ? isBug(i) : filter === 'agents' ? activity.has(i.ref) : true));
     const onCanvas = (i: Issue) => onRefs.has(i.ref);
     return { on: list.filter(onCanvas), off: list.filter((i) => !onCanvas(i)), total: list.length };
-  }, [refs, issues, nodes, query, filter, activity]);
+  }, [refs, issues, nodes, query, filter, activity, projectId]);
 
   if (!refs.length && loading) return <p className="tip">Carregando issues do GitLab…</p>;
 
@@ -210,6 +217,54 @@ function IssuesTab() {
         <IconDrag /> Arraste para o canvas, ou use o + para adicionar no meio da tela.
       </p>
     </>
+  );
+}
+
+/** Escolhe de qual projeto a aba Issues mostra as issues, e atualiza a lista na hora. */
+function ProjectPicker() {
+  const projects = useStore((s) => s.settings?.projects ?? []);
+  const project = useStore((s) => s.issueProject);
+  const setProject = useStore((s) => s.setIssueProject);
+  const loading = useStore((s) => s.issuesLoading);
+  const refs = useStore((s) => s.openIssueRefs);
+  const issues = useStore((s) => s.issues);
+  const byProject = useMemo(() => {
+    const m: Record<number, number> = {};
+    for (const r of refs) {
+      const i = issues[r];
+      if (i) m[i.projectId] = (m[i.projectId] ?? 0) + 1;
+    }
+    return m;
+  }, [refs, issues]);
+  const total = Object.values(byProject).reduce((a, b) => a + b, 0);
+  const value = projects.some((p) => p.id === project) ? String(project) : '';
+  return (
+    <div className="proj-pick">
+      {projects.length > 1 && (
+        <select
+          className="field"
+          aria-label="Projeto das issues"
+          value={value}
+          onChange={(e) => setProject(e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">Todos os projetos ({total})</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.pathWithNamespace} ({byProject[p.id] ?? 0})
+            </option>
+          ))}
+        </select>
+      )}
+      <button
+        className="btn plain icon"
+        aria-label="Atualizar issues"
+        title="Buscar as issues no GitLab agora"
+        disabled={loading}
+        onClick={() => void refreshIssues()}
+      >
+        <span className={loading ? 'spin' : ''}>↻</span>
+      </button>
+    </div>
   );
 }
 
