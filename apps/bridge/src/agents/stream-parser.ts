@@ -221,7 +221,11 @@ export function summarizeTool(name: string, input: unknown): string {
   const i = (input ?? {}) as Record<string, unknown>;
   const s = (v: unknown) => (typeof v === 'string' ? v : '');
   const short = (v: string, n = 120) => (v.length > n ? v.slice(0, n - 1) + '…' : v);
-  const path = (p: string) => p.replace(/^.*?\/(?=[^/]+\/[^/]+$)/, '');
+  // dentro do worktree do agente, o caminho relativo a ele; fora, as duas últimas partes
+  const path = (p: string) =>
+    /\/worktrees\/[^/]+\//.test(p)
+      ? p.replace(/^.*\/worktrees\/[^/]+\//, '')
+      : p.replace(/^.*?\/(?=[^/]+\/[^/]+$)/, '');
   switch (name) {
     case 'Bash':
       return short(s(i.command).split('\n')[0] ?? '');

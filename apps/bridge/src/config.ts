@@ -13,7 +13,10 @@ export interface BridgeConfig {
   webDist: string | null;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  serveWeb = process.argv.includes('--serve-web'),
+): BridgeConfig {
   const home = env.AGENT_CANVAS_HOME || join(homedir(), '.agent-canvas');
   mkdirSync(home, { recursive: true, mode: 0o700 });
   const port = Number(env.AGENT_CANVAS_PORT || 4317);
@@ -31,6 +34,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
       `http://localhost:${port}`,
       ...extra,
     ],
-    webDist: existsSync(join(dist, 'index.html')) ? dist : null,
+    // só `pnpm start` serve o build; em dev quem serve o front é o Vite
+    webDist: serveWeb && existsSync(join(dist, 'index.html')) ? dist : null,
   };
 }

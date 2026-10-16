@@ -34,6 +34,10 @@ const empty: StateSnapshot = {
   noteLinks: [],
   issues: [issue],
   activity: [],
+  agents: [],
+  agentEvents: [],
+  approvals: [],
+  policies: [],
 };
 
 let sent: ClientMessage[];

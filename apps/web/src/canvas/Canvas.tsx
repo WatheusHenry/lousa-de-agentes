@@ -9,16 +9,17 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
-import { addIssue, newNoteAt } from '../actions.ts';
+import { addIssue, giveContext, newAgentAt, newNoteAt } from '../actions.ts';
 import { IssueNode } from '../nodes/IssueNode.tsx';
 import { NoteNode } from '../nodes/NoteNode.tsx';
+import { AgentNode } from '../nodes/AgentNode.tsx';
 import { useStore } from '../state/store.ts';
 import { openContextMenu } from './ContextMenu.tsx';
 import { EdgeMarkers, FloatingEdge } from './FloatingEdge.tsx';
 import { toFlowEdge, toFlowNode, type FlowNode } from './flow.ts';
 import { bindViewport, fit, screenToFlow } from './viewport.ts';
 
-const nodeTypes = { issue: IssueNode, note: NoteNode };
+const nodeTypes = { issue: IssueNode, note: NoteNode, agent: AgentNode };
 const edgeTypes = { floating: FloatingEdge };
 const VIEW_KEY = 'ac-viewport';
 
@@ -46,7 +47,7 @@ export function Canvas() {
     setNodes((prev) => {
       const byId = new Map(prev.map((n) => [n.id, n]));
       return Object.values(storeNodes)
-        .filter((n) => n.type === 'issue' || n.type === 'note')
+        .filter((n) => n.type === 'issue' || n.type === 'note' || n.type === 'agent')
         .map((n) => toFlowNode(n, selected === n.id, byId.get(n.id)));
     });
   }, [storeNodes, selected]);
@@ -123,21 +124,38 @@ export function Canvas() {
   );
 
   // ---------- arrastar da barra lateral ----------
+  // soltar em cima de um agente dá contexto a ele (destaque .dropt, como no protótipo)
+  const agentUnder = (x: number, y: number) => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.react-flow__node');
+    const n = el?.dataset.id ? useStore.getState().nodes[el.dataset.id] : undefined;
+    return n?.type === 'agent' ? { el: el!, agentId: n.refId } : null;
+  };
+  const markDrop = (el: HTMLElement | null) => {
+    document
+      .querySelectorAll('.react-flow__node.dropt')
+      .forEach((x) => x !== el && x.classList.remove('dropt'));
+    el?.classList.add('dropt');
+  };
   const onDragOver = (e: DragEvent) => {
     if (!e.dataTransfer.types.includes('text/plain')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
-    setDropping(true);
+    const target = agentUnder(e.clientX, e.clientY);
+    markDrop(target?.el ?? null);
+    setDropping(!target);
   };
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setDropping(false);
+    markDrop(null);
     const [kind, ...rest] = e.dataTransfer.getData('text/plain').split(':');
     const val = rest.join(':');
-    if (kind === 'issue' && val) {
-      const at = screenToFlow(e.clientX, e.clientY);
-      addIssue(val, at);
-    }
+    if ((kind !== 'issue' && kind !== 'repo') || !val) return;
+    const target = agentUnder(e.clientX, e.clientY);
+    if (target) return giveContext(target.agentId, kind, val);
+    const at = screenToFlow(e.clientX, e.clientY);
+    if (kind === 'issue') addIssue(val, at);
+    else newAgentAt(at, { repos: [Number(val)] });
   };
 
   // duplo clique no fundo cria uma nota ali
@@ -160,7 +178,11 @@ export function Canvas() {
       className={`canvas${linking ? ' linking' : ''}${dropping ? ' drop' : ''}`}
       aria-label="Canvas de orquestração"
       onDragOver={onDragOver}
-      onDragLeave={(e) => !wrapper.current?.contains(e.relatedTarget as Node) && setDropping(false)}
+      onDragLeave={(e) => {
+        if (wrapper.current?.contains(e.relatedTarget as Node)) return;
+        setDropping(false);
+        markDrop(null);
+      }}
       onDrop={onDrop}
       onDoubleClick={onDoubleClick}
     >

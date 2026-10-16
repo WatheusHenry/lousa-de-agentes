@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { IssueComment } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
-import { noteFor } from '../actions.ts';
+import { noteFor, startIssueAgent } from '../actions.ts';
+import { AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { nodeScreenRect, reducedMotion } from '../canvas/viewport.ts';
 import { IconAgent, IconIssue, IconNote } from '../icons.tsx';
 import {
@@ -14,6 +15,8 @@ import {
   timeAgo,
 } from '../lib/format.ts';
 import { useStore } from '../state/store.ts';
+import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
+import { isBlank, roleLabel, statusLabel, statusTone, SUGGESTIONS } from '../agents/agent-ui.ts';
 
 /** Qualquer item abre grande, com o fundo do canvas borrado. Issue vira documento; nota vira editor. */
 export function Focus() {
@@ -92,6 +95,7 @@ export function Focus() {
       >
         {shown?.type === 'issue' && <IssueDoc nodeId={shown.id} onClose={closeAnimated} />}
         {shown?.type === 'note' && <NoteDoc nodeId={shown.id} onClose={closeAnimated} />}
+        {shown?.type === 'agent' && <AgentDoc nodeId={shown.id} onClose={closeAnimated} />}
       </div>
     </div>
   );
@@ -160,6 +164,15 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
     [noteLinks, allNotes, nodes, nodeId],
   );
   const openFocus = useStore((s) => s.openFocus);
+  const agentsById = useStore((s) => s.agents);
+  const issueAgents = useMemo(
+    () =>
+      Object.values(nodes)
+        .filter((n) => n.type === 'agent')
+        .map((n) => agentsById[n.refId])
+        .filter((a) => !!a && a.issueRef === node?.refId) as NonNullable<(typeof agentsById)[string]>[],
+    [nodes, agentsById, node?.refId],
+  );
   const [comments, setComments] = useState<IssueComment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -248,9 +261,17 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           )}
           <section>
             <h4>Agentes</h4>
-            <p className="lab" style={{ margin: 0 }}>
-              Nenhum agente ainda. Iniciar agentes a partir da issue chega na próxima fase.
-            </p>
+            {issueAgents.length ? (
+              <ul className="tree">
+                {issueAgents.map((a) => (
+                  <AgentTreeItem key={a.id} agent={a} />
+                ))}
+              </ul>
+            ) : (
+              <p className="lab" style={{ margin: 0 }}>
+                Nenhum agente ainda. Use "Iniciar agente" abaixo.
+              </p>
+            )}
           </section>
           <section>
             <h4>Discussão</h4>
@@ -290,6 +311,15 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
       </div>
       <div className="f-foot">
         <div className="f-sugg">
+          <button
+            type="button"
+            onClick={() => {
+              const id = startIssueAgent(nodeId);
+              if (id) openFocus(id);
+            }}
+          >
+            Iniciar agente
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -370,6 +400,135 @@ function NoteDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             As alterações salvam sozinhas. Agentes vinculados leem de novo quando você sai do campo.
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const NO_EVENTS: never[] = [];
+
+/** Agente em foco: a conversa grande, com sugestões e o campo de mensagem. */
+function AgentDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
+  const node = useStore((s) => s.nodes[nodeId]);
+  const agent = useStore((s) => (node ? s.agents[node.refId] : undefined));
+  const events = useStore((s) => (node ? (s.agentEvents[node.refId] ?? NO_EVENTS) : NO_EVENTS));
+  const repo = useStore((s) => s.settings?.projects.find((p) => p.id === agent?.repos[0]));
+  const message = useStore((s) => s.messageAgent);
+  const [text, setText] = useState('');
+  const [raw, setRaw] = useState<string[] | null>(null);
+  const { ref, onScroll } = useStickToBottom<HTMLDivElement>(raw ? raw.length : events.length);
+  const input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const t = setTimeout(() => input.current?.focus({ preventScroll: true }), 60);
+    return () => clearTimeout(t);
+  }, [nodeId]);
+  if (!agent) return null;
+
+  const send = (t: string) => {
+    if (!t.trim()) return;
+    message(agent.id, t.trim());
+    setText('');
+    if (input.current) input.current.style.height = '';
+  };
+  const toggleRaw = async () => {
+    if (raw) return setRaw(null);
+    try {
+      setRaw(await api.rawEvents(agent.id));
+    } catch (e) {
+      setRaw([e instanceof ApiError ? e.message : 'Falha ao carregar a saída bruta.']);
+    }
+  };
+
+  return (
+    <div className="f-main">
+      <Head
+        icon={
+          <span className="lights" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        }
+        name={agent.name}
+        sub={`${roleLabel(agent)} · ${repo?.name ?? 'sem repositório'}${agent.branch ? ` · ${agent.branch}` : ''}`}
+        status={
+          <>
+            <button
+              className="btn plain sm"
+              onClick={toggleRaw}
+              title="Linhas do stream-json, para depuração"
+            >
+              {raw ? 'Saída estruturada' : 'Saída bruta'}
+            </button>
+            <span className={`badge ${statusTone(agent.status)}`}>
+              <span className="d" />
+              {statusLabel(agent.status)}
+            </span>
+          </>
+        }
+        onClose={onClose}
+      />
+      <div className="f-body" ref={ref} onScroll={onScroll}>
+        {raw ? (
+          <pre className="raw">{raw.join('\n') || '(nada ainda)'}</pre>
+        ) : isBlank(agent) && events.length === 0 ? (
+          <div className="empty-term">
+            <b>Agente em branco</b>
+            <ul>
+              <li>
+                Escolha o repositório no painel da direita, ou arraste um repositório ou uma issue para cima
+                do agente.
+              </li>
+              <li>Escreva a primeira instrução abaixo. O agente começa por ela.</li>
+            </ul>
+          </div>
+        ) : (
+          <AgentLines agent={agent} events={events} />
+        )}
+      </div>
+      <div className="f-foot">
+        {!isBlank(agent) && (
+          <div className="f-sugg">
+            {SUGGESTIONS.map((sg) => (
+              <button key={sg} type="button" onClick={() => send(sg)}>
+                {sg}
+              </button>
+            ))}
+          </div>
+        )}
+        <form
+          className="f-comp"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send(text);
+          }}
+        >
+          <textarea
+            ref={input}
+            rows={1}
+            value={text}
+            placeholder={
+              isBlank(agent) ? `Primeira instrução para ${agent.name}` : `Converse com ${agent.name}`
+            }
+            aria-label={`Mensagem para ${agent.name}`}
+            onChange={(e) => {
+              setText(e.target.value);
+              const t = e.target;
+              t.style.height = 'auto';
+              t.style.height = Math.min(t.scrollHeight, 160) + 'px';
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send(text);
+              }
+            }}
+          />
+          <button className="send" aria-label="Enviar">
+            ↑
+          </button>
+        </form>
+        <div className="f-hint">Enter envia · Shift + Enter quebra linha · Esc fecha</div>
       </div>
     </div>
   );

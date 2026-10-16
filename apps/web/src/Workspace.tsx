@@ -9,7 +9,8 @@ import { Focus } from './panels/Focus.tsx';
 import { Inspector } from './panels/Inspector.tsx';
 import { Sidebar } from './panels/Sidebar.tsx';
 import { Toast } from './panels/Toast.tsx';
-import { hasPendingUndo, useStore } from './state/store.ts';
+import { newAgentAt } from './actions.ts';
+import { hasPendingUndo, liveAgents, useStore } from './state/store.ts';
 
 const ISSUES_EVERY_MS = 60_000;
 
@@ -123,6 +124,10 @@ function TopBar({ workspace }: { workspace: string }) {
   const sideOpen = useStore((s) => s.sideOpen);
   const setSideHidden = useStore((s) => s.setSideHidden);
   const setSideOpen = useStore((s) => s.setSideOpen);
+  const active = useStore(
+    (s) => liveAgents(s).filter((a) => a.status === 'running' || a.status === 'coordinating').length,
+  );
+  const waiting = useStore((s) => liveAgents(s).filter((a) => a.status === 'waiting').length);
   return (
     <header className="top">
       <button
@@ -145,12 +150,27 @@ function TopBar({ workspace }: { workspace: string }) {
       </div>
       <div className="spacer" />
       <div className="stats">
-        <span className="badge info">
-          <span className="d" />0 ativos
+        <span className={`badge info${active ? ' live' : ''}`}>
+          <span className="d" />
+          {active} ativo{active === 1 ? '' : 's'}
         </span>
+        {waiting > 0 && (
+          <button
+            className="badge warn badge-btn"
+            title="Ver ações pendentes"
+            onClick={() => {
+              useStore.getState().setTab('actions');
+              if (innerWidth <= 860) setSideOpen(true);
+              else if (sideHidden) setSideHidden(false);
+            }}
+          >
+            <span className="d" />
+            {waiting} aguardando você
+          </button>
+        )}
         <span className="badge mrb">0 MRs</span>
       </div>
-      <button className="btn primary" disabled title="Os agentes chegam na Fase 2">
+      <button className="btn primary" onClick={() => newAgentAt()}>
         + Novo agente
       </button>
     </header>

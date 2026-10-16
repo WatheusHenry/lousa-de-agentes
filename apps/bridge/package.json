@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",
-    "start": "tsx src/main.ts",
+    "start": "tsx src/main.ts --serve-web",
     "typecheck": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate"

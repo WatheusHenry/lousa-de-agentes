@@ -14,7 +14,7 @@ export function toFlowNode(n: CanvasNode, selected: boolean, prev?: FlowNode): F
     data: prev?.data.refId === n.refId ? prev.data : { refId: n.refId },
     selected,
     className: 'node',
-    ...(n.type === 'note' ? { dragHandle: '.nhead' } : {}),
+    ...(n.type === 'note' ? { dragHandle: '.nhead' } : n.type === 'agent' ? { dragHandle: '.wbar' } : {}),
   };
 }
 

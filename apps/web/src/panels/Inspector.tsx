@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
-import { noteFor } from '../actions.ts';
+import { noteFor, startIssueAgent } from '../actions.ts';
+import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { IconAgent, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel, repoName } from '../lib/format.ts';
-import { useStore } from '../state/store.ts';
+import { liveAgents, useStore } from '../state/store.ts';
 
 /** Painel flutuante da direita: detalhes do item selecionado, ajuda ou automações. */
 export function Inspector() {
@@ -13,6 +14,7 @@ export function Inspector() {
   useStore((s) => s.notes);
   useStore((s) => s.noteLinks);
   useStore((s) => s.nodes);
+  useStore((s) => s.agents);
   const close = () => {
     useStore.getState().select(null);
     useStore.getState().setPanel(null);
@@ -25,6 +27,9 @@ export function Inspector() {
     [kicker, body] = IssuePanel(node.id);
   } else if (node?.type === 'note') {
     [kicker, body] = NotePanel(node.id);
+  } else if (node?.type === 'agent') {
+    kicker = 'Agente';
+    body = <AgentPanel agentId={node.refId} nodeId={node.id} />;
   } else if (panel === 'help') {
     kicker = 'Como funciona';
     body = <Help />;
@@ -57,6 +62,7 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
     .filter((l) => l.targetNodeId === nodeId)
     .map((l) => s.notes[l.noteId])
     .filter((x) => !!x);
+  const agents = liveAgents(s).filter((a) => a.issueRef === i.ref);
   return [
     <span className="badge issue">Issue #{i.iid}</span>,
     <>
@@ -133,17 +139,33 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
           </button>
         </div>
       </div>
+      {agents.length > 0 && (
+        <div className="grp">
+          <h4>Agentes</h4>
+          <ul className="tree">
+            {agents.map((a) => (
+              <AgentTreeItem key={a.id} agent={a} />
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="grp">
+        <h4>Instruções extras</h4>
+        <textarea className="field" id="c-extra" placeholder="Opcional. Ex.: não alterar o schema do banco" />
+        <p className="lab" style={{ margin: 0 }}>
+          O agente recebe a issue, os comentários e as notas vinculadas em .agent-canvas/context.md.
+        </p>
+      </div>
       <button
         className="btn primary"
-        disabled
-        title="Os agentes chegam na Fase 2"
         style={{ justifyContent: 'center', padding: 10 }}
+        onClick={() => {
+          const extra = (document.getElementById('c-extra') as HTMLTextAreaElement | null)?.value;
+          startIssueAgent(nodeId, extra);
+        }}
       >
-        Iniciar agentes
+        Iniciar agente
       </button>
-      <p className="lab" style={{ margin: 0 }}>
-        Iniciar agentes a partir da issue chega na próxima fase.
-      </p>
       <div className="row2">
         <a className="btn" href={i.webUrl} target="_blank" rel="noreferrer noopener">
           Abrir no GitLab
@@ -163,9 +185,12 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
   if (!nt) return ['Nota', null];
   const links = s.noteLinks.filter((l) => l.noteId === nt.id && s.nodes[l.targetNodeId]);
   const linked = new Set(links.map((l) => l.targetNodeId));
-  const targets = Object.values(s.nodes).filter((x) => x.type === 'issue' && !linked.has(x.id));
+  const targets = Object.values(s.nodes).filter(
+    (x) => (x.type === 'issue' || x.type === 'agent') && !linked.has(x.id),
+  );
   const label = (id: string) => {
     const t = s.nodes[id];
+    if (t?.type === 'agent') return s.agents[t.refId]?.name ?? 'Agente';
     const i = t && s.issues[t.refId];
     return i ? `Issue #${i.iid}` : 'Item';
   };
@@ -191,9 +216,15 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
           <div className="links">
             {links.map((l) => (
               <div className="lk" key={l.targetNodeId}>
-                <span className="ico issue">
-                  <IconIssue />
-                </span>
+                {s.nodes[l.targetNodeId]?.type === 'agent' ? (
+                  <span className="ico agent">
+                    <IconAgent />
+                  </span>
+                ) : (
+                  <span className="ico issue">
+                    <IconIssue />
+                  </span>
+                )}
                 {label(l.targetNodeId)}
                 <button className="btn sm plain" onClick={() => s.unlinkNote(nt.id, l.targetNodeId)}>
                   Remover
@@ -215,15 +246,20 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
           <option value="">Vincular a…</option>
           {targets.map((t) => {
             const i = s.issues[t.refId];
+            const a = t.type === 'agent' ? s.agents[t.refId] : undefined;
             return (
               <option key={t.id} value={t.id}>
-                {i ? `Issue #${i.iid} · ${i.title.slice(0, 50)}` : t.refId}
+                {a
+                  ? `${a.name} · ${a.title.slice(0, 50)}`
+                  : i
+                    ? `Issue #${i.iid} · ${i.title.slice(0, 50)}`
+                    : t.refId}
               </option>
             );
           })}
         </select>
         <p className="lab" style={{ margin: 0 }}>
-          Ou arraste o + da nota até uma issue no canvas.
+          Ou arraste o + da nota até uma issue ou um agente no canvas.
         </p>
       </div>
       <div className="grp">
@@ -254,7 +290,7 @@ function Help() {
       'agent',
       <IconAgent />,
       'Inicie agentes',
-      'Se a issue toca vários repositórios, um orquestrador cria um agente por repositório. Cada agente pode abrir sub-agentes até o limite que você definir. (Chega na Fase 2.)',
+      'Se a issue toca vários repositórios, um orquestrador cria um agente por repositório. Cada agente pode abrir sub-agentes até o limite que você definir.',
     ],
     [
       'repo',

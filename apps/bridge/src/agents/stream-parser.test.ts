@@ -90,6 +90,12 @@ describe('summarizeTool', () => {
   it('resume as ferramentas mais comuns', () => {
     expect(summarizeTool('Bash', { command: 'npm test\necho x' })).toBe('npm test');
     expect(summarizeTool('Read', { file_path: '/tmp/repo/src/app.ts' })).toBe('src/app.ts');
+    expect(summarizeTool('Edit', { file_path: '/h/.agent-canvas/worktrees/a_1/README.md' })).toBe(
+      'README.md',
+    );
+    expect(summarizeTool('Edit', { file_path: '/h/.agent-canvas/worktrees/a_1/src/x/y.ts' })).toBe(
+      'src/x/y.ts',
+    );
     expect(summarizeTool('Grep', { pattern: 'idempotency' })).toBe('idempotency');
     expect(summarizeTool('mcp__canvas__x', { foo: 'bar' })).toBe('bar');
   });

@@ -3064,3 +3064,26 @@ a.btn {
   field-sizing: content;
   max-height: 320px;
 }
+
+/* ---------- agentes (Fase 2) ---------- */
+.react-flow__edge-path.edge.live {
+  stroke: var(--accent);
+}
+.l.out.err {
+  color: var(--bad);
+}
+.l.ask .acts .btn {
+  white-space: nowrap;
+}
+.f-body pre.raw {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #3a3a3c;
+}
+.f-head .btn.plain.sm {
+  margin-left: auto;
+}

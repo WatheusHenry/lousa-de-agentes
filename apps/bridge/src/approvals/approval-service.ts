@@ -5,7 +5,7 @@ import { summarizeTool } from '../agents/stream-parser.ts';
 import type { Db } from '../db/index.ts';
 import { approval, policy } from '../db/schema.ts';
 import type { Hub } from '../hub.ts';
-import { defaultDeny, matchesRule, suggestRule } from './rules.ts';
+import { defaultDeny, matchingRules, splitRules, suggestRule } from './rules.ts';
 
 export type Decision =
   { behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string };
@@ -75,14 +75,14 @@ export class ApprovalService {
 
   async request(req: PermissionRequest): Promise<Decision> {
     const rules = this.rulesFor(req.repoId);
-    const matched = rules.find((r) => matchesRule(r, req.toolName, req.input));
+    const matched = matchingRules(rules, req.toolName, req.input);
     const denied = defaultDeny(req.toolName, req.input, req.worktree, !!matched && req.toolName === 'Bash');
     if (denied) {
       this.record(req, 'denied', 'regra padrão');
       return { behavior: 'deny', message: denied };
     }
     if (matched) {
-      this.record(req, 'allowed', `regra ${matched}`);
+      this.record(req, 'allowed', `regra ${matched.join(', ')}`);
       return { behavior: 'allow', updatedInput: req.input };
     }
     const row = this.record(req, 'pending', null);
@@ -94,7 +94,8 @@ export class ApprovalService {
     const w = this.waiting.get(approvalId);
     const row = this.db.select().from(approval).where(eq(approval.id, approvalId)).get();
     if (!row || row.status !== 'pending') return;
-    if (decision === 'allow' && remember) this.addPolicy(row.suggestedRule, 'global');
+    if (decision === 'allow' && remember)
+      for (const r of splitRules(row.suggestedRule)) this.addPolicy(r, 'global');
     this.finish(approvalId, decision, 'usuário');
     if (w) {
       w.resolve(
@@ -126,9 +127,9 @@ export class ApprovalService {
   /** Libera os pedidos pendentes que uma regra nova cobre. */
   private releaseMatching(): void {
     for (const [id, w] of [...this.waiting]) {
-      const rule = this.rulesFor(w.req.repoId).find((r) => matchesRule(r, w.req.toolName, w.req.input));
-      if (!rule) continue;
-      this.finish(id, 'allow', `regra ${rule}`);
+      const used = matchingRules(this.rulesFor(w.req.repoId), w.req.toolName, w.req.input);
+      if (!used) continue;
+      this.finish(id, 'allow', `regra ${used.join(', ')}`);
       w.resolve({ behavior: 'allow', updatedInput: w.req.input });
     }
   }

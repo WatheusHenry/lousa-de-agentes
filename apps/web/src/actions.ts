@@ -1,5 +1,5 @@
 import { focusNode, freeSpot, viewCenter } from './canvas/viewport.ts';
-import { issueNodeOf, useStore } from './state/store.ts';
+import { agentNodeOf, issueNodeOf, useStore } from './state/store.ts';
 
 /** Ações de alto nível, usadas pela barra lateral, menus, painel e atalhos. */
 
@@ -48,4 +48,58 @@ export function focusNoteTitle(nodeId: string, tries = 30) {
     return;
   }
   if (tries > 0) requestAnimationFrame(() => focusNoteTitle(nodeId, tries - 1));
+}
+
+/** Agente novo no canvas: em branco (espera contexto e a primeira instrução) ou já com repositório. */
+export function newAgentAt(at?: { x: number; y: number }, opts: { repos?: number[] } = {}) {
+  const st = useStore.getState();
+  const c = at ?? viewCenter();
+  const pos = freeSpot({ x: c.x - 200, y: c.y - 160 }, 400, 330);
+  const { nodeId } = st.createAgent({ at: pos, ...(opts.repos ? { repos: opts.repos } : {}) });
+  st.setSideOpen(false);
+  focusComposer(nodeId);
+  return nodeId;
+}
+
+/** Inicia um agente para a issue, abaixo do cartão dela. */
+export function startIssueAgent(issueNodeId: string, extra?: string) {
+  const st = useStore.getState();
+  const n = st.nodes[issueNodeId];
+  if (!n || n.type !== 'issue') return null;
+  const pos = freeSpot({ x: n.x - 58, y: n.y + 220 }, 400, 330);
+  const { nodeId } = st.createAgent({
+    at: pos,
+    issueRef: n.refId,
+    instruction: extra?.trim() || 'Resolva a issue.',
+    fromNodeId: issueNodeId,
+  });
+  return nodeId;
+}
+
+/** Repositório ou issue solto em cima de um agente. */
+export function giveContext(agentId: string, kind: 'repo' | 'issue', val: string) {
+  const st = useStore.getState();
+  const a = st.agents[agentId];
+  if (!a) return;
+  if (a.worktreePath) {
+    st.showToast(`${a.name} já começou; mais contexto chega numa próxima fase.`, {
+      label: 'Ok',
+      run: () => {},
+    });
+    return;
+  }
+  if (kind === 'repo') st.updateAgent(agentId, { repos: [Number(val)] });
+  else st.updateAgent(agentId, { issueRef: val });
+  const node = agentNodeOf(st, agentId);
+  if (node) st.select(node.id);
+}
+
+export function focusComposer(nodeId: string, tries = 30) {
+  const node = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${nodeId}"]`);
+  const input = node?.querySelector<HTMLInputElement>('.composer input');
+  if (input && node && getComputedStyle(node).visibility !== 'hidden') {
+    input.focus({ preventScroll: true });
+    return;
+  }
+  if (tries > 0) requestAnimationFrame(() => focusComposer(nodeId, tries - 1));
 }

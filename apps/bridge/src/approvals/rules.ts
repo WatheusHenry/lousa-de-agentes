@@ -22,6 +22,26 @@ export function matchesRule(pattern: string, toolName: string, input: unknown): 
   return parts.length > 0 && parts.every((p) => matchArg(arg, p));
 }
 
+/**
+ * Regra (ou regras) que liberam o pedido. No Bash, cada parte de um comando composto precisa
+ * casar com alguma regra. Devolve as regras usadas, ou null.
+ */
+export function matchingRules(rules: string[], toolName: string, input: unknown): string[] | null {
+  if (toolName !== 'Bash') {
+    const r = rules.find((x) => matchesRule(x, toolName, input));
+    return r ? [r] : null;
+  }
+  const parts = splitCommand(fullCommand(input));
+  if (!parts.length) return null;
+  const used = new Set<string>();
+  for (const part of parts) {
+    const r = rules.find((x) => matchesRule(x, 'Bash', { command: part }));
+    if (!r) return null;
+    used.add(r);
+  }
+  return [...used];
+}
+
 function matchArg(arg: string, subject: string): boolean {
   if (arg.endsWith(':*')) return startsWithWord(subject, arg.slice(0, -2));
   if (arg.endsWith(' *')) return startsWithWord(subject, arg.slice(0, -2));
@@ -40,16 +60,27 @@ function splitCommand(cmd: string): string[] {
     .filter(Boolean);
 }
 
-/** Regra que "Sempre permitir" grava para um pedido: os dois primeiros termos no Bash, a ferramenta nas outras. */
+/**
+ * Regras que "Sempre permitir" grava para um pedido: no Bash, os dois primeiros termos de cada
+ * parte do comando (um comando composto vira várias regras, separadas por ", "); nas outras
+ * ferramentas, a ferramenta inteira.
+ */
 export function suggestRule(toolName: string, input: unknown): string {
-  if (toolName === 'Bash') {
-    const first = splitCommand(fullCommand(input))[0] ?? '';
-    const words = first.split(/\s+/).filter(Boolean);
-    const take = words.length > 1 && !words[1]!.startsWith('-') ? 2 : 1;
+  if (toolName !== 'Bash') return toolName;
+  const rules = splitCommand(fullCommand(input)).map((part) => {
+    const words = part.split(/\s+/).filter(Boolean);
+    const take = words.length > 1 && !/^[-\d]/.test(words[1]!) ? 2 : 1;
     return `Bash(${words.slice(0, take).join(' ')}:*)`;
-  }
-  return toolName;
+  });
+  return [...new Set(rules)].join(', ') || 'Bash';
 }
+
+/** Separa as regras de uma sugestão composta. */
+export const splitRules = (s: string) =>
+  s
+    .split(/,\s*(?=[A-Za-z_]+(?:\(|$))/)
+    .map((r) => r.trim())
+    .filter(Boolean);
 
 /** Comandos de rede liberados sem regra (o resto pede uma regra explícita). */
 const NETWORK = /\b(curl|wget|nc|ncat|telnet|ssh|scp|rsync|ftp)\b/;

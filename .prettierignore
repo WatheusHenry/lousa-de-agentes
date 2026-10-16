@@ -2,3 +2,4 @@ docs/prototype
 pnpm-lock.yaml
 dist
 apps/bridge/drizzle
+docs/PLANO-IMPLEMENTACAO.md

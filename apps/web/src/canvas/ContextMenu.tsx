@@ -1,7 +1,20 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
-import { addIssue, newNoteAt, noteFor } from '../actions.ts';
-import { IconExpand, IconFit, IconHelp, IconIssue, IconNote, IconSide, IconTrash } from '../icons.tsx';
+import { addIssue, newAgentAt, newNoteAt, noteFor, startIssueAgent } from '../actions.ts';
+import { isLive, roleLabel } from '../agents/agent-ui.ts';
+import {
+  IconAgent,
+  IconExpand,
+  IconFit,
+  IconHelp,
+  IconIssue,
+  IconNote,
+  IconPause,
+  IconPlay,
+  IconSide,
+  IconStop,
+  IconTrash,
+} from '../icons.tsx';
 import { useStore } from '../state/store.ts';
 import { fit, screenToFlow } from './viewport.ts';
 
@@ -29,6 +42,11 @@ function canvasMenu(at: { x: number; y: number }): Item[] {
   const backlog = s.openIssueRefs.filter((r) => !onCanvas.has(r)).slice(0, 4);
   const wide = innerWidth > 860;
   return [
+    {
+      icon: <IconAgent />,
+      label: 'Novo agente aqui',
+      run: () => newAgentAt({ x: at.x + 200, y: at.y + 160 }),
+    },
     { icon: <IconNote />, label: 'Nova nota aqui', hint: 'Duplo clique', run: () => newNoteAt(at) },
     ...(backlog.length
       ? [
@@ -71,11 +89,29 @@ function nodeMenu(id: string): Item[] {
     danger: true,
     run: () => s.removeNode(id),
   };
+  if (n.type === 'agent') {
+    const a = s.agents[n.refId];
+    if (!a) return [];
+    const live = isLive(a);
+    return [
+      { header: `${a.name} · ${roleLabel(a)}` },
+      { icon: <IconExpand />, label: 'Abrir em foco', hint: 'Duplo clique', run: () => s.openFocus(id) },
+      ...(live ? [{ icon: <IconPause />, label: 'Pausar', run: () => s.pauseAgent(a.id) }] : []),
+      ...((a.status === 'paused' || a.status === 'error') && a.sessionId
+        ? [{ icon: <IconPlay />, label: 'Retomar', run: () => s.resumeAgent(a.id) }]
+        : []),
+      { icon: <IconNote />, label: 'Nova nota ligada', run: () => noteFor(id) },
+      { sep: true },
+      ...(live ? [{ icon: <IconStop />, label: 'Parar', danger: true, run: () => s.stopAgent(a.id) }] : []),
+      rm,
+    ];
+  }
   if (n.type === 'issue') {
     const i = s.issues[n.refId];
     return [
       { header: `Issue #${i?.iid ?? ''}` },
       { icon: <IconExpand />, label: 'Expandir', hint: 'Duplo clique', run: () => s.openFocus(id) },
+      { icon: <IconAgent />, label: 'Iniciar agente', run: () => startIssueAgent(id) },
       { icon: <IconNote />, label: 'Nova nota ligada', run: () => noteFor(id) },
       { sep: true },
       rm,

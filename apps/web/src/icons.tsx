@@ -254,3 +254,19 @@ export const IconGear = ({ size = 14 }: P) => (
     <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" />
   </svg>
 );
+export const IconPause = ({ size = 14 }: P) => (
+  <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor" aria-hidden="true">
+    <rect x="4" y="3" width="2.6" height="10" rx="1" />
+    <rect x="9.4" y="3" width="2.6" height="10" rx="1" />
+  </svg>
+);
+export const IconPlay = ({ size = 14 }: P) => (
+  <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor" aria-hidden="true">
+    <path d="M5 3.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L5.9 2.7a.6.6 0 0 0-.9.5z" />
+  </svg>
+);
+export const IconStop = ({ size = 14 }: P) => (
+  <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor" aria-hidden="true">
+    <rect x="3.5" y="3.5" width="9" height="9" rx="2" />
+  </svg>
+);

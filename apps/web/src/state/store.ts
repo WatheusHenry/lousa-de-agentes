@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 import type {
+  Agent,
+  AgentEvent,
+  Approval,
+  Policy,
   Activity,
   CanvasEdge,
   CanvasNode,
@@ -38,6 +42,12 @@ export interface CanvasState {
   issues: Record<string, Issue>;
   activity: Activity[];
   connection: Connection;
+  agents: Record<string, Agent>;
+  /** Eventos por agente, em ordem. */
+  agentEvents: Record<string, AgentEvent[]>;
+  /** Pedidos de permissão pendentes. */
+  approvals: Record<string, Approval>;
+  policies: Policy[];
 
   // ---------- issues abertas (barra lateral) ----------
   openIssueRefs: string[];
@@ -77,6 +87,21 @@ export interface CanvasState {
   removeNode(id: string): void;
   undo(): void;
 
+  createAgent(o: {
+    at: { x: number; y: number };
+    issueRef?: string;
+    repos?: number[];
+    instruction?: string;
+    fromNodeId?: string;
+  }): { agentId: string; nodeId: string };
+  updateAgent(agentId: string, patch: { repos?: number[]; issueRef?: string | null }): void;
+  messageAgent(agentId: string, text: string): void;
+  pauseAgent(agentId: string): void;
+  resumeAgent(agentId: string): void;
+  stopAgent(agentId: string): void;
+  decideApproval(approvalId: string, decision: 'allow' | 'deny', remember?: boolean): void;
+  removePolicy(policyId: string): void;
+
   select(id: string | null): void;
   setPanel(p: Panel): void;
   setTab(t: Tab): void;
@@ -95,6 +120,14 @@ const newId = (prefix: string) => `${prefix}_${crypto.randomUUID().replace(/-/g,
 const nowIso = () => new Date().toISOString();
 const omit = <T>(rec: Record<string, T>, key: string): Record<string, T> =>
   Object.fromEntries(Object.entries(rec).filter(([k]) => k !== key));
+
+const MAX_EVENTS = 500;
+
+function groupEvents(list: AgentEvent[]): Record<string, AgentEvent[]> {
+  const out: Record<string, AgentEvent[]> = {};
+  for (const e of list) (out[e.agentId] ??= []).push(e);
+  return out;
+}
 
 let sender: Sender | null = null;
 let pendingUndo: (() => void) | null = null;
@@ -123,6 +156,10 @@ export const useStore = create<CanvasState>()((set, get) => ({
   issues: {},
   activity: [],
   connection: 'connecting',
+  agents: {},
+  agentEvents: {},
+  approvals: {},
+  policies: [],
   openIssueRefs: [],
   issuesLoading: false,
   issuesError: null,
@@ -153,6 +190,10 @@ export const useStore = create<CanvasState>()((set, get) => ({
         noteLinks: s.noteLinks,
         issues: { ...st.issues, ...Object.fromEntries(s.issues.map((i) => [i.ref, i])) },
         activity: s.activity,
+        agents: byId(s.agents),
+        agentEvents: groupEvents(s.agentEvents),
+        approvals: byId(s.approvals.filter((a) => a.status === 'pending')),
+        policies: s.policies,
         selected: st.selected && nodes[st.selected] ? st.selected : null,
         focusId: st.focusId && nodes[st.focusId] ? st.focusId : null,
       };
@@ -204,6 +245,29 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set({ settings: m.settings });
       case 'activity':
         return set((s) => ({ activity: [{ text: m.text, ts: m.ts }, ...s.activity].slice(0, 50) }));
+      case 'agent.upsert':
+        return set((s) => ({ agents: { ...s.agents, [m.agent.id]: m.agent } }));
+      case 'agent.event':
+        return set((s) => {
+          const list = s.agentEvents[m.event.agentId] ?? [];
+          if (list.length && list[list.length - 1]!.id >= m.event.id) return s;
+          return {
+            agentEvents: { ...s.agentEvents, [m.event.agentId]: [...list, m.event].slice(-MAX_EVENTS) },
+          };
+        });
+      case 'approval.upsert':
+        return set((s) => ({
+          approvals:
+            m.approval.status === 'pending'
+              ? { ...s.approvals, [m.approval.id]: m.approval }
+              : omit(s.approvals, m.approval.id),
+        }));
+      case 'policy.upsert':
+        return set((s) => ({
+          policies: [m.policy, ...s.policies.filter((p) => p.id !== m.policy.id)],
+        }));
+      case 'policy.remove':
+        return set((s) => ({ policies: s.policies.filter((p) => p.id !== m.policyId) }));
       case 'error':
         return get().showToast(m.message, { label: 'Ok', run: () => {} });
     }
@@ -327,7 +391,9 @@ export const useStore = create<CanvasState>()((set, get) => ({
         ? `Issue #${s.issues[n.refId]?.iid ?? ''} removida do canvas`
         : n.type === 'note'
           ? `Nota "${s.notes[n.refId]?.title ?? ''}" excluída`
-          : 'Item removido do canvas';
+          : n.type === 'agent'
+            ? `${s.agents[n.refId]?.name ?? 'Agente'} parado e removido do canvas`
+            : 'Item removido do canvas';
     const nodes = omit(s.nodes, id);
     set({
       nodes,
@@ -345,6 +411,39 @@ export const useStore = create<CanvasState>()((set, get) => ({
     pendingUndo = null;
     set({ toast: null });
     f();
+  },
+
+  createAgent({ at, issueRef, repos, instruction, fromNodeId }) {
+    const agentId = newId('a');
+    const nodeId = newId('n');
+    send({
+      type: 'agent.create',
+      agentId,
+      nodeId,
+      ...(fromNodeId ? { edgeId: newId('e') } : {}),
+      ...(issueRef ? { issueRef } : {}),
+      repos: repos ?? [],
+      ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
+      maxDepth: 0,
+      openMr: false,
+      x: at.x,
+      y: at.y,
+    });
+    set((s) => ({ fresh: { ...s.fresh, [nodeId]: true }, selected: nodeId, panel: null }));
+    return { agentId, nodeId };
+  },
+  updateAgent: (agentId, patch) => send({ type: 'agent.update', agentId, ...patch }),
+  messageAgent: (agentId, text) => send({ type: 'agent.message', agentId, text }),
+  pauseAgent: (agentId) => send({ type: 'agent.pause', agentId }),
+  resumeAgent: (agentId) => send({ type: 'agent.resume', agentId }),
+  stopAgent: (agentId) => send({ type: 'agent.stop', agentId }),
+  decideApproval(approvalId, decision, remember) {
+    set((s) => ({ approvals: omit(s.approvals, approvalId) }));
+    send({ type: 'approval.decide', approvalId, decision, ...(remember ? { remember } : {}) });
+  },
+  removePolicy(policyId) {
+    set((s) => ({ policies: s.policies.filter((p) => p.id !== policyId) }));
+    send({ type: 'policy.remove', policyId });
   },
 
   select: (id) => set((s) => ({ selected: id, panel: id ? null : s.panel })),
@@ -385,3 +484,13 @@ export const noteNodeOf = (s: CanvasState, noteId: string) =>
 
 export const issueNodeOf = (s: CanvasState, ref: string) =>
   Object.values(s.nodes).find((n) => n.type === 'issue' && n.refId === ref);
+
+export const agentNodeOf = (s: CanvasState, agentId: string) =>
+  Object.values(s.nodes).find((n) => n.type === 'agent' && n.refId === agentId);
+
+/** Agentes cujo nó está no canvas. */
+export const liveAgents = (s: CanvasState) =>
+  Object.values(s.nodes)
+    .filter((n) => n.type === 'agent')
+    .map((n) => s.agents[n.refId])
+    .filter((a): a is Agent => !!a);

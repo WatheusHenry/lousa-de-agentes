@@ -1,10 +1,17 @@
 import { useInternalNode, type EdgeProps } from '@xyflow/react';
+import { isLive } from '../agents/agent-ui.ts';
+import { useStore } from '../state/store.ts';
 import { edgePath, type FlowEdge } from './flow.ts';
 
 /** Aresta calculada pelos retângulos dos nós, com as classes e setas do protótipo. */
 export function FloatingEdge({ id, source, target, data }: EdgeProps<FlowEdge>) {
   const s = useInternalNode(source);
   const t = useInternalNode(target);
+  // aresta animada em azul enquanto o agente de destino trabalha
+  const live = useStore((st) => {
+    const n = st.nodes[target];
+    return n?.type === 'agent' && isLive(st.agents[n.refId]);
+  });
   if (!s || !t || !s.measured.width || !t.measured.width) return null;
   const rect = (n: typeof s) => ({
     x: n.internals.positionAbsolute.x,
@@ -14,8 +21,10 @@ export function FloatingEdge({ id, source, target, data }: EdgeProps<FlowEdge>) 
   });
   const kind = data?.kind ?? 'issue';
   const cls =
-    kind === 'note' ? 'edge note' : `edge${kind === 'spawn' ? ' spawn' : ''}${kind === 'mr' ? ' mrk' : ''}`;
-  const marker = kind === 'note' ? 'arrN' : kind === 'mr' ? 'arrM' : 'arr';
+    kind === 'note'
+      ? 'edge note'
+      : `edge${kind === 'spawn' ? ' spawn' : ''}${kind === 'mr' ? ' mrk' : ''}${live ? ' live' : ''}`;
+  const marker = kind === 'note' ? 'arrN' : live ? 'arrA' : kind === 'mr' ? 'arrM' : 'arr';
   return (
     <path
       id={id}

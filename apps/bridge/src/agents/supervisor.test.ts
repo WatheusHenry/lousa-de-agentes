@@ -299,7 +299,7 @@ describe('supervisor', () => {
     send({ type: 'agent.resume', agentId: 'a2' });
     await until(() => runner.starts.length === 2, 'retomada');
     expect(runner.starts[1]!.resume).toBe(true);
-    expect(runner.sent.at(-1)).toBe('Continue de onde parou.');
+    expect(runner.sent.at(-1)).toMatch(/^Continue de onde parou\. O usuário só pausou você/);
 
     send({ type: 'agent.stop', agentId: 'a2' });
     await until(() => agentState('a2')?.status === 'stopped', 'parado');

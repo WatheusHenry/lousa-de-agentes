@@ -54,6 +54,7 @@ export const api = {
   selectProjects: (projectIds: number[]) =>
     call<SettingsView>('/api/settings/projects', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
   issues: () => call<{ issues: Issue[]; errors: { project: string; error: string }[] }>('/api/gitlab/issues'),
+  rawEvents: (agentId: string) => call<string[]>(`/api/agents/${encodeURIComponent(agentId)}/raw`),
   comments: (projectId: number, iid: number) =>
     call<IssueComment[]>(`/api/gitlab/issues/${projectId}/${iid}/comments`),
 };

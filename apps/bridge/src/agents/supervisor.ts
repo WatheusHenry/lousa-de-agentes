@@ -29,6 +29,12 @@ export class AgentError extends Error {}
 
 const ROLE_PROMPT = readFileSync(new URL('./roles/main.md', import.meta.url), 'utf8');
 const EVENTS_PER_AGENT = 300;
+/**
+ * O Claude Code descreve uma interrupção ao modelo como "o usuário não quer prosseguir".
+ * Na retomada, deixamos claro que foi uma pausa, não uma recusa.
+ */
+const RESUME_TEXT =
+  'Continue de onde parou. O usuário só pausou você: nada foi recusado. Se um comando foi interrompido pela pausa, rode de novo.';
 const nowIso = () => new Date().toISOString();
 
 type Row = typeof agentT.$inferSelect;
@@ -263,7 +269,6 @@ export class Supervisor {
     l.pausing = true;
     this.d.approvals.cancelForAgent(agentId, 'O usuário pausou o agente.');
     l.proc.interrupt();
-    this.event(agentId, { kind: 'status', status: 'paused', note: 'pausado por você' });
   }
 
   async resume(agentId: string): Promise<void> {
@@ -272,13 +277,13 @@ export class Supervisor {
     if (l) {
       if (l.inputClosed && !l.stopping && !l.afterExit) {
         this.event(agentId, { kind: 'user_message', text: 'Continue de onde parou.' });
-        l.afterExit = 'Continue de onde parou.';
+        l.afterExit = RESUME_TEXT;
       }
       return;
     }
     if (!a.sessionId) throw new AgentError('Este agente ainda não começou. Envie a primeira instrução.');
     this.event(agentId, { kind: 'user_message', text: 'Continue de onde parou.' });
-    await this.launch(agentId, 'Continue de onde parou.', true);
+    await this.launch(agentId, RESUME_TEXT, true);
   }
 
   stop(agentId: string, reason: string): void {
