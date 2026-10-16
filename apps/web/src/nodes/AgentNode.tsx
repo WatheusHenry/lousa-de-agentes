@@ -1,7 +1,9 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { memo, useState } from 'react';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
-import { isBlank, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
+import { isBlank, reposText, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
+
+const NO_PROJECTS: never[] = [];
 import { IconExpand } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
 import type { FlowNode } from '../canvas/flow.ts';
@@ -13,18 +15,14 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
   const agent = useStore((s) => s.agents[data.refId]);
   const events = useStore((s) => s.agentEvents[data.refId] ?? EMPTY);
   const fresh = useStore((s) => !!s.fresh[id]);
-  const repo = useStore((s) => s.settings?.projects.find((p) => p.id === agent?.repos[0]));
+  const projects = useStore((s) => s.settings?.projects ?? NO_PROJECTS);
   const openFocus = useStore((s) => s.openFocus);
   const message = useStore((s) => s.messageAgent);
   const [text, setText] = useState('');
   const { ref, onScroll } = useStickToBottom<HTMLDivElement>(events.length);
   if (!agent) return null;
   const blank = isBlank(agent);
-  const sub = blank
-    ? 'sem instrução ainda'
-    : agent.repos.length > 1
-      ? `${agent.repos.length} repositórios`
-      : (repo?.name ?? 'sem repositório');
+  const sub = blank ? 'sem instrução ainda' : reposText(agent, projects);
 
   return (
     <div className={`card win${fresh ? ' enter' : ''}`}>

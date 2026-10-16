@@ -50,3 +50,9 @@ export const SUGGESTIONS = [
   'Adicione um teste para o caso de erro',
   'Mostre os commits que você fez',
 ];
+
+/** "payments-api", ou "2 repositórios" para o orquestrador. */
+export const reposText = (a: Agent, projects: { id: number; name: string }[]): string =>
+  a.repos.length > 1
+    ? `${a.repos.length} repositórios`
+    : (projects.find((p) => p.id === a.repos[0])?.name ?? 'sem repositório');

@@ -9,6 +9,7 @@ import {
   fmtUsd,
   isBlank,
   isLive,
+  reposText,
   roleLabel,
   statusLabel,
   statusShort,
@@ -23,7 +24,7 @@ export function AgentTreeItem({ agent: a }: { agent: Agent }) {
   const kids = Object.values(agents).filter((x) => x.parentId === a.id);
   const selected = useStore((s) => s.selected);
   const node = useStore((s) => agentNodeOf(s, a.id));
-  const repo = useStore((s) => s.settings?.projects.find((p) => p.id === a.repos[0]));
+  const projects = useStore((s) => s.settings?.projects ?? EMPTY);
   return (
     <li>
       <button className={selected === node?.id ? 'cur' : ''} onClick={() => node && focusNode(node.id)}>
@@ -31,7 +32,7 @@ export function AgentTreeItem({ agent: a }: { agent: Agent }) {
         <span className="nm">{a.name}</span>
         <span className={`badge ${statusTone(a.status)}`}>{statusShort(a.status)}</span>
         <span className="mt">
-          {roleLabel(a)} · {isBlank(a) ? 'sem instrução' : (repo?.name ?? 'sem repositório')}
+          {roleLabel(a)} · {isBlank(a) ? 'sem instrução' : reposText(a, projects)}
         </span>
       </button>
       {kids.length > 0 && (

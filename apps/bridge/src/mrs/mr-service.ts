@@ -133,14 +133,21 @@ export class MrService {
     }
 
     const issue = a.issueRef ? parseIssueRef(a.issueRef) : null;
-    const body = (opts.description ?? '').trim();
+    let body = (opts.description ?? '').trim();
+    // issue de outro projeto (agente criado por um orquestrador): referência completa
+    const issuePath =
+      issue && issue.projectId !== projectId ? this.store.cachedIssue(a.issueRef!)?.projectPath : null;
+    if (issue && issuePath) {
+      // "Closes #12" escrito pelo agente fecharia a issue 12 deste projeto, não a da tarefa
+      body = body.replace(
+        new RegExp(`\\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?) #${issue.iid}\\b`, 'gi'),
+        `$1 ${issuePath}#${issue.iid}`,
+      );
+    }
     // o agente às vezes já escreve "Closes #iid"; não repete
     const alreadyCloses =
       issue &&
       new RegExp(`\\b(close[sd]?|fix(e[sd])?|resolve[sd]?) [\\w./-]*#${issue.iid}\\b`, 'i').test(body);
-    // issue de outro projeto (agente criado por um orquestrador): referência completa
-    const issuePath =
-      issue && issue.projectId !== projectId ? this.store.cachedIssue(a.issueRef!)?.projectPath : null;
     const closes = issue && !alreadyCloses ? `\n\nCloses ${issuePath ?? ''}#${issue.iid}` : '';
     const description = `${body}${closes}\n\n_Aberto por ${a.name} no Agent Canvas._`.trim();
     const client = this.settings.client();

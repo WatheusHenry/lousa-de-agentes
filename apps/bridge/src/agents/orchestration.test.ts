@@ -170,6 +170,14 @@ describe('orquestração', () => {
         });
         res.badRepo = await callTool(opts, 'spawn_agent', { repo: 'shared-contracts', task: 'x' });
         res.wait = await callTool(opts, 'wait_for_agents', {});
+        // no fim o orquestrador reescreve o plano com textos novos
+        res.plan2 = await callTool(opts, 'report_plan', {
+          items: [
+            { text: 'payments-api: chave pronta (MR aberto)', done: true },
+            { text: 'web-app: chave enviada (MR aberto)', done: true },
+            { text: 'Comentar o resumo na issue', done: true },
+          ],
+        });
         res.comment = await callTool(opts, 'comment_issue', {
           body: 'Resumo: dois MRs. Ordem: payments-api, depois web-app.',
         });
@@ -186,7 +194,11 @@ describe('orquestração', () => {
         question = callTool(opts, 'ask_human', { question: 'Botão ou link?', options: ['Botão', 'Link'] });
         res.answer = await question;
       }
-      res[`mr-${name}`] = await callTool(opts, 'open_merge_request', { title: `MR ${name}` });
+      // o agente do web-app escreve "Closes #142" por conta própria (fecharia a issue errada)
+      res[`mr-${name}`] = await callTool(opts, 'open_merge_request', {
+        title: `MR ${name}`,
+        ...(name === 'agente-3' ? { description: 'Moeda no checkout.\n\nCloses #142' } : {}),
+      });
       h.onLine(result(opts.sessionId, `${name} terminou.`));
     };
     const agentNode = (n: string) =>
@@ -249,6 +261,9 @@ describe('orquestração', () => {
     // resumo da espera: os dois filhos, com branch e MR
     expect(res.wait!.text).toMatch(/## agente-2 \(payments-api\): done[\s\S]*MR !\d+/);
     expect(res.wait!.text).toMatch(/## agente-3 \(web-app\): done[\s\S]*MR !\d+[\s\S]*agente-3 terminou/);
+    // o resumo traz o diff de cada filho, para o orquestrador conferir
+    expect(res.wait!.text).toContain('Diff (agente-2.txt)');
+    expect(res.wait!.text).toContain('+x');
     expect(res.comment!.text).toBe('Comentário publicado na issue.');
 
     // árvore: filhos com o pai, arestas de spawn, worktrees nos repositórios certos
@@ -264,10 +279,11 @@ describe('orquestração', () => {
     expect(cctx).toContain('Você não pode criar sub-agentes');
     expect(cctx).not.toContain('chame `write_note`'); // passagem só na raiz
     // plano: passos ligados aos filhos e marcados quando terminaram
+    // depois de reescrito, o plano continua ligado aos filhos pelo repositório citado
     const plan = byName('agente-1')!.plan!;
     expect(plan.slice(0, 2)).toEqual([
-      { text: 'payments-api: chave de idempotência', done: true, agentId: c1.id },
-      { text: 'web-app: mandar a chave', done: true, agentId: c2.id },
+      { text: 'payments-api: chave pronta (MR aberto)', done: true, agentId: c1.id },
+      { text: 'web-app: chave enviada (MR aberto)', done: true, agentId: c2.id },
     ]);
     // MR do web-app fecha a issue de outro projeto com a referência completa
     const mrs = msgs
@@ -275,6 +291,7 @@ describe('orquestração', () => {
       .map((m) => m.mr);
     const webMr = mrs.find((m) => m.projectId === 102)!;
     expect(webMr.description).toContain('Closes grupo/payments-api#142');
+    expect(webMr.description).not.toMatch(/Closes #142/);
     expect(mrs.find((m) => m.projectId === 101)!.description).toContain('Closes #142');
     await until(() => byName('agente-1')?.status === 'done', 'orquestrador concluído');
   }, 30_000);

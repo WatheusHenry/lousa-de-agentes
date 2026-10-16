@@ -62,14 +62,7 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         );
         break;
       case 'spawn':
-        out.push(
-          <div key={k} className="l tool">
-            <span className="g">●</span> <b>spawn_agent</b>({b.repo})
-            <div className="l out">
-              ⎿ {b.childName} criado: {b.task.length > 120 ? b.task.slice(0, 120) + '…' : b.task}
-            </div>
-          </div>,
-        );
+        // a chamada de spawn_agent e o resultado dela já aparecem como ferramenta
         break;
       case 'wait':
         out.push(

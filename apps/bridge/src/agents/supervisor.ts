@@ -21,7 +21,7 @@ import type { CanvasStore } from '../canvas/canvas-store.ts';
 import { writeContext } from '../context/builder.ts';
 import type { Db } from '../db/index.ts';
 import { agent as agentT, agentEvent, edge, node, repo as repoT } from '../db/schema.ts';
-import { createWorktree, slugify } from '../git/worktree.ts';
+import { createWorktree, localDiff, slugify } from '../git/worktree.ts';
 import type { Hub } from '../hub.ts';
 import { APPROVE_TOOL, CANVAS_TOOLS, MCP_SERVER_NAME, type McpAgentContext } from '../mcp/canvas-server.ts';
 import type { SettingsService } from '../settings.ts';
@@ -889,10 +889,11 @@ export class Supervisor {
       this.event(callerId, { kind: 'wait', state: 'end', names });
       if (this.live.has(callerId)) this.setStatus(callerId, 'running');
     }
-    return targets.map((t) => this.childSummary(t.id)).join('\n\n');
+    return (await Promise.all(targets.map((t) => this.childSummary(t.id)))).join('\n\n');
   }
 
-  private childSummary(id: string): string {
+  /** Estado, branch, MR, resposta final e o diff do filho (para o pai conferir a consistência). */
+  private async childSummary(id: string): Promise<string> {
     const a = this.mustGet(id);
     const project = this.d.settings.projects().find((x) => x.id === a.repos[0]);
     const last = this.events(id, undefined, 400).find((e) => e.body.kind === 'result');
@@ -904,9 +905,25 @@ export class Supervisor {
       mr ? `MR !${mr.iid} (${mr.state}, pipeline: ${mr.pipelineStatus}): ${mr.webUrl}` : null,
       a.error ? `Erro: ${a.error}` : null,
       result ? `Resposta final:\n${result.slice(0, 2000)}` : null,
+      await this.childDiff(a),
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  /** Diff do branch do filho em relação à base, cortado: o pai não lê os worktrees dos filhos. */
+  private async childDiff(a: Agent): Promise<string | null> {
+    if (!a.worktreePath || !a.branch || a.repos[0] === undefined) return null;
+    const r = this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, a.repos[0])).get();
+    const parent = a.parentId ? this.get(a.parentId) : null;
+    const base = a.role === 'sub' && parent?.branch ? parent.branch : (r?.defaultBranch ?? 'main');
+    const files = await localDiff(a.worktreePath, base).catch(() => []);
+    if (!files.length) return 'Diff: (nenhuma mudança commitada)';
+    const MAX = 6000;
+    let text = files.map((f) => `--- ${f.newPath}\n${f.diff}`).join('\n');
+    if (text.length > MAX)
+      text = `${text.slice(0, MAX)}\n… (diff cortado; ${files.length} arquivos no total)`;
+    return `Diff (${files.map((f) => f.newPath).join(', ')}):\n\`\`\`diff\n${text}\n\`\`\``;
   }
 
   /** Confere as esperas depois de qualquer mudança de status. */
@@ -930,12 +947,20 @@ export class Supervisor {
   reportPlan(agentId: string, items: PlanItem[]): void {
     const a = this.mustGet(agentId);
     const old = a.plan ?? [];
-    // mantém o vínculo passo → filho quando o texto do passo não mudou
-    const plan = items.map((it) => ({
-      text: it.text,
-      done: it.done,
-      agentId: it.agentId ?? old.find((o) => o.text === it.text)?.agentId ?? null,
-    }));
+    const kids = this.agents().filter((x) => x.parentId === agentId);
+    const projects = this.d.settings.projects();
+    const used = new Set<string>();
+    // mantém o vínculo passo → filho: pelo texto igual ou, se o texto mudou, pelo repositório citado
+    const plan = items.map((it) => {
+      const byText = it.agentId ?? old.find((o) => o.text === it.text)?.agentId ?? null;
+      const byRepo = kids.find((k) => {
+        const name = projects.find((p) => p.id === k.repos[0])?.name.toLowerCase();
+        return !used.has(k.id) && !!name && it.text.toLowerCase().includes(name);
+      })?.id;
+      const id = byText ?? byRepo ?? null;
+      if (id) used.add(id);
+      return { text: it.text, done: it.done, agentId: id };
+    });
     this.savePlan(agentId, plan, true);
     this.event(agentId, { kind: 'plan', items: plan });
   }

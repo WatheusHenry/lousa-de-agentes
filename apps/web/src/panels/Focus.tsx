@@ -18,7 +18,9 @@ import {
 import { agentNodeOf, mrNodeOf, useStore } from '../state/store.ts';
 import { DiffStat, MrBadge, mrReady, PipelineStages } from '../mrs/mr-ui.tsx';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
-import { isBlank, roleLabel, statusLabel, statusTone, SUGGESTIONS } from '../agents/agent-ui.ts';
+import { isBlank, reposText, roleLabel, statusLabel, statusTone, SUGGESTIONS } from '../agents/agent-ui.ts';
+
+const NO_PROJECTS: never[] = [];
 
 /** Qualquer item abre grande, com o fundo do canvas borrado. Issue vira documento; nota vira editor. */
 export function Focus() {
@@ -693,7 +695,7 @@ function AgentDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
   const node = useStore((s) => s.nodes[nodeId]);
   const agent = useStore((s) => (node ? s.agents[node.refId] : undefined));
   const events = useStore((s) => (node ? (s.agentEvents[node.refId] ?? NO_EVENTS) : NO_EVENTS));
-  const repo = useStore((s) => s.settings?.projects.find((p) => p.id === agent?.repos[0]));
+  const projects = useStore((s) => s.settings?.projects ?? NO_PROJECTS);
   const message = useStore((s) => s.messageAgent);
   const [text, setText] = useState('');
   const [raw, setRaw] = useState<string[] | null>(null);
@@ -731,7 +733,7 @@ function AgentDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           </span>
         }
         name={agent.name}
-        sub={`${roleLabel(agent)} · ${repo?.name ?? 'sem repositório'}${agent.branch ? ` · ${agent.branch}` : ''}`}
+        sub={`${roleLabel(agent)} · ${reposText(agent, projects)}${agent.branch ? ` · ${agent.branch}` : ''}`}
         status={
           <>
             <button
