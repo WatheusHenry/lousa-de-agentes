@@ -49,6 +49,9 @@ const EVENTS_PER_AGENT = 300;
  */
 const RESUME_TEXT =
   'Continue de onde parou. O usuário só pausou você: nada foi recusado. Se um comando foi interrompido pela pausa, rode de novo.';
+/** Mensagem da retomada automática depois de o bridge reiniciar no meio de um turno. */
+const RECOVER_TEXT =
+  'O Agent Canvas reiniciou no meio do seu turno e o processo foi encerrado; nada foi recusado. Continue de onde parou. Se um comando, pedido de permissão ou pergunta foi interrompido, faça de novo. Se você esperava agentes filhos (wait_for_agents), chame de novo.';
 const nowIso = () => new Date().toISOString();
 
 type Row = typeof agentT.$inferSelect;
@@ -128,19 +131,65 @@ export class Supervisor {
   private waiters: { callerId: string; ids: string[]; done: (cancelled: string | null) => void }[] = [];
   private readonly limits: SupervisorLimits;
   private closed = false;
+  /** Agentes que trabalhavam quando o bridge parou (crash ou desligamento): `recover()` decide. */
+  private interrupted: string[] = [];
 
   constructor(private readonly d: SupervisorDeps) {
     this.limits = { ...DEFAULT_LIMITS, ...d.limits };
     d.approvals.onChange = (agentId, a) => this.onApproval(agentId, a);
     d.questions.onChange = (q) => this.onQuestion(q);
-    // agentes que estavam rodando quando o bridge parou: ficam pausados, prontos para retomar
-    const stale = d.db
-      .select()
+    // agentes que estavam trabalhando quando o bridge parou: recover() retoma ou pausa
+    this.interrupted = d.db
+      .select({ id: agentT.id })
       .from(agentT)
       .where(inArray(agentT.status, ['running', 'waiting', 'coordinating', 'queued']))
-      .all();
-    for (const a of stale) {
-      this.setStatus(a.id, a.sessionId ? 'paused' : 'idle', 'O bridge reiniciou. Retome para continuar.');
+      .all()
+      .map((a) => a.id);
+  }
+
+  /**
+   * Depois de o bridge subir (o MCP precisa estar no ar): retoma com --resume os agentes
+   * interrompidos. O que não pode voltar (worktree apagado, sessão que o claude não acha) fica
+   * como erro. Com `auto` desligado, ficam pausados para o usuário retomar.
+   */
+  async recover(auto = true): Promise<void> {
+    const ids = this.interrupted;
+    this.interrupted = [];
+    if (ids.length)
+      this.d.hub.broadcast(
+        this.d.store.logActivity(
+          auto
+            ? `O bridge reiniciou: retomando ${ids.length} agente${ids.length > 1 ? 's' : ''}`
+            : `O bridge reiniciou: ${ids.length} agente${ids.length > 1 ? 's' : ''} pausado${ids.length > 1 ? 's' : ''}`,
+        ),
+      );
+    for (const id of ids) {
+      const a = this.get(id);
+      if (!a || this.live.has(id)) continue;
+      const started = !!a.sessionId && this.hasInit(id);
+      if (!auto) {
+        this.d.approvals.cancelForAgent(id, 'O bridge reiniciou.');
+        this.d.questions.cancelForAgent(id);
+        this.setStatus(id, started ? 'paused' : 'idle', 'O bridge reiniciou. Retome para continuar.');
+        continue;
+      }
+      if (a.worktreePath && !existsSync(a.worktreePath)) {
+        const message = `O bridge reiniciou e a pasta de trabalho ${a.worktreePath} não existe mais: não dá para retomar.`;
+        this.d.approvals.cancelForAgent(id, message);
+        this.d.questions.cancelForAgent(id);
+        this.event(id, { kind: 'error', message });
+        this.save(id, { error: message });
+        this.setStatus(id, 'error');
+        continue;
+      }
+      // erros do launch (claude ausente, sessão perdida) viram evento e status lá dentro
+      if (started) {
+        this.event(id, { kind: 'status', status: a.status, note: 'retomando depois do reinício do bridge' });
+        await this.launch(id, RECOVER_TEXT, true).catch(() => {});
+      } else if (a.instruction) {
+        const text = a.issueRef && a.depth === 0 ? instructionForIssue(a.instruction) : a.instruction;
+        await this.launch(id, text, false).catch(() => {});
+      } else this.setStatus(id, 'idle');
     }
   }
 
@@ -383,11 +432,11 @@ export class Supervisor {
     this.queue = [];
     for (const w of this.waiters) w.done('O bridge foi encerrado.');
     this.waiters = [];
-    for (const [id, l] of this.live) {
+    // o status fica como está: na próxima subida, recover() retoma estes agentes
+    for (const l of this.live.values()) {
       l.stopping = true;
       if (l.timer) clearTimeout(l.timer);
       l.proc.kill();
-      this.setStatus(id, 'paused', 'O bridge foi encerrado. Retome para continuar.');
     }
   }
 

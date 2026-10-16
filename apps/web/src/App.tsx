@@ -17,7 +17,18 @@ export function App() {
       return;
     }
     const st = useStore.getState();
-    const socket = new BridgeSocket(token, st.applyServer, st.setConnection);
+    // depois de uma queda (bridge reiniciou), o estado volta inteiro: o que mudou no meio se perdeu
+    let opened = false;
+    const socket = new BridgeSocket(token, st.applyServer, (c) => {
+      useStore.getState().setConnection(c);
+      if (c !== 'open') return;
+      if (opened)
+        void api
+          .state()
+          .then((snap) => useStore.getState().loadSnapshot(snap))
+          .catch(() => {});
+      opened = true;
+    });
     st.setSender(socket);
     api
       .state()

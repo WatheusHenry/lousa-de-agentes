@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Approval, Policy } from '@agent-canvas/shared';
 import { summarizeTool } from '../agents/stream-parser.ts';
 import type { Db } from '../db/index.ts';
@@ -39,6 +39,11 @@ const toApproval = (r: Row): Approval => ({
  */
 export class ApprovalService {
   private waiting = new Map<string, { req: PermissionRequest; resolve: (d: Decision) => void }>();
+  /**
+   * Pedidos que estavam pendentes quando o bridge parou. Ficam na caixa de Ações: quando o
+   * agente retomado pede a mesma coisa, o pedido antigo (e a decisão, se já houver) é reaproveitado.
+   */
+  private orphans = new Set<string>();
   /** Avisado quando um pedido fica pendente ou é decidido (o agente muda de status). */
   onChange: (agentId: string, a: Approval) => void = () => {};
 
@@ -46,12 +51,8 @@ export class ApprovalService {
     private readonly db: Db,
     private readonly hub: Hub,
   ) {
-    // pedidos pendentes de uma execução anterior não têm mais quem espere por eles
-    this.db
-      .update(approval)
-      .set({ status: 'denied', decidedBy: 'reinício do bridge' })
-      .where(eq(approval.status, 'pending'))
-      .run();
+    for (const r of this.db.select().from(approval).where(eq(approval.status, 'pending')).all())
+      this.orphans.add(r.id);
   }
 
   policies(): Policy[] {
@@ -85,7 +86,33 @@ export class ApprovalService {
       this.record(req, 'allowed', `regra ${matched.join(', ')}`);
       return { behavior: 'allow', updatedInput: req.input };
     }
+    const orphan = this.adoptOrphan(req);
+    if (orphan) return orphan;
     const row = this.record(req, 'pending', null);
+    return new Promise<Decision>((resolve) => this.waiting.set(row.id, { req, resolve }));
+  }
+
+  /** O agente retomado pediu de novo o que pedia antes do reinício: usa o mesmo pedido. */
+  private adoptOrphan(req: PermissionRequest): Promise<Decision> | null {
+    const key = stableJson(req.input);
+    const rows = this.orphans.size
+      ? this.db
+          .select()
+          .from(approval)
+          .where(and(inArray(approval.id, [...this.orphans]), eq(approval.agentId, req.agentId)))
+          .all()
+      : [];
+    const row = rows.find((r) => r.toolName === req.toolName && stableJson(r.input) === key);
+    if (!row) return null;
+    this.orphans.delete(row.id);
+    if (row.status === 'allowed') return Promise.resolve({ behavior: 'allow', updatedInput: req.input });
+    if (row.status === 'denied')
+      return Promise.resolve({
+        behavior: 'deny',
+        message: 'O usuário negou este pedido no canvas. Não tente de novo; pergunte o que fazer.',
+      });
+    // ainda pendente: o agente volta a aguardar o mesmo pedido
+    this.emit(row);
     return new Promise<Decision>((resolve) => this.waiting.set(row.id, { req, resolve }));
   }
 
@@ -94,6 +121,7 @@ export class ApprovalService {
     const w = this.waiting.get(approvalId);
     const row = this.db.select().from(approval).where(eq(approval.id, approvalId)).get();
     if (!row || row.status !== 'pending') return;
+    // pedido de antes do reinício: a decisão fica guardada até o agente pedir de novo
     if (decision === 'allow' && remember)
       for (const r of splitRules(row.suggestedRule)) this.addPolicy(r, 'global');
     this.finish(approvalId, decision, 'usuário');
@@ -134,12 +162,18 @@ export class ApprovalService {
     }
   }
 
-  /** O agente parou: nega o que ele ainda esperava. */
+  /** O agente parou: nega o que ele ainda esperava, inclusive pedidos de antes do reinício. */
   cancelForAgent(agentId: string, reason: string): void {
     for (const [id, w] of [...this.waiting]) {
       if (w.req.agentId !== agentId) continue;
       this.finish(id, 'deny', reason);
       w.resolve({ behavior: 'deny', message: reason });
+    }
+    for (const id of [...this.orphans]) {
+      const r = this.db.select().from(approval).where(eq(approval.id, id)).get();
+      if (r?.agentId !== agentId) continue;
+      this.orphans.delete(id);
+      if (r.status === 'pending') this.finish(id, 'deny', reason);
     }
   }
 
@@ -184,4 +218,15 @@ export class ApprovalService {
     this.hub.broadcast({ type: 'approval.upsert', approval: a });
     this.onChange(a.agentId, a);
   }
+}
+
+/** JSON com as chaves em ordem, para comparar a entrada de dois pedidos. */
+export function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+  if (v && typeof v === 'object')
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`;
+  return JSON.stringify(v) ?? 'null';
 }

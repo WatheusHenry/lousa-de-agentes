@@ -16,7 +16,7 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const config = loadConfig();
 const { db, close } = openDb(join(config.home, 'agent-canvas.db'));
-const session = new Session();
+const session = Session.load(config.home);
 const settings = new SettingsService(
   db,
   new SecretStore(config.home),
@@ -46,12 +46,13 @@ const app = await buildServer({
     ? { contextBudget: Number(process.env.AGENT_CANVAS_CONTEXT_BUDGET) }
     : {}),
   home: config.home,
+  autoResume: process.env.AGENT_CANVAS_AUTO_RESUME !== '0',
   ...(process.env.AGENT_CANVAS_MODEL ? { model: process.env.AGENT_CANVAS_MODEL } : {}),
   logger: true,
 });
 
 await app.listen({ host: config.host, port: config.port });
-const unpublish = session.publish(config.home, config.port);
+session.publish(config.home, config.port);
 
 const url = config.webDist
   ? `http://127.0.0.1:${config.port}`
@@ -64,7 +65,6 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
-  unpublish();
   await app.close();
   close();
   process.exit(0);

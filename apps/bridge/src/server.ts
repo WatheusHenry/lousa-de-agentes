@@ -61,6 +61,8 @@ export interface ServerDeps {
   summarizer?: Summarizer;
   contextBudget?: number;
   limits?: Partial<SupervisorLimits>;
+  /** Retomar sozinhos, com --resume, os agentes interrompidos por um reinício (padrão: sim). */
+  autoResume?: boolean;
   /** Espera antes de avisar o agente que o contexto mudou (os testes usam 0). */
   contextDebounceMs?: number;
   logger?: boolean;
@@ -522,6 +524,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   poller.start({
     ...(deps.pollMrsEveryMs ? { mrsEveryMs: deps.pollMrsEveryMs } : {}),
     ...(deps.pollIssuesEveryMs ? { issuesEveryMs: deps.pollIssuesEveryMs } : {}),
+  });
+
+  // agentes interrompidos pelo reinício voltam depois que o MCP do canvas está no ar
+  app.addHook('onListen', async () => {
+    void supervisor.recover(deps.autoResume ?? true).catch((err) => app.log.error(err));
   });
 
   app.addHook('preClose', async () => {

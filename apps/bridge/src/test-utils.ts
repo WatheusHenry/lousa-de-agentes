@@ -20,10 +20,17 @@ export async function makeBridge(
   makeClient: (url: string, token: string) => GitLabClient = () => new MockGitLabClient(),
   runner: AgentRunner = new CliRunner(),
   port = TEST_PORT,
-  opts: { summarizer?: Summarizer; contextDebounceMs?: number; limits?: Partial<SupervisorLimits> } = {},
+  opts: {
+    summarizer?: Summarizer;
+    contextDebounceMs?: number;
+    limits?: Partial<SupervisorLimits>;
+    /** Pasta de dados e banco em arquivo, para simular um reinício do bridge (a pasta fica). */
+    home?: string;
+    autoResume?: boolean;
+  } = {},
 ) {
-  const home = mkdtempSync(join(tmpdir(), 'agent-canvas-test-'));
-  const { db, sqlite, close } = openDb(':memory:');
+  const home = opts.home ?? mkdtempSync(join(tmpdir(), 'agent-canvas-test-'));
+  const { db, sqlite, close } = openDb(opts.home ? join(home, 'agent-canvas.db') : ':memory:');
   const session = new Session();
   const secrets = new SecretStore(home, {});
   const settings = new SettingsService(db, secrets, makeClient);
@@ -36,6 +43,7 @@ export async function makeBridge(
     home,
     contextDebounceMs: opts.contextDebounceMs ?? 0,
     ...(opts.limits ? { limits: opts.limits } : {}),
+    ...(opts.autoResume !== undefined ? { autoResume: opts.autoResume } : {}),
     summarizer: opts.summarizer ?? {
       summarize: async () => {
         throw new Error('resumo não configurado neste teste');
@@ -55,7 +63,7 @@ export async function makeBridge(
     async cleanup() {
       await app.close();
       close();
-      rmSync(home, { recursive: true, force: true });
+      if (!opts.home) rmSync(home, { recursive: true, force: true });
     },
   };
 }
