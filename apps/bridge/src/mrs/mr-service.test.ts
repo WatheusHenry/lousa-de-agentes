@@ -208,9 +208,7 @@ describe('merge requests', () => {
     send({ type: 'mr.merge', mrRef: mr.ref });
     await until(() => lastMr()?.state === 'merged', 'merge');
     expect(
-      msgs.some(
-        (m) => m.type === 'activity' && m.text.includes(`MR !${mr.iid} aprovado e mergeado`),
-      ),
+      msgs.some((m) => m.type === 'activity' && m.text.includes(`MR !${mr.iid} aprovado e mergeado`)),
     ).toBe(true);
   });
 
