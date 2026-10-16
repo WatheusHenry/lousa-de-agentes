@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
+import { Markdown } from '../components/Markdown.tsx';
 import { IconAgent, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel, repoName } from '../lib/format.ts';
 import { askFixPipeline } from '../actions.ts';
@@ -80,9 +81,9 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
           </button>
         </div>
         {desc ? (
-          <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
+          <Markdown className="desc" compact baseUrl={i.webUrl.replace(/\/-\/issues\/\d+$/, '')}>
             {desc.length > 600 ? desc.slice(0, 600) + '…' : desc}
-          </p>
+          </Markdown>
         ) : (
           <p className="lab">Sem descrição.</p>
         )}
@@ -291,9 +292,13 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
     <>
       <div className="grp">
         <h3>{nt.title}</h3>
-        <p className="desc" style={{ whiteSpace: 'pre-wrap' }}>
-          {nt.body || 'Sem texto ainda. Escreva direto no cartão.'}
-        </p>
+        {nt.body ? (
+          <Markdown className="desc" compact>
+            {nt.body}
+          </Markdown>
+        ) : (
+          <p className="desc">Sem texto ainda. Escreva direto no cartão.</p>
+        )}
       </div>
       <div>
         <button className="btn primary" onClick={() => s.openFocus(nodeId)}>

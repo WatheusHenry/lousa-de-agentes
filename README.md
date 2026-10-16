@@ -78,7 +78,8 @@ Em vez de salvar o token pela tela, você pode criar um `.env` na raiz do reposi
 
 ## Usando o canvas (Fase 1)
 
-- **Issues**: a aba Issues lista as issues abertas dos projetos escolhidos (atualiza a cada minuto). Arraste uma para o canvas ou use o **+** da linha. Se ela já estiver no canvas, o botão vira **mostrar**.
+- **Issues**: a aba Issues lista as issues abertas dos projetos escolhidos (até 300 por projeto, atualizadas a cada minuto; **↻** busca na hora). Com mais de um projeto, o seletor no topo da aba mostra só as de um projeto, com a contagem de cada um, e lembra a escolha. Arraste uma issue para o canvas ou use o **+** da linha. Se ela já estiver no canvas, o botão vira **mostrar**.
+- **Markdown**: descrições de issues e MRs, comentários, notas no painel e respostas dos agentes aparecem formatados.
 - **Notas**: botão **Nota** na toolbar, **duplo clique** no fundo ou **botão direito → Nova nota aqui**. Escreva direto no cartão; salva sozinho.
 - **Vincular**: arraste o **+** amarelo da nota até uma issue, ou use **Vincular a…** no painel da nota.
 - **Mover**: arraste pelo cartão (a nota arrasta pelo cabeçalho). A posição fica no SQLite.
@@ -206,7 +207,7 @@ Prints: [`docs/screenshots/fase-1`](docs/screenshots/fase-1), [`docs/screenshots
 
 - Se o bridge reiniciar (por exemplo, com o `tsx watch` em dev), o token de sessão muda e é preciso recarregar a página. O aviso "Sem conexão com o bridge" tem o botão para isso.
 - A lista de issues traz até 300 issues abertas por projeto.
-- Descrições, comentários e respostas dos agentes aparecem como texto, sem renderizar Markdown.
+- O Markdown segue o GFM (títulos, listas, checklists, tabelas, código). HTML dentro do texto aparece escapado, e imagens viram links: o conteúdo vem do GitLab e não é confiável. Referências do GitLab como `#123`, `!45` e `@usuario` ficam como texto.
 - Se o bridge cair no meio de um turno, os agentes que estavam trabalhando voltam como **Pausado**; **Retomar** continua a sessão. A recuperação automática é da Fase 7.
 - Ainda não há limite de agentes simultâneos nem orçamento de tokens (supervisor da Fase 5).
 - O polling de pipelines é de 30 segundos (webhooks não alcançam um app local).
