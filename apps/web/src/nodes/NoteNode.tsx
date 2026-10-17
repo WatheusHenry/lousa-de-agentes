@@ -1,5 +1,6 @@
 import { Handle, Position, useStore as useFlow, type NodeProps } from '@xyflow/react';
 import { memo } from 'react';
+import { NoteBody } from '../components/NoteBody.tsx';
 import { IconExpand, IconNote } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
 import type { FlowNode } from '../canvas/flow.ts';
@@ -55,13 +56,13 @@ function NoteNodeView({ id, data }: NodeProps<FlowNode>) {
               flushNote(note.id);
             }}
           />
-          <textarea
+          <NoteBody
             className="nbody nodrag nowheel"
+            compact
             value={note.body}
-            placeholder="Escreva decisões, regras de negócio, links, trechos de log…"
-            aria-label="Texto da nota"
-            onChange={(e) => updateNote(note.id, { body: e.target.value })}
-            onBlur={() => flushNote(note.id)}
+            placeholder="Escreva decisões, regras de negócio, links, trechos de log… (aceita Markdown)"
+            onChange={(body) => updateNote(note.id, { body })}
+            onCommit={() => flushNote(note.id)}
           />
         </>
       )}

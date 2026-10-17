@@ -41,7 +41,7 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         out.push(
           <div key={k} className="l user">
             <small>Você</small>
-            {b.text}
+            <Markdown compact>{b.text}</Markdown>
           </div>,
         );
         break;
@@ -60,7 +60,9 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
             {b.items.map((it, j) => (
               <span key={j} className={`it${it.done ? ' ok' : it.agentId ? ' wip' : ''}`}>
                 <span className="ck">{it.done ? '✓' : ''}</span>
-                <span className="tx">{it.text}</span>
+                <Markdown inline className="tx">
+                  {it.text}
+                </Markdown>
               </span>
             ))}
           </div>,
@@ -82,8 +84,11 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         out.push(
           b.answer === null ? (
             <div key={k} className="l ask">
-              <b>Pergunta para você:</b> {b.text}
-              <span className="lab"> (responda na aba Ações)</span>
+              <div>
+                <b>Pergunta para você</b>
+                <span className="lab"> (responda na seção Ações)</span>
+              </div>
+              <Markdown compact>{b.text}</Markdown>
             </div>
           ) : (
             <div key={k} className="l out">

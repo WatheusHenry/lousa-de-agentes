@@ -9,14 +9,19 @@ interface Props {
   className?: string;
   /** Versão compacta (cartões, janela do agente): títulos menores, sem margens grandes. */
   compact?: boolean;
+  /** Uma linha só (itens de plano, critérios): sem parágrafos, dentro de um <span>. */
+  inline?: boolean;
 }
+
+/** Elementos aceitos no modo inline; o resto (títulos, listas, blocos) vira só o texto. */
+const INLINE = ['p', 'a', 'img', 'strong', 'em', 'del', 'code', 'br'];
 
 /**
  * Markdown do GitLab e das respostas dos agentes. HTML cru nunca é renderizado (o conteúdo
  * vem de fora); links abrem em outra aba; imagens viram links, para não carregar nada de
  * terceiros sem o usuário pedir.
  */
-function MarkdownView({ children, baseUrl, className, compact }: Props) {
+function MarkdownView({ children, baseUrl, className, compact, inline }: Props) {
   const resolve = (url: string) => {
     const safe = defaultUrlTransform(url);
     if (!baseUrl || !safe || /^[a-z][a-z0-9+.-]*:|^#/i.test(safe)) return safe;
@@ -43,6 +48,22 @@ function MarkdownView({ children, baseUrl, className, compact }: Props) {
     input: ({ checked, type }) =>
       type === 'checkbox' ? <input type="checkbox" checked={!!checked} disabled readOnly /> : null,
   };
+  if (inline) {
+    components.p = ({ children: c }) => <>{c}</>;
+    return (
+      <span className={`md inline${className ? ` ${className}` : ''}`}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={components}
+          urlTransform={resolve}
+          allowedElements={INLINE}
+          unwrapDisallowed
+        >
+          {children}
+        </ReactMarkdown>
+      </span>
+    );
+  }
   return (
     <div className={`md${compact ? ' compact' : ''}${className ? ` ${className}` : ''}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={resolve}>
