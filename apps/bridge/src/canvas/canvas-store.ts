@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import {
+  clampNodeSize,
   parseIssueRef,
   type Activity,
   type CanvasEdge,
@@ -26,6 +27,7 @@ const toNode = (r: NodeRow): CanvasNode => ({
   refId: r.refId,
   x: r.x,
   y: r.y,
+  ...(r.w != null && r.h != null ? { w: r.w, h: r.h } : {}),
   createdAt: r.createdAt,
 });
 
@@ -165,6 +167,21 @@ export class CanvasStore {
           .returning()
           .get();
         if (!r) throw new CanvasError('Item não encontrado no canvas.');
+        return [{ type: 'node.upsert', node: toNode(r) }];
+      }
+      case 'node.resize': {
+        const cur = this.db
+          .select()
+          .from(node)
+          .where(and(eq(node.id, msg.nodeId), isNull(node.removedAt)))
+          .get();
+        if (!cur) throw new CanvasError('Item não encontrado no canvas.');
+        const r = this.db
+          .update(node)
+          .set(clampNodeSize(cur.type, msg.w, msg.h))
+          .where(eq(node.id, msg.nodeId))
+          .returning()
+          .get()!;
         return [{ type: 'node.upsert', node: toNode(r) }];
       }
       case 'node.remove':
@@ -558,8 +575,9 @@ export class CanvasStore {
     const rects = this.liveNodes().map((n) => ({
       x: n.x,
       y: n.y,
-      w: NODE_SIZE[n.type].w,
-      h: NODE_SIZE[n.type].h,
+      // cartão redimensionado ocupa o tamanho escolhido (a altura nunca é menor que a padrão)
+      w: n.w ?? NODE_SIZE[n.type].w,
+      h: Math.max(n.h ?? 0, NODE_SIZE[n.type].h),
     }));
     const { w, h } = NODE_SIZE[type];
     const GAP = 30;

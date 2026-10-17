@@ -155,6 +155,19 @@ describe('store do canvas', () => {
     ]);
   });
 
+  it('redimensionar prende nos limites do tipo e só envia quando o tamanho muda', () => {
+    const st = useStore.getState();
+    const id = st.placeIssue('101#142', { x: 0, y: 0 });
+    st.resizeNode(id, 100, 2000);
+    st.resizeNode(id, 284, 520);
+    st.resizeNode(id, 400.4, 300);
+    expect(sent.filter((m) => m.type === 'node.resize')).toEqual([
+      { type: 'node.resize', nodeId: id, w: 284, h: 520 },
+      { type: 'node.resize', nodeId: id, w: 400, h: 300 },
+    ]);
+    expect(useStore.getState().nodes[id]).toMatchObject({ w: 400, h: 300 });
+  });
+
   it('erro do servidor vira aviso', () => {
     useStore.getState().applyServer({ type: 'error', message: 'Issue desconhecida.' });
     expect(useStore.getState().toast?.msg).toBe('Issue desconhecida.');

@@ -5,6 +5,7 @@ import { startFromCard } from '../actions.ts';
 import { IconExpand, IconIssue } from '../icons.tsx';
 import { checklist, isRedLabel, repoName } from '../lib/format.ts';
 import { useStore } from '../state/store.ts';
+import { NodeResize } from '../canvas/NodeResize.tsx';
 import type { FlowNode } from '../canvas/flow.ts';
 
 function IssueNodeView({ id, data }: NodeProps<FlowNode>) {
@@ -107,6 +108,7 @@ function IssueNodeView({ id, data }: NodeProps<FlowNode>) {
       </div>
       <Handle type="target" position={Position.Top} className="hidden-handle" />
       <Handle type="source" position={Position.Bottom} className="hidden-handle" />
+      <NodeResize type="issue" />
     </div>
   );
 }

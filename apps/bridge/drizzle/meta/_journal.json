@@ -71,6 +71,13 @@
       "when": 1792252381696,
       "tag": "0009_sparkling_the_hood",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792276631336,
+      "tag": "0010_silly_shape",
+      "breakpoints": true
     }
   ]
 }

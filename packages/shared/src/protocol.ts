@@ -77,6 +77,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
     y: Coord,
   }),
   z.object({ type: z.literal('node.move'), nodeId: Id, x: Coord, y: Coord }),
+  /** Tamanho do cartão; o bridge prende nos limites do tipo (NODE_SIZE_LIMITS). */
+  z.object({ type: z.literal('node.resize'), nodeId: Id, w: Coord, h: Coord }),
   /** Tira do canvas a issue com os agentes, MRs e notas dela, sem apagar (restaura depois). */
   z.object({ type: z.literal('issue.archive'), nodeId: Id }),
   z.object({ type: z.literal('issue.unarchive'), issueRef: IssueRef }),

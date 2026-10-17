@@ -3,6 +3,7 @@ import { memo } from 'react';
 import { NoteBody } from '../components/NoteBody.tsx';
 import { IconExpand, IconNote } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
+import { NodeResize } from '../canvas/NodeResize.tsx';
 import type { FlowNode } from '../canvas/flow.ts';
 
 function NoteNodeView({ id, data }: NodeProps<FlowNode>) {
@@ -76,6 +77,7 @@ function NoteNodeView({ id, data }: NodeProps<FlowNode>) {
         <span style={{ pointerEvents: 'none' }}>+</span>
       </Handle>
       <Handle type="target" position={Position.Left} className="hidden-handle" />
+      <NodeResize type="note" />
     </div>
   );
 }

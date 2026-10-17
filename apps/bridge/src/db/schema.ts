@@ -47,6 +47,9 @@ export const node = sqliteTable(
     refId: text('ref_id').notNull(),
     x: real('x').notNull(),
     y: real('y').notNull(),
+    /** Tamanho escolhido pelo usuário; nulo usa o padrão do cartão. */
+    w: real('w'),
+    h: real('h'),
     createdAt: text('created_at').notNull(),
     /** Remoção suave, para o desfazer. */
     removedAt: text('removed_at'),

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { clampNodeSize } from '@agent-canvas/shared';
 import type {
   ClaudeLoginState,
   Agent,
@@ -110,6 +111,8 @@ export interface CanvasState {
 
   placeIssue(ref: string, at: { x: number; y: number }): string;
   moveNode(id: string, x: number, y: number): void;
+  /** Novo tamanho do cartão, preso nos limites do tipo. */
+  resizeNode(id: string, w: number, h: number): void;
   createNote(at: { x: number; y: number }, linkTo?: string): { noteId: string; nodeId: string };
   updateNote(noteId: string, patch: { title?: string; body?: string }): void;
   flushNote(noteId: string): void;
@@ -428,6 +431,15 @@ export const useStore = create<CanvasState>()((set, get) => ({
     if (!n || (n.x === x && n.y === y)) return;
     set((s) => ({ nodes: { ...s.nodes, [id]: { ...n, x, y } } }));
     send({ type: 'node.move', nodeId: id, x, y });
+  },
+
+  resizeNode(id, w, h) {
+    const n = get().nodes[id];
+    if (!n) return;
+    const size = clampNodeSize(n.type, w, h);
+    if (n.w === size.w && n.h === size.h) return;
+    set((s) => ({ nodes: { ...s.nodes, [id]: { ...n, ...size } } }));
+    send({ type: 'node.resize', nodeId: id, ...size });
   },
 
   createNote(at, linkTo) {
