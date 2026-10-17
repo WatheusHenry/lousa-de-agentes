@@ -260,7 +260,11 @@ describe('merge requests', () => {
     const mrComments = (
       await b.app.inject({ url: `/api/mrs/${encodeURIComponent(mr.ref)}/comments`, headers: b.headers })
     ).json();
-    expect(mrComments.at(-1)).toMatchObject({ body: 'Pipeline verde.', isAgent: true, author: 'agente-1' });
+    expect(mrComments.at(-1)).toMatchObject({
+      body: 'Pipeline verde.',
+      isAgent: true,
+      author: expect.any(String),
+    });
 
     send({ type: 'issue.comment', issueRef: '101#142', body: 'Obrigado!' });
     await until(

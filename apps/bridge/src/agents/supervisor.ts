@@ -15,6 +15,9 @@ import {
   type Approval,
   type ClientMessage,
   isLocalProject,
+  AGENT_NAME_MAX,
+  conciseName,
+  uniqueName,
 } from '@agent-canvas/shared';
 import type { ApprovalService } from '../approvals/approval-service.ts';
 import { DISALLOWED_TOOLS } from '../approvals/rules.ts';
@@ -274,6 +277,8 @@ export class Supervisor {
         return this.create(msg);
       case 'agent.update':
         return this.update(msg);
+      case 'agent.rename':
+        return void this.rename(msg.agentId, msg.name);
       case 'agent.mode':
         return void this.setAutoMode(msg.agentId, msg.auto);
       case 'agent.model':
@@ -304,7 +309,7 @@ export class Supervisor {
     const role: AgentRole = repos.length > 1 ? 'orchestrator' : 'main';
     const row: Row = {
       id: msg.agentId,
-      name: `agente-${count + 1}`,
+      name: this.autoName(issue ? { iid: issue.iid, text: issue.title } : { text: instruction }, count + 1),
       role,
       parentId: null,
       issueRef: msg.issueRef ?? null,
@@ -395,6 +400,37 @@ export class Supervisor {
     return a;
   }
 
+  /** Nome curto e único: "#142 moeda checkout"; sem texto útil, `agente-N`. */
+  private autoName(src: { iid?: number; text?: string | null }, n: number, selfId?: string): string {
+    const short = conciseName(src.text ?? '');
+    const base = src.iid ? `#${src.iid}${short ? ` ${short}` : ''}` : short || `agente-${n}`;
+    return uniqueName(
+      base.slice(0, AGENT_NAME_MAX),
+      this.agents()
+        .filter((x) => x.id !== selfId)
+        .map((x) => x.name),
+    );
+  }
+
+  rename(agentId: string, raw: string): Agent {
+    const a = this.mustGet(agentId);
+    const typed = raw.trim().replace(/\s+/g, ' ');
+    const clash = this.agents().find((x) => x.id !== agentId && x.name.toLowerCase() === typed.toLowerCase());
+    if (clash) throw new AgentError(`Já existe um agente chamado "${typed}".`);
+    const issue = a.issueRef ? this.d.store.cachedIssue(a.issueRef) : null;
+    const name =
+      typed ||
+      this.autoName(
+        issue ? { iid: issue.iid, text: issue.title } : { text: a.instruction ?? a.title },
+        0,
+        agentId,
+      );
+    if (name === a.name) return a;
+    const saved = this.save(agentId, { name });
+    this.d.hub.broadcast(this.d.store.logActivity(`${a.name} agora se chama ${name}`));
+    return saved;
+  }
+
   private update(msg: Extract<ClientMessage, { type: 'agent.update' }>): void {
     const a = this.mustGet(msg.agentId);
     if (a.worktreePath) throw new AgentError('O agente já começou; o repositório não muda mais.');
@@ -436,7 +472,11 @@ export class Supervisor {
     }
     if (!a.sessionId) {
       // agente em branco: a primeira mensagem é a instrução
-      this.save(agentId, { instruction: text, ...(a.issueRef ? {} : { title: text.slice(0, 80) }) });
+      this.save(agentId, {
+        instruction: text,
+        ...(a.issueRef ? {} : { title: text.slice(0, 80) }),
+        ...(!a.issueRef && /^agente-\d+$/.test(a.name) ? { name: this.autoName({ text }, 0, agentId) } : {}),
+      });
       return this.launch(agentId, a.issueRef ? instructionForIssue(text) : text, false);
     }
     return this.launch(agentId, text, true);
@@ -1072,7 +1112,7 @@ export class Supervisor {
     const task = input.task.trim();
     const row: Row = {
       id,
-      name: `agente-${count + 1}`,
+      name: this.autoName({ text: task }, count + 1),
       role,
       parentId,
       issueRef: p.issueRef,
@@ -1181,7 +1221,10 @@ export class Supervisor {
     const id = `a_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const row: Row = {
       id,
-      name: `agente-${count + 1}`,
+      name: this.autoName(
+        { text: role === 'fix' ? `corrigir pipeline !${mr.iid}` : `revisar !${mr.iid}` },
+        count + 1,
+      ),
       role,
       parentId: author.id,
       issueRef: mr.issueRef ?? author.issueRef,

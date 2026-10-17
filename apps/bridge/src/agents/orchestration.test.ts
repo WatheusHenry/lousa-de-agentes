@@ -88,7 +88,9 @@ describe('orquestração', () => {
     for (const m of msgs) if (m.type === 'agent.upsert') out.set(m.agent.id, m.agent);
     return [...out.values()];
   };
-  const byName = (n: string) => agents().find((a) => a.name === n);
+  // 'agente-N' = N-ésimo agente criado (o nome automático agora vem do título)
+  const byName = (n: string) =>
+    [...agents()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[Number(n.slice(7)) - 1];
 
   beforeEach(async () => {
     runner = new ScriptRunner();
@@ -252,15 +254,18 @@ describe('orquestração', () => {
 
     await until(() => res.comment, 'comentário do orquestrador', 1500);
     expect(res.plan!.isError).toBe(false);
-    expect(res.spawn1!.text).toContain('agente-2 criado para payments-api');
+    expect(res.spawn1!.text).toContain(`${byName('agente-2')!.name} criado para payments-api`);
     expect(res.badRepo).toMatchObject({ isError: true });
     expect(res.badRepo!.text).toContain('não está entre os escolhidos. Opções: payments-api, web-app');
     expect(res.grandchild).toMatchObject({ isError: true });
     expect(res.grandchild!.text).toContain('Profundidade máxima (1)');
     expect(res.answer!.text).toBe('Botão');
     // resumo da espera: os dois filhos, com branch e MR
-    expect(res.wait!.text).toMatch(/## agente-2 \(payments-api\): done[\s\S]*MR !\d+/);
-    expect(res.wait!.text).toMatch(/## agente-3 \(web-app\): done[\s\S]*MR !\d+[\s\S]*agente-3 terminou/);
+    const [n2, n3] = [byName('agente-2')!.name, byName('agente-3')!.name];
+    expect(res.wait!.text).toContain(`## ${n2} (payments-api): done`);
+    expect(res.wait!.text).toMatch(/MR !\d+/);
+    expect(res.wait!.text).toContain(`## ${n3} (web-app): done`);
+    expect(res.wait!.text).toContain('agente-3 terminou');
     // o resumo traz o diff de cada filho, para o orquestrador conferir
     expect(res.wait!.text).toContain('Diff (agente-2.txt)');
     expect(res.wait!.text).toContain('+x');
@@ -274,7 +279,7 @@ describe('orquestração', () => {
     expect(git(join(reposDir, 'web-app'), 'branch', '--list', c2.branch!)).toContain(c2.branch!);
     // contexto do filho: o plano do pai e a nota herdada
     const cctx = readFileSync(join(c2.worktreePath!, '.agent-canvas', 'context.md'), 'utf8');
-    expect(cctx).toContain('## Plano de agente-1, que criou você');
+    expect(cctx).toContain(`## Plano de ${byName('agente-1')!.name}, que criou você`);
     expect(cctx).toContain('Campo idempotencyKey.');
     expect(cctx).toContain('Você não pode criar sub-agentes');
     expect(cctx).not.toContain('chame `write_note`'); // passagem só na raiz
@@ -336,7 +341,7 @@ describe('orquestração', () => {
     expect(parent.role).toBe('main');
     expect(sub).toMatchObject({ role: 'sub', parentId: 'a1', openMr: false, depth: 1 });
     expect(sub.branch!.startsWith(`${parent.branch}-`)).toBe(true);
-    expect(spawned).toContain('agente-2 criado para payments-api');
+    expect(spawned).toContain(`${byName('agente-2')!.name} criado para payments-api`);
     expect(waited).toContain(`Branch: ${sub.branch}`);
     expect(waited).toContain('testes prontos');
     // o pai consegue juntar o branch do filho (mesmo repositório)
