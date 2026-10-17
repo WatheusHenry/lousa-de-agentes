@@ -2,6 +2,7 @@ import { Handle, Position, useStore as useFlow, type NodeProps } from '@xyflow/r
 import { memo, useState } from 'react';
 import type { Agent, AgentEvent } from '@agent-canvas/shared';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
+import { AgentName } from '../agents/AgentName.tsx';
 import { AutoModeToggle, autoModeKey } from '../agents/AutoModeToggle.tsx';
 import { ModelPicker } from '../agents/ModelPicker.tsx';
 import { fmtK, fmtUsd, isBlank, reposText, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
@@ -37,7 +38,7 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
           <i />
           <i />
         </span>
-        <span className="wname">{agent.name}</span>
+        <AgentName agent={agent} className="wname" />
         <span className="wsub">
           {roleLabel(agent)} · {sub}
         </span>

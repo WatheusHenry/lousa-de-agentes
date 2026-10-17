@@ -101,6 +101,7 @@ function nodeMenu(id: string): Item[] {
       ...((a.status === 'paused' || a.status === 'error') && a.sessionId
         ? [{ icon: <IconPlay />, label: 'Retomar', run: () => s.resumeAgent(a.id) }]
         : []),
+      { label: 'Renomear', hint: 'Duplo clique no nome', run: () => s.setRenaming(a.id) },
       { icon: <IconNote />, label: 'Nova nota ligada', run: () => noteFor(id) },
       { sep: true },
       ...(live ? [{ icon: <IconStop />, label: 'Parar', danger: true, run: () => s.stopAgent(a.id) }] : []),
