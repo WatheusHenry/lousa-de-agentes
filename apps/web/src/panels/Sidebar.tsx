@@ -9,7 +9,9 @@ import { CostPanel } from './CostPanel.tsx';
 import { refreshIssues } from '../state/issues.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
+  IconActivity,
   IconAgent,
+  IconBolt,
   IconDrag,
   IconExpand,
   IconIssue,
@@ -33,11 +35,11 @@ export function actionsCount(s: CanvasState): number {
   return n;
 }
 
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'actions', label: 'Ações' },
-  { id: 'issues', label: 'Issues' },
-  { id: 'repos', label: 'Repositórios' },
-  { id: 'feed', label: 'Atividade' },
+const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
+  { id: 'actions', label: 'Ações', icon: <IconBolt size={15} /> },
+  { id: 'issues', label: 'Issues', icon: <IconIssue size={15} /> },
+  { id: 'repos', label: 'Repositórios', icon: <IconRepo size={15} /> },
+  { id: 'feed', label: 'Atividade', icon: <IconActivity size={15} /> },
 ];
 
 const readCollapsed = (): Section[] => {
@@ -92,6 +94,24 @@ export function Sidebar() {
   // com busca, todas as seções abrem e as sem resultado somem
   const open = (id: Section) => !!q || !collapsed.includes(id);
 
+  // seção visível no topo da lista: destaca a aba correspondente
+  const [current, setCurrent] = useState<Section>('actions');
+  const onScroll = () => {
+    const el = body.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + 48;
+    let cur: Section = SECTIONS[0]!.id;
+    for (const sec of el.querySelectorAll<HTMLElement>('[data-sec]'))
+      if (sec.getBoundingClientRect().top <= top) cur = sec.dataset.sec as Section;
+    setCurrent(cur);
+  };
+  const alerts = useStore((s) => actionsCount(s));
+  const jump = (id: Section) => {
+    if (q) setQuery('');
+    setCollapsed((cur) => cur.filter((x) => x !== id));
+    useStore.getState().showSection(id);
+  };
+
   return (
     <aside className={`side${sideOpen ? ' open' : ''}`} id="side" aria-label="Barra lateral">
       <div className="side-h">
@@ -112,9 +132,39 @@ export function Sidebar() {
               }
             }}
           />
+          {query && (
+            <button
+              className="search-x"
+              aria-label="Limpar busca"
+              title="Limpar (Esc)"
+              onClick={() => {
+                setQuery('');
+                searchRef.current?.focus();
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
+        <nav className="side-tabs" aria-label="Seções">
+          {SECTIONS.map((t) => (
+            <button
+              key={t.id}
+              className="side-tab"
+              aria-current={!q && current === t.id ? 'true' : undefined}
+              title={t.label}
+              onClick={() => jump(t.id)}
+            >
+              <span className="side-tab-ic">
+                {t.icon}
+                {t.id === 'actions' && alerts > 0 && <i className="side-tab-dot" />}
+              </span>
+              <span className="side-tab-l">{t.label}</span>
+            </button>
+          ))}
+        </nav>
       </div>
-      <div className="side-b" ref={body}>
+      <div className="side-b" ref={body} onScroll={onScroll}>
         <ActionsSection q={q} open={open('actions')} onToggle={() => toggle('actions')} />
         <IssuesSection q={q} open={open('issues')} onToggle={() => toggle('issues')} />
         <ReposSection q={q} open={open('repos')} onToggle={() => toggle('repos')} />
@@ -176,15 +226,20 @@ function Sec({
   onToggle(): void;
   children: ReactNode;
 }) {
-  const label = SECTIONS.find((t) => t.id === id)!.label;
+  const { label, icon } = SECTIONS.find((t) => t.id === id)!;
   return (
     <section className="sec" data-sec={id} aria-label={label}>
       <div className="sec-h">
-        <button className="sec-tg" aria-expanded={open} onClick={onToggle}>
-          <span className={`caret${open ? ' open' : ''}`} aria-hidden="true">
-            ▸
+        <button
+          className="sec-tg"
+          aria-expanded={open}
+          title={open ? `Recolher ${label}` : `Abrir ${label}`}
+          onClick={onToggle}
+        >
+          <span className={`sec-ic ${id}`} aria-hidden="true">
+            {icon}
           </span>
-          <span>{label}</span>
+          <span className="sec-name">{label}</span>
           {alert ? (
             <span className="cnt alert" title="Esperando você">
               {alert}
@@ -192,6 +247,9 @@ function Sec({
           ) : count !== undefined ? (
             <span className="cnt">{count}</span>
           ) : null}
+          <span className={`caret${open ? ' open' : ''}`} aria-hidden="true">
+            ▸
+          </span>
         </button>
         {open && tools}
       </div>
