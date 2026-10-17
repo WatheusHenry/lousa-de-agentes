@@ -63,7 +63,30 @@ export interface BrowserDeps {
   home: string;
   /** Executável do navegador (os testes passam o que acharem). */
   bin?: string | null;
+  /**
+   * Portas do próprio canvas (bridge e front). A página do canvas traz o token de sessão: um
+   * agente que a abrisse poderia aprovar os próprios pedidos de permissão. O Chrome recusa
+   * qualquer requisição a elas (navegação, redirect, iframe, fetch).
+   */
+  blockedPorts?: number[];
 }
+
+/** Endereço aponta para o próprio canvas (qualquer nome desta máquina, numa das portas dele)? */
+export function isCanvasUrl(url: string, ports: number[]): boolean {
+  try {
+    const u = new URL(url);
+    const port = Number(u.port || (u.protocol === 'https:' ? 443 : 80));
+    const local =
+      ['localhost', '127.0.0.1', '[::1]', '0.0.0.0'].includes(u.hostname) ||
+      u.hostname.endsWith('.localhost') ||
+      /^127\./.test(u.hostname);
+    return local && ports.includes(port);
+  } catch {
+    return false;
+  }
+}
+
+const CANVAS_BLOCKED = 'Este endereço é o próprio Agent Canvas: navegadores do canvas não podem abri-lo.';
 
 /**
  * Navegadores do canvas: abas de um Chrome headless (perfil próprio, sem os seus logins) que o
@@ -130,6 +153,7 @@ export class BrowserService {
     at?: { x: number; y: number };
   }): Browser {
     const url = normalizeBrowserUrl(o.url ?? '') ?? 'about:blank';
+    if (isCanvasUrl(url, this.d.blockedPorts ?? [])) throw new BrowserError(CANVAS_BLOCKED);
     const id = o.browserId ?? newId('b');
     if (this.get(id)) throw new BrowserError('Navegador já existe.');
     this.d.db
@@ -210,6 +234,7 @@ export class BrowserService {
     } else {
       const url = normalizeBrowserUrl(o.url ?? '');
       if (!url) throw new BrowserError('Endereço inválido: use http:// ou https://.');
+      if (isCanvasUrl(url, this.d.blockedPorts ?? [])) throw new BrowserError(CANVAS_BLOCKED);
       this.patch(id, { status: 'loading', url, error: null });
       const loaded = this.waitLoad(p);
       const r = await cdp.send<{ errorText?: string }>('Page.navigate', { url }, p.sessionId);
@@ -469,6 +494,16 @@ export class BrowserService {
       this.pages.set(id, p);
       await Promise.all([
         cdp.send('Page.enable', {}, sessionId),
+        // localhost em qualquer porta passa pelo filtro; o resto da web vai direto
+        cdp.send(
+          'Fetch.enable',
+          {
+            patterns: ['localhost', '127.', '[::1]', '0.0.0.0', '*.localhost'].flatMap((h) =>
+              ['http', 'https', 'ws', 'wss'].map((p) => ({ urlPattern: `${p}://${h}*` })),
+            ),
+          },
+          sessionId,
+        ),
         cdp.send('Runtime.enable', {}, sessionId),
         cdp.send(
           'Emulation.setDeviceMetricsOverride',
@@ -507,6 +542,23 @@ export class BrowserService {
     if (!hit) return;
     const [id, p] = hit;
     switch (method) {
+      case 'Fetch.requestPaused': {
+        const r = params as { requestId: string; request: { url: string } };
+        const blocked = isCanvasUrl(r.request.url.replace(/^ws/, 'http'), this.d.blockedPorts ?? []);
+        if (blocked) this.pushConsole(p, `[bloqueado] ${r.request.url}: ${CANVAS_BLOCKED}`);
+        void this.cdp()
+          .then((c) =>
+            blocked
+              ? c.send(
+                  'Fetch.failRequest',
+                  { requestId: r.requestId, errorReason: 'BlockedByClient' },
+                  p.sessionId,
+                )
+              : c.send('Fetch.continueRequest', { requestId: r.requestId }, p.sessionId),
+          )
+          .catch(() => {});
+        return;
+      }
       case 'Page.screencastFrame': {
         void this.cdp()
           .then((c) => c.send('Page.screencastFrameAck', { sessionId: params.sessionId }, p.sessionId))

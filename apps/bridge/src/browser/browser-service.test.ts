@@ -7,7 +7,7 @@ import { normalizeBrowserUrl, type ServerMessage } from '@agent-canvas/shared';
 import { CanvasStore } from '../canvas/canvas-store.ts';
 import { openDb } from '../db/index.ts';
 import { Hub } from '../hub.ts';
-import { BrowserService } from './browser-service.ts';
+import { BrowserService, isCanvasUrl } from './browser-service.ts';
 import { findBrowser } from './chrome.ts';
 
 describe('endereços do navegador', () => {
@@ -18,6 +18,15 @@ describe('endereços do navegador', () => {
     expect(normalizeBrowserUrl('')).toBe('about:blank');
     expect(normalizeBrowserUrl('file:///etc/passwd')).toBeNull();
     expect(normalizeBrowserUrl('javascript:alert(1)')).toBeNull();
+  });
+  it('reconhece o próprio canvas em qualquer nome local', () => {
+    const ports = [4317, 5173];
+    expect(isCanvasUrl('http://localhost:5173/', ports)).toBe(true);
+    expect(isCanvasUrl('http://127.0.0.2:4317/api/state', ports)).toBe(true);
+    expect(isCanvasUrl('http://[::1]:5173', ports)).toBe(true);
+    expect(isCanvasUrl('http://app.localhost:5173', ports)).toBe(true);
+    expect(isCanvasUrl('http://localhost:3000', ports)).toBe(false);
+    expect(isCanvasUrl('https://exemplo.com:5173', ports)).toBe(false);
   });
 });
 
@@ -40,7 +49,11 @@ describe.skipIf(!bin)('navegador de verdade (Chrome headless)', () => {
   const hub = new Hub();
   const sent: ServerMessage[] = [];
   hub.broadcast = (m) => void sent.push(...(Array.isArray(m) ? m : [m]));
-  const svc = new BrowserService({ db, hub, store, home, bin });
+  // a porta do servidor de teste é sorteada; a do "canvas" é outra, fixa
+  let canvas: Server;
+  let canvasPort = 0;
+  const blockedPorts: number[] = [];
+  const svc = new BrowserService({ db, hub, store, home, bin, blockedPorts });
 
   beforeAll(async () => {
     http = createServer((req, res) => {
@@ -50,11 +63,16 @@ describe.skipIf(!bin)('navegador de verdade (Chrome headless)', () => {
     await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));
     const addr = http.address() as { port: number };
     base = `http://127.0.0.1:${addr.port}`;
+    canvas = createServer((_req, res) => res.end('<title>Canvas</title>token-secreto'));
+    await new Promise<void>((r) => canvas.listen(0, '127.0.0.1', r));
+    canvasPort = (canvas.address() as { port: number }).port;
+    blockedPorts.push(canvasPort);
   });
 
   afterAll(async () => {
     await svc.shutdown();
     http.close();
+    canvas.close();
     close();
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
@@ -93,6 +111,18 @@ describe.skipIf(!bin)('navegador de verdade (Chrome headless)', () => {
     const mine = svc.forAgent('a_x', `${base}/`);
     expect(mine.created).toBe(true);
     expect(svc.forAgent('a_x').browser.id).toBe(mine.browser.id);
+
+    // o próprio canvas não abre: nem direto, nem por fetch de dentro de outra página
+    await expect(svc.navigate(b.id, { url: `http://localhost:${canvasPort}/` })).rejects.toThrow(
+      /próprio Agent Canvas/,
+    );
+    const leaked = await svc.evaluate(
+      b.id,
+      `fetch('http://127.0.0.1:${canvasPort}/', { mode: 'no-cors' }).then((r) => r.text()).catch(() => 'bloqueado')`,
+    );
+    expect(leaked).toBe('bloqueado');
+    expect(svc.consoleLog(b.id).some((l) => l.startsWith('[bloqueado]'))).toBe(true);
+    expect(() => svc.create({ url: `127.0.0.1:${canvasPort}` })).toThrow(/próprio Agent Canvas/);
 
     // fechar a aba guarda o endereço; ao olhar de novo, reabre no mesmo lugar
     await svc.close(b.id);

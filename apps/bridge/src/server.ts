@@ -186,6 +186,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     store,
     home: deps.home,
     ...(deps.browserBin !== undefined ? { bin: deps.browserBin } : {}),
+    // o bridge e o front (as origens aceitas): a página deles traz o token de sessão
+    blockedPorts: [
+      config.port,
+      ...config.allowedOrigins.map((o) => Number(new URL(o).port)).filter((p) => p > 0),
+    ],
   });
   const automations = new AutomationService({ hub, store, settings, mrs, supervisor, context });
   mrs.onChanged = (mr, prev) => {
