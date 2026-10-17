@@ -21,7 +21,7 @@ import type {
   MergeProgress,
 } from '@agent-canvas/shared';
 
-export type Tab = 'issues' | 'actions' | 'repos' | 'feed';
+export type Section = 'actions' | 'issues' | 'repos' | 'feed';
 export type Filter = 'all' | 'bug' | 'agents';
 export type Panel = 'help' | 'auto' | null;
 export type Connection = 'connecting' | 'open' | 'closed';
@@ -78,10 +78,10 @@ export interface CanvasState {
   // ---------- interface ----------
   selected: string | null;
   panel: Panel;
-  tab: Tab;
+  /** Seção da barra lateral pedida por último (atalho, aviso, botão) e um contador para repetir o pedido. */
+  section: { id: Section; seq: number };
   filter: Filter;
   query: string;
-  /** Projeto escolhido na aba Issues (null = todos). */
   /** Projetos cujas issues a aba Issues mostra; vazio = todos. */
   issueProjects: number[];
   sideHidden: boolean;
@@ -141,7 +141,8 @@ export interface CanvasState {
 
   select(id: string | null): void;
   setPanel(p: Panel): void;
-  setTab(t: Tab): void;
+  /** Abre e rola até uma seção da barra lateral. */
+  showSection(id: Section): void;
   setFilter(f: Filter): void;
   setQuery(q: string): void;
   setIssueProjects(ids: number[]): void;
@@ -238,7 +239,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   issuesError: null,
   selected: null,
   panel: firstVisit() ? 'help' : null,
-  tab: 'issues',
+  section: { id: 'issues', seq: 0 },
   filter: 'all',
   query: '',
   issueProjects: readIssueProjects(),
@@ -578,7 +579,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
 
   select: (id) => set((s) => ({ selected: id, panel: id ? null : s.panel })),
   setPanel: (p) => set({ panel: p, selected: null }),
-  setTab: (t) => set({ tab: t }),
+  showSection: (id) => set((s) => ({ section: { id, seq: s.section.seq + 1 } })),
   setFilter: (f) => set({ filter: f }),
   setQuery: (q) => set({ query: q }),
   setPalette: (open) => set({ paletteOpen: open }),

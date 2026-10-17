@@ -116,7 +116,7 @@ export function Palette() {
         'Ir para Ações',
         <IconBolt key="c" />,
         'Permissões, perguntas e MRs esperando você',
-        () => st.setTab('actions'),
+        () => st.showSection('actions'),
       ],
       [
         'Automações e agentes',

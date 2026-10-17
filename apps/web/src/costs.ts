@@ -93,7 +93,7 @@ export function useBudgetWatch(): void {
     const st = useStore.getState();
     st.showToast(`Os agentes já gastaram ${fmtUsd(today)} hoje, acima do limite de ${fmtUsd(limit)}.`, {
       label: 'Ver gastos',
-      run: () => useStore.getState().setTab('feed'),
+      run: () => useStore.getState().showSection('feed'),
     });
   }, [today]);
 }
