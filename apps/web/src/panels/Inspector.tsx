@@ -31,7 +31,8 @@ export function Inspector() {
   };
   // no modo foco o painel some (o foco já mostra o item inteiro) e volta ao fechar
   const focused = useStore((s) => !!s.focusId);
-  const open = !!(node || panel) && !focused;
+  // o navegador não tem painel: o próprio cartão é a interface
+  const open = !!((node && node.type !== 'browser') || panel) && !focused;
 
   let kicker: ReactNode = null;
   let body: ReactNode = null;

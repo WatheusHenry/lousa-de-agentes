@@ -1,12 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
-import { addIssue, newAgentAt, newNoteAt, noteFor, startFromCard } from '../actions.ts';
+import { addIssue, newAgentAt, newBrowserAt, newNoteAt, noteFor, startFromCard } from '../actions.ts';
 import { isLive, roleLabel } from '../agents/agent-ui.ts';
 import {
   IconDoc,
   IconAgent,
   IconExpand,
   IconFit,
+  IconGlobe,
+  IconReload,
   IconHelp,
   IconIssue,
   IconNote,
@@ -49,6 +51,11 @@ function canvasMenu(at: { x: number; y: number }): Item[] {
       run: () => newAgentAt({ x: at.x + 200, y: at.y + 160 }),
     },
     { icon: <IconNote />, label: 'Nova nota aqui', hint: 'Duplo clique', run: () => newNoteAt(at) },
+    {
+      icon: <IconGlobe />,
+      label: 'Novo navegador aqui',
+      run: () => newBrowserAt({ x: at.x + 330, y: at.y + 235 }),
+    },
     ...(backlog.length
       ? [
           { sep: true } as const,
@@ -103,6 +110,18 @@ function nodeMenu(id: string): Item[] {
         : []),
       { label: 'Renomear', hint: 'Duplo clique no nome', run: () => s.setRenaming(a.id) },
       { icon: <IconNote />, label: 'Nova nota ligada', run: () => noteFor(id) },
+      {
+        icon: <IconGlobe />,
+        label: 'Abrir navegador do agente',
+        run: () => {
+          const own = Object.values(s.browsers).find(
+            (b) => b.ownerAgentId === a.id && Object.values(s.nodes).some((x) => x.refId === b.id),
+          );
+          const ownNode = own && Object.values(s.nodes).find((x) => x.type === 'browser' && x.refId === own.id);
+          if (ownNode) s.select(ownNode.id);
+          else newBrowserAt(undefined, { agentId: a.id });
+        },
+      },
       { sep: true },
       ...(live ? [{ icon: <IconStop />, label: 'Parar', danger: true, run: () => s.stopAgent(a.id) }] : []),
       rm,
@@ -118,6 +137,16 @@ function nodeMenu(id: string): Item[] {
       { sep: true },
       { icon: <IconDoc />, label: 'Arquivar com agentes e MRs', run: () => s.archiveIssue(id) },
       rm,
+    ];
+  }
+  if (n.type === 'browser') {
+    const b = s.browsers[n.refId];
+    return [
+      { header: `Navegador · ${b?.title || b?.url || ''}` },
+      { icon: <IconExpand />, label: 'Abrir em foco', run: () => s.openFocus(id) },
+      { icon: <IconReload />, label: 'Recarregar', run: () => s.navigateBrowser(n.refId, { action: 'reload' }) },
+      { sep: true },
+      { ...rm, label: 'Fechar navegador' },
     ];
   }
   const note = s.notes[n.refId];

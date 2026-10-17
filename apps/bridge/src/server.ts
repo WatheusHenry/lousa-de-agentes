@@ -28,6 +28,7 @@ import { WorktreeCleanup } from './agents/worktree-cleanup.ts';
 import { QuestionService } from './agents/questions.ts';
 import type { AgentRunner } from './agents/runner.ts';
 import { ApprovalService } from './approvals/approval-service.ts';
+import { BrowserError, BrowserService } from './browser/browser-service.ts';
 import { CanvasError, CanvasStore } from './canvas/canvas-store.ts';
 import type { BridgeConfig } from './config.ts';
 import type { Db } from './db/index.ts';
@@ -52,6 +53,7 @@ declare module 'fastify' {
     mrs: MrService;
     /** Para os testes encurtarem o tempo de um processo ocioso. */
     supervisor: Supervisor;
+    browsers: BrowserService;
   }
 }
 
@@ -81,6 +83,8 @@ export interface ServerDeps {
   limits?: Partial<SupervisorLimits>;
   /** Retomar sozinhos, com --resume, os agentes interrompidos por um reinício (padrão: sim). */
   autoResume?: boolean;
+  /** Executável do Chrome/Edge dos navegadores do canvas (`null` desliga; ausente = procura). */
+  browserBin?: string | null;
   /** Espera antes de avisar o agente que o contexto mudou (os testes usam 0). */
   contextDebounceMs?: number;
   logger?: boolean;
@@ -176,6 +180,18 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   };
   supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
+  const browsers = new BrowserService({
+    db,
+    hub,
+    store,
+    home: deps.home,
+    ...(deps.browserBin !== undefined ? { bin: deps.browserBin } : {}),
+    // o bridge e o front (as origens aceitas): a página deles traz o token de sessão
+    blockedPorts: [
+      config.port,
+      ...config.allowedOrigins.map((o) => Number(new URL(o).port)).filter((p) => p > 0),
+    ],
+  });
   const automations = new AutomationService({ hub, store, settings, mrs, supervisor, context });
   mrs.onChanged = (mr, prev) => {
     if (mr.agentId) void context.broadcastView(mr.agentId);
@@ -258,6 +274,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof SettingsError) return reply.code(err.statusCode).send({ error: err.message });
     if (err instanceof BrowseError) return reply.code(400).send({ error: err.message });
+    if (err instanceof BrowserError) return reply.code(409).send({ error: err.message });
     if (err instanceof GitLabError) return reply.code(502).send({ error: err.message });
     if (
       err instanceof CanvasError ||
@@ -299,6 +316,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       mergeRequests: mrs.canvasMrs().filter((m) => mrRefs.has(m.ref)),
       questions: questions.pending().filter((q) => ids.has(q.agentId)),
       merges: mrs.merges().filter((m) => issueRefs.has(m.issueRef)),
+      browsers: browsers.list(ws),
       archived: store.archivedIssues(ws).flatMap((a) => {
         const i = store.cachedIssue(a.issueRef);
         return i ? [{ ...a, iid: i.iid, title: i.title, projectPath: i.projectPath }] : [];
@@ -564,9 +582,67 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   /** Revisão local → remoto (GitLab abre o MR no push; GitHub devolve a página do PR). Só o usuário. */
   app.post('/api/mrs/:ref/publish', async (req) => mrs.publish((req.params as { ref: string }).ref));
 
+  /** Navegador do agente para as ferramentas browser_*; cria um ao lado dele se ainda não tem. */
+  const agentBrowser = (agentId: string) => {
+    const b = browsers.ofAgent(agentId);
+    if (!b) throw new BrowserError('Você ainda não tem um navegador. Use browser_open com a URL primeiro.');
+    return b.id;
+  };
+
   registerMcp(app, {
     agentByToken: (t) => supervisor.mcpContext(t),
     approvals,
+    browser: {
+      async open(agentId, url) {
+        const { browser, created } = browsers.forAgent(agentId, url);
+        const final = created
+          ? (await browsers.watch(browser.id), browsers.get(browser.id)!.url)
+          : await browsers.navigate(browser.id, { url });
+        const b = browsers.get(browser.id)!;
+        if (b.status === 'error') throw new BrowserError(b.error ?? 'O navegador não abriu.');
+        const head = `${created ? 'Navegador aberto no canvas' : 'Navegou'}: ${final}${b.title ? ` (${b.title})` : ''}`;
+        return [
+          head,
+          ...(b.error ? [`Aviso: ${b.error}`] : []),
+          'Use browser_snapshot para ler a página.',
+        ].join('\n');
+      },
+      async navigate(agentId, action) {
+        const url = await browsers.navigate(agentBrowser(agentId), { action });
+        return `Agora em ${url}.`;
+      },
+      snapshot: async (agentId) => browsers.snapshot(agentBrowser(agentId)),
+      async click(agentId, ref, double) {
+        const id = agentBrowser(agentId);
+        await browsers.click(id, ref, { double });
+        const b = browsers.get(id)!;
+        return `Clicado [${ref}]. Página: ${b.url}. Tire um browser_snapshot para ver o resultado.`;
+      },
+      async type(agentId, ref, text, opts) {
+        const id = agentBrowser(agentId);
+        await browsers.type(id, ref, text, opts);
+        return `Digitado${ref !== null ? ` em [${ref}]` : ''}${opts.submit ? ' e enviado com Enter' : ''}. Página: ${browsers.get(id)!.url}.`;
+      },
+      async press(agentId, key) {
+        await browsers.press(agentBrowser(agentId), key);
+        return `Tecla ${key} apertada.`;
+      },
+      async scroll(agentId, dy) {
+        await browsers.scroll(agentBrowser(agentId), dy);
+        return `Rolado ${dy}px.`;
+      },
+      screenshot: (agentId, full) => browsers.screenshot(agentBrowser(agentId), full),
+      async console(agentId, clear) {
+        const lines = browsers.consoleLog(agentBrowser(agentId), clear);
+        return lines.length ? lines.join('\n') : 'Console vazio.';
+      },
+      async evaluate(agentId, expression) {
+        const v = await browsers.evaluate(agentBrowser(agentId), expression);
+        const text = typeof v === 'string' ? v : JSON.stringify(v, null, 1);
+        return text.length > 20_000 ? `${text.slice(0, 20_000)}… (cortado)` : text;
+      },
+      wait: (agentId, o) => browsers.waitFor(agentBrowser(agentId), o),
+    },
     orchestration: {
       async spawn(agentId, input) {
         const child = await supervisor.spawn(agentId, input);
@@ -668,6 +744,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         msg.type.startsWith('mr.') ||
         msg.type.startsWith('merge.') ||
         msg.type.startsWith('context.') ||
+        msg.type.startsWith('browser.') ||
         msg.type === 'issue.comment' ||
         msg.type === 'approval.decide' ||
         msg.type === 'question.answer' ||
@@ -676,6 +753,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         void handleAgentMessage(msg).catch((err) => {
           const known =
             err instanceof AgentError ||
+            err instanceof BrowserError ||
             err instanceof SettingsError ||
             err instanceof GitLabError ||
             err instanceof MrError ||
@@ -726,6 +804,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         if (msg.type === 'node.remove') {
           const n = store.anyNode(msg.nodeId);
           if (n?.type === 'agent') supervisor.onNodeRemoved(n.refId);
+          if (n?.type === 'browser') void browsers.close(n.refId);
         }
         if (msg.type === 'node.restore') {
           broadcast(out);
@@ -784,6 +863,25 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       if (n) context.onLinksChanged(n.id, 'comentário novo na issue');
       return;
     }
+    if (msg.type === 'browser.create') {
+      const agentNode = msg.agentId ? store.liveNodeOf('agent', msg.agentId) : null;
+      browsers.create({
+        browserId: msg.browserId,
+        nodeId: msg.nodeId,
+        url: msg.url,
+        ...(msg.agentId ? { agentId: msg.agentId } : {}),
+        // aberto para um agente: o bridge acha o lugar ao lado dele
+        ...(agentNode ? {} : { at: { x: msg.x, y: msg.y } }),
+      });
+      return;
+    }
+    if (msg.type === 'browser.navigate')
+      return void (await browsers.navigate(msg.browserId, {
+        ...(msg.url !== undefined ? { url: msg.url } : {}),
+        ...(msg.action ? { action: msg.action } : {}),
+      }));
+    if (msg.type === 'browser.input') return browsers.input(msg.browserId, msg.input);
+    if (msg.type === 'browser.watch') return browsers.watch(msg.browserId);
     if (msg.type === 'context.add') return context.add(msg.agentId, msg.kind, msg.ref);
     if (msg.type === 'context.remove') return context.remove(msg.agentId, msg.itemId);
     if (msg.type === 'context.summarize') return context.summarize(msg.agentId, msg.itemId);
@@ -815,6 +913,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.decorate('poller', poller);
   app.decorate('mrs', mrs);
   app.decorate('supervisor', supervisor);
+  app.decorate('browsers', browsers);
   poller.start({
     ...(deps.pollMrsEveryMs ? { mrsEveryMs: deps.pollMrsEveryMs } : {}),
     ...(deps.pollIssuesEveryMs ? { issuesEveryMs: deps.pollIssuesEveryMs } : {}),
@@ -830,6 +929,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     if (claudeLogin.state().state === 'waiting') claudeLogin.cancel();
     context.shutdown();
     supervisor.shutdown();
+    await browsers.shutdown();
     for (const ws of hub.clients) ws.terminate();
   });
 

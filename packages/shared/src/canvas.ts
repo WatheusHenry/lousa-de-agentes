@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-export const NodeType = z.enum(['issue', 'agent', 'mr', 'note']);
+export const NodeType = z.enum(['issue', 'agent', 'mr', 'note', 'browser']);
 export type NodeType = z.infer<typeof NodeType>;
 
-export const EdgeKind = z.enum(['issue', 'spawn', 'mr', 'note']);
+export const EdgeKind = z.enum(['issue', 'spawn', 'mr', 'note', 'browser']);
 export type EdgeKind = z.infer<typeof EdgeKind>;
 
 const Id = z.string().min(1).max(64);
@@ -11,7 +11,7 @@ const Id = z.string().min(1).max(64);
 export const CanvasNode = z.object({
   id: Id,
   type: NodeType,
-  /** issue: IssueRef; note: id da nota; agent/mr: id do agente/MR (fases seguintes). */
+  /** issue: IssueRef; note: id da nota; agent/mr: id do agente/MR; browser: id do navegador. */
   refId: z.string(),
   x: z.number().finite(),
   y: z.number().finite(),
@@ -33,6 +33,7 @@ export const NODE_SIZE_LIMITS: Record<NodeType, { minW: number; maxW: number; ma
   mr: { minW: 284, maxW: 560, maxH: 520 },
   note: { minW: 270, maxW: 560, maxH: 640 },
   agent: { minW: 400, maxW: 900, maxH: 900 },
+  browser: { minW: 420, maxW: 1600, maxH: 1100 },
 };
 
 export function clampNodeSize(type: NodeType, w: number, h: number): { w: number; h: number } {

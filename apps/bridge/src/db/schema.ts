@@ -55,7 +55,7 @@ export const node = sqliteTable(
   'node',
   {
     id: text('id').primaryKey(),
-    type: text('type', { enum: ['issue', 'agent', 'mr', 'note'] }).notNull(),
+    type: text('type', { enum: ['issue', 'agent', 'mr', 'note', 'browser'] }).notNull(),
     refId: text('ref_id').notNull(),
     x: real('x').notNull(),
     y: real('y').notNull(),
@@ -80,7 +80,7 @@ export const edge = sqliteTable('edge', {
   id: text('id').primaryKey(),
   fromNodeId: text('from_node_id').notNull(),
   toNodeId: text('to_node_id').notNull(),
-  kind: text('kind', { enum: ['issue', 'spawn', 'mr', 'note'] }).notNull(),
+  kind: text('kind', { enum: ['issue', 'spawn', 'mr', 'note', 'browser'] }).notNull(),
 });
 
 export const note = sqliteTable('note', {
@@ -242,5 +242,14 @@ export const question = sqliteTable('question', {
   options: text('options', { mode: 'json' }).$type<string[]>().notNull(),
   answer: text('answer'),
   status: text('status', { enum: ['pending', 'answered', 'cancelled'] }).notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+/** Navegadores do canvas: o endereço volta a abrir depois de reiniciar o bridge. */
+export const browser = sqliteTable('browser', {
+  id: text('id').primaryKey(),
+  url: text('url').notNull(),
+  title: text('title').notNull().default(''),
+  ownerAgentId: text('owner_agent_id'),
   createdAt: text('created_at').notNull(),
 });

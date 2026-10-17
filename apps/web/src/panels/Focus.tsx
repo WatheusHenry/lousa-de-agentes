@@ -6,7 +6,8 @@ import { api, ApiError } from '../api/http.ts';
 import { noteFor, startFromCard } from '../actions.ts';
 import { AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { nodeScreenRect, reducedMotion } from '../canvas/viewport.ts';
-import { IconAgent, IconIssue, IconMr, IconNote, IconSearch } from '../icons.tsx';
+import { IconAgent, IconGlobe, IconIssue, IconMr, IconNote, IconSearch } from '../icons.tsx';
+import { BrowserBar, BrowserScreen, shortUrl } from '../browser/BrowserView.tsx';
 import {
   checklist,
   descriptionWithoutChecklist,
@@ -113,6 +114,7 @@ export function Focus() {
         {shown?.type === 'note' && <NoteDoc nodeId={shown.id} onClose={closeAnimated} />}
         {shown?.type === 'agent' && <AgentDoc nodeId={shown.id} onClose={closeAnimated} />}
         {shown?.type === 'mr' && <MrDoc nodeId={shown.id} onClose={closeAnimated} />}
+        {shown?.type === 'browser' && <BrowserDoc nodeId={shown.id} onClose={closeAnimated} />}
       </div>
     </div>
   );
@@ -1002,6 +1004,33 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             <div className="f-hint">O comentário vai para o GitLab com o seu usuário · Esc fecha</div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Navegador grande: a mesma página do cartão, com mais espaço para usar. */
+function BrowserDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
+  const node = useStore((s) => s.nodes[nodeId]);
+  const b = useStore((s) => (node ? s.browsers[node.refId] : undefined));
+  const owner = useStore((s) => (b?.ownerAgentId ? s.agents[b.ownerAgentId]?.name : undefined));
+  if (!b) return null;
+  return (
+    <div className="f-main">
+      <Head
+        icon={
+          <span className="ico browser">
+            <IconGlobe />
+          </span>
+        }
+        name={b.title || shortUrl(b.url) || 'Navegador'}
+        sub={owner ? `Navegador de ${owner}` : 'Navegador'}
+        status={null}
+        onClose={onClose}
+      />
+      <div className="f-body browser-doc">
+        <BrowserBar browser={b} />
+        <BrowserScreen browser={b} className="big" />
       </div>
     </div>
   );

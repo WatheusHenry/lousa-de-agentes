@@ -7,6 +7,8 @@ import type {
   ContextKind,
   AgentEvent,
   Approval,
+  Browser,
+  BrowserInput,
   Policy,
   Activity,
   CanvasEdge,
@@ -67,6 +69,15 @@ export interface CanvasState {
   claudeLogin: ClaudeLoginState;
   /** Texto que cada agente ainda está escrevendo (streaming), até a mensagem completa chegar. */
   liveText: Record<string, string>;
+  /** Navegadores do canvas, por id. */
+  browsers: Record<string, Browser>;
+  /** Último quadro da tela de cada navegador (JPEG em base64). */
+  browserFrames: Record<string, { data: string; width: number; height: number }>;
+  createBrowser(o: { at: { x: number; y: number }; url?: string; agentId?: string }): string;
+  navigateBrowser(browserId: string, to: { url: string } | { action: 'back' | 'forward' | 'reload' }): void;
+  browserInput(browserId: string, input: BrowserInput): void;
+  /** O cartão do navegador apareceu: o bridge abre a página e manda o quadro atual. */
+  watchBrowser(browserId: string): void;
   startMerge(issueRef: string, mrRefs: string[]): void;
   cancelMerge(issueRef: string): void;
   archiveIssue(nodeId: string): void;
@@ -257,6 +268,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
   merges: {},
   claudeLogin: { state: 'idle', url: null, message: null },
   liveText: {},
+  browsers: {},
+  browserFrames: {},
   contexts: {},
   threadVersion: {},
   openIssueRefs: [],
@@ -301,6 +314,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
         questions: byId(s.questions),
         archived: s.archived,
         merges: Object.fromEntries(s.merges.map((p) => [p.issueRef, p])),
+        browsers: byId(s.browsers),
         selected: st.selected && nodes[st.selected] ? st.selected : null,
         multi: st.multi.filter((id) => nodes[id]),
         focusId: st.focusId && nodes[st.focusId] ? st.focusId : null,
@@ -388,6 +402,15 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set((s) => ({ merges: { ...s.merges, [m.progress.issueRef]: m.progress } }));
       case 'claude.login':
         return set({ claudeLogin: m.login });
+      case 'browser.upsert':
+        return set((s) => ({ browsers: { ...s.browsers, [m.browser.id]: m.browser } }));
+      case 'browser.frame':
+        return set((s) => ({
+          browserFrames: {
+            ...s.browserFrames,
+            [m.browserId]: { data: m.data, width: m.width, height: m.height },
+          },
+        }));
       case 'agent.delta':
         return set((s) => ({
           liveText: { ...s.liveText, [m.agentId]: (s.liveText[m.agentId] ?? '') + m.text },
@@ -539,6 +562,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
           ? `Nota "${s.notes[n.refId]?.title ?? ''}" excluída`
           : n.type === 'agent'
             ? `${s.agents[n.refId]?.name ?? 'Agente'} parado e removido do canvas`
+            : n.type === 'browser'
+              ? 'Navegador fechado'
             : n.type === 'mr'
               ? (s.mergeRequests[n.refId]?.projectId ?? 0) < 0
                 ? `Revisão #${s.mergeRequests[n.refId]?.iid ?? ''} removida do canvas (o branch continua no clone)`
@@ -611,6 +636,23 @@ export const useStore = create<CanvasState>()((set, get) => ({
     set((s) => ({ fresh: { ...s.fresh, [nodeId]: true }, selected: nodeId, panel: null }));
     return { agentId, nodeId };
   },
+  createBrowser({ at, url, agentId }) {
+    const nodeId = newId('n');
+    send({
+      type: 'browser.create',
+      browserId: newId('b'),
+      nodeId,
+      url: url ?? 'about:blank',
+      ...(agentId ? { agentId } : {}),
+      x: at.x,
+      y: at.y,
+    });
+    set((s) => ({ fresh: { ...s.fresh, [nodeId]: true }, selected: nodeId, panel: null }));
+    return nodeId;
+  },
+  navigateBrowser: (browserId, to) => send({ type: 'browser.navigate', browserId, ...to }),
+  browserInput: (browserId, input) => send({ type: 'browser.input', browserId, input }),
+  watchBrowser: (browserId) => send({ type: 'browser.watch', browserId }),
   updateAgent: (agentId, patch) => send({ type: 'agent.update', agentId, ...patch }),
   messageAgent: (agentId, text) => send({ type: 'agent.message', agentId, text }),
   setAgentMode: (agentId, auto) => {

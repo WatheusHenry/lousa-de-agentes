@@ -78,6 +78,20 @@
       "when": 1792276631336,
       "tag": "0010_silly_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792278009998,
+      "tag": "0011_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792278024576,
+      "tag": "0012_browser",
+      "breakpoints": true
     }
   ]
 }

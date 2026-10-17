@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ClaudeLoginState } from './claude.ts';
 import { Agent, AgentEvent, Approval, Policy, Question } from './agents.ts';
+import { Browser, BrowserInput } from './browser.ts';
 import { Activity, CanvasEdge, CanvasNode, Note, NoteLink } from './canvas.ts';
 import { AgentContext, ContextKind } from './context.ts';
 import { Issue, IssueRef, MergeRequest, MrRef } from './gitlab.ts';
@@ -48,6 +49,8 @@ export const StateSnapshot = z.object({
   questions: z.array(Question),
   /** Sequências de merge em andamento ou recém-terminadas. */
   merges: z.array(MergeProgress),
+  /** Navegadores com nó no canvas. */
+  browsers: z.array(Browser),
   /** Issues arquivadas (com agentes, MRs e notas), para restaurar. */
   archived: z.array(
     z.object({
@@ -182,6 +185,25 @@ export const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('context.remove'), agentId: Id, itemId: z.string().min(1).max(600) }),
   z.object({ type: z.literal('context.summarize'), agentId: Id, itemId: z.string().min(1).max(600) }),
   z.object({ type: z.literal('context.unsummarize'), agentId: Id, itemId: z.string().min(1).max(600) }),
+  /** Navegador novo no canvas; com `agentId`, fica ligado ao agente (e é o navegador dele). */
+  z.object({
+    type: z.literal('browser.create'),
+    browserId: Id,
+    nodeId: Id,
+    url: z.string().max(4_000).default('about:blank'),
+    agentId: Id.optional(),
+    x: Coord,
+    y: Coord,
+  }),
+  z.object({
+    type: z.literal('browser.navigate'),
+    browserId: Id,
+    url: z.string().max(4_000).optional(),
+    action: z.enum(['back', 'forward', 'reload']).optional(),
+  }),
+  z.object({ type: z.literal('browser.input'), browserId: Id, input: BrowserInput }),
+  /** O cartão do navegador apareceu na tela: abre a página (se precisar) e manda o último quadro. */
+  z.object({ type: z.literal('browser.watch'), browserId: Id }),
   z.object({
     type: z.literal('question.answer'),
     questionId: Id,
@@ -227,6 +249,15 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('question.upsert'), question: Question }),
   z.object({ type: z.literal('merge.progress'), progress: MergeProgress }),
   z.object({ type: z.literal('claude.login'), login: ClaudeLoginState }),
+  z.object({ type: z.literal('browser.upsert'), browser: Browser }),
+  /** Quadro da tela do navegador (JPEG em base64), enviado quando a página muda. */
+  z.object({
+    type: z.literal('browser.frame'),
+    browserId: Id,
+    data: z.string(),
+    width: z.number(),
+    height: z.number(),
+  }),
   /** Texto que o agente ainda está escrevendo (streaming); some quando a mensagem completa chega. */
   z.object({ type: z.literal('agent.delta'), agentId: Id, text: z.string() }),
 ]);

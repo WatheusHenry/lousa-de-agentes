@@ -26,7 +26,13 @@ export function toFlowNode(n: CanvasNode, selected: boolean, prev?: FlowNode): F
     // durante o redimensionar vale o tamanho local; o do bridge chega no fim
     style: prev?.resizing ? prev.style : sizeStyle(n.w, n.h),
     className: n.w !== undefined ? 'node sized' : 'node',
-    ...(n.type === 'note' ? { dragHandle: '.nhead' } : n.type === 'agent' ? { dragHandle: '.wbar' } : {}),
+    ...(n.type === 'note'
+      ? { dragHandle: '.nhead' }
+      : n.type === 'agent'
+        ? { dragHandle: '.wbar' }
+        : n.type === 'browser'
+          ? { dragHandle: '.bbar' }
+          : {}),
   };
 }
 

@@ -5298,12 +5298,139 @@ button.diff-h:hover {
   }
 }
 
+/* ---------- navegador no canvas ---------- */
+.bwin {
+  width: 660px;
+  overflow: hidden;
+}
+.ico.browser {
+  background: var(--ok-soft, var(--accent-soft));
+  color: var(--ok, var(--accent));
+}
+.bbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+  cursor: grab;
+}
+.btitle {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bowner {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bnav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.bnav .btn:disabled {
+  opacity: 0.35;
+}
+.bnav .spin svg {
+  animation: bspin 900ms linear infinite;
+}
+@keyframes bspin {
+  to {
+    rotate: 360deg;
+  }
+}
+.burl {
+  flex: 1;
+  min-width: 0;
+  margin-left: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 12px var(--mono);
+  outline: none;
+  transition: border-color 150ms ease;
+}
+.burl:focus {
+  border-color: var(--accent);
+}
+.bscreen {
+  position: relative;
+  aspect-ratio: 1280 / 800;
+  background: #fff;
+  cursor: default;
+  outline: none;
+  overflow: hidden;
+  user-select: none;
+}
+.bscreen:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.bscreen img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.bstate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--surface);
+}
+.bstate.bad {
+  color: var(--bad);
+}
+.berr {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-xs);
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--bad);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+}
+.f-body.browser-doc {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0 0;
+  overflow: hidden;
+}
+/* mantém a proporção da página (os cliques são convertidos pela caixa da tela) */
+.f-body.browser-doc .bscreen.big {
+  flex: none;
+  align-self: center;
+  width: min(100%, calc((100vh - 190px) * 1.6));
+}
+@media (prefers-reduced-motion: reduce) {
+  .bnav .spin svg {
+    animation: none;
 /* ---------- redimensionar cartões ---------- */
 /* --nw é a largura e --nh a altura mínima: o cartão nunca fica menor que o conteúdo */
 .react-flow__node > .card {
   position: relative;
 }
 .react-flow__node.sized > .ncard,
+.react-flow__node.sized > .bwin,
 .react-flow__node.sized > .win {
   width: var(--nw);
   min-height: var(--nh);

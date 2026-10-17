@@ -71,22 +71,23 @@ Em vez de salvar o token pela tela, você pode criar um `.env` na raiz do reposi
 
 Modelo, limites e orçamento de contexto também mudam na tela, em **Automações → Agentes**; as variáveis abaixo viram o padrão (o botão **Voltar ao padrão** volta para elas).
 
-| Variável                         | Padrão            | Uso                                                         |
-| -------------------------------- | ----------------- | ----------------------------------------------------------- |
-| `AGENT_CANVAS_HOME`              | `~/.agent-canvas` | Pasta de dados                                              |
-| `AGENT_CANVAS_PORT`              | `4317`            | Porta do bridge                                             |
-| `AGENT_CANVAS_WEB_PORT`          | `5173`            | Porta do Vite                                               |
-| `AGENT_CANVAS_GITLAB_TOKEN`      | —                 | Token do GitLab (alternativa ao arquivo de segredos)        |
-| `AGENT_CANVAS_ALLOWED_ORIGINS`   | —                 | Origens extras aceitas pelo bridge, separadas por vírgula   |
-| `AGENT_CANVAS_MODEL`             | padrão do Claude  | Modelo dos agentes (`sonnet`, `opus`, `haiku`…)             |
-| `AGENT_CANVAS_SUMMARY_MODEL`     | `haiku`           | Modelo do botão Resumir                                     |
-| `AGENT_CANVAS_CONTEXT_BUDGET`    | `60000`           | Tokens recomendados no contexto de um agente                |
-| `AGENT_CANVAS_MAX_AGENTS`        | `4`               | Agentes rodando ao mesmo tempo                              |
-| `AGENT_CANVAS_MAX_CHILDREN`      | `4`               | Sub-agentes trabalhando ao mesmo tempo para um mesmo agente |
-| `AGENT_CANVAS_MAX_AGENT_MINUTES` | `60`              | Tempo máximo de um agente antes de ser pausado              |
-| `AGENT_CANVAS_TREE_TOKEN_BUDGET` | `5000000`         | Tokens de uma árvore de agentes                             |
-| `AGENT_CANVAS_CLAUDE_BIN`        | `claude`          | Caminho do executável do Claude Code                        |
-| `AGENT_CANVAS_AUTO_RESUME`       | `1`               | `0` deixa pausados os agentes interrompidos por um reinício |
+| Variável                         | Padrão             | Uso                                                         |
+| -------------------------------- | ------------------ | ----------------------------------------------------------- |
+| `AGENT_CANVAS_HOME`              | `~/.agent-canvas`  | Pasta de dados                                              |
+| `AGENT_CANVAS_PORT`              | `4317`             | Porta do bridge                                             |
+| `AGENT_CANVAS_WEB_PORT`          | `5173`             | Porta do Vite                                               |
+| `AGENT_CANVAS_GITLAB_TOKEN`      | —                  | Token do GitLab (alternativa ao arquivo de segredos)        |
+| `AGENT_CANVAS_ALLOWED_ORIGINS`   | —                  | Origens extras aceitas pelo bridge, separadas por vírgula   |
+| `AGENT_CANVAS_MODEL`             | padrão do Claude   | Modelo dos agentes (`sonnet`, `opus`, `haiku`…)             |
+| `AGENT_CANVAS_SUMMARY_MODEL`     | `haiku`            | Modelo do botão Resumir                                     |
+| `AGENT_CANVAS_CONTEXT_BUDGET`    | `60000`            | Tokens recomendados no contexto de um agente                |
+| `AGENT_CANVAS_MAX_AGENTS`        | `4`                | Agentes rodando ao mesmo tempo                              |
+| `AGENT_CANVAS_MAX_CHILDREN`      | `4`                | Sub-agentes trabalhando ao mesmo tempo para um mesmo agente |
+| `AGENT_CANVAS_MAX_AGENT_MINUTES` | `60`               | Tempo máximo de um agente antes de ser pausado              |
+| `AGENT_CANVAS_TREE_TOKEN_BUDGET` | `5000000`          | Tokens de uma árvore de agentes                             |
+| `AGENT_CANVAS_CLAUDE_BIN`        | `claude`           | Caminho do executável do Claude Code                        |
+| `AGENT_CANVAS_AUTO_RESUME`       | `1`                | `0` deixa pausados os agentes interrompidos por um reinício |
+| `AGENT_CANVAS_BROWSER_BIN`       | Chrome/Edge achado | Executável do navegador dos cartões Navegador               |
 
 ## Usando o canvas (Fase 1)
 
@@ -224,6 +225,17 @@ Dá para usar o canvas só com repositórios da sua máquina, sem token nem issu
 
 - **Terminal dos agentes, mais rápido**: o `claude` de cada agente fica aberto entre uma mensagem e outra, como no CLI. A próxima mensagem entra direto, sem reabrir o processo e sem retomar a sessão, o que poupa uns 2 s por mensagem. Depois de 10 minutos parado, o processo fecha sozinho, e a mensagem seguinte retoma a conversa. Processos parados não contam no limite de agentes ao mesmo tempo. O contexto do canvas vai junto da primeira mensagem, e depois só o que mudou, então o agente não abre mais cada turno com `cat .agent-canvas/context.md; git status; ls`. As ferramentas do canvas já carregam no início (sem `ToolSearch`), e o texto aparece enquanto o agente escreve.
 - **Exibição**: comandos encadeados aparecem uma etapa por linha. A saída mostra 3 linhas e o resto abre em **+N linhas**. Leituras seguidas (Read, buscas, `cat`, `ls`, `git status`…) viram uma linha só, como "Leu 3 arquivos · 2 buscas", que abre com um clique.
+
+## Navegadores no canvas
+
+Um cartão **Navegador** é uma aba de um Chrome headless que o bridge controla. Você e os agentes usam a mesma página: o que um faz, o outro vê ao vivo.
+
+- **Abrir**: botão **Navegador** na toolbar, **botão direito → Novo navegador aqui**, ou **botão direito num agente → Abrir navegador do agente** (fica ligado a ele por uma aresta). Digite o endereço na barra (`localhost:5173`, `docs.exemplo.com`…); **←**, **→** e **↻** voltam, avançam e recarregam.
+- **Usar**: clique na tela do cartão e use mouse, rolagem, teclado e colar normalmente; enquanto a tela tem o foco, as teclas vão para a página (não para os atalhos do canvas). O ícone ↗ abre o navegador grande no modo foco. A alça no canto redimensiona o cartão.
+- **Agentes**: ferramentas `browser_open`, `browser_snapshot` (a página em texto, com referências `[n]` para os elementos interativos), `browser_click`, `browser_type`, `browser_press`, `browser_scroll`, `browser_navigate`, `browser_screenshot` (imagem da tela), `browser_console` (logs e erros do JavaScript), `browser_evaluate` e `browser_wait`. Na primeira chamada de `browser_open`, o navegador do agente aparece ao lado dele. Servem para testar a interface que ele está mexendo, ver componentes, ler documentação e usar apps web. As ferramentas são liberadas sem pedido de permissão: rodam só dentro do navegador, não na sua máquina.
+- **Qual navegador**: o primeiro Chrome, Edge, Chromium ou Brave instalado; aponte outro com `AGENT_CANVAS_BROWSER_BIN`. Ele só abre quando um navegador é usado e tem perfil próprio em `~/.agent-canvas/browser-profile` (sem os seus logins, cookies ou extensões; o que você logar ali fica salvo para os próximos usos).
+- **Reinício**: o endereço de cada navegador fica no SQLite; depois de reiniciar o bridge, a página reabre quando o cartão aparece ou o agente volta a usá-la. Fechar o cartão fecha a aba (**Desfazer** reabre no mesmo endereço).
+- **Limitações**: links que abrem nova janela (`target=_blank`) não viram outro cartão; `alert`/`confirm` são aceitos sozinhos e anotados no console; a página tem 1280×800.
 
 ## Robustez (Fase 7)
 

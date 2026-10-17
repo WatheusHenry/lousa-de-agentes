@@ -14,6 +14,7 @@ import { IssueNode } from '../nodes/IssueNode.tsx';
 import { MrNode } from '../nodes/MrNode.tsx';
 import { NoteNode } from '../nodes/NoteNode.tsx';
 import { AgentNode } from '../nodes/AgentNode.tsx';
+import { BrowserNode } from '../nodes/BrowserNode.tsx';
 import { useStore } from '../state/store.ts';
 import { IconAgent, IconIssue } from '../icons.tsx';
 import { openContextMenu } from './ContextMenu.tsx';
@@ -22,7 +23,7 @@ import { clampNodeSize } from '@agent-canvas/shared';
 import { sizeStyle, toFlowEdge, toFlowNode, type FlowNode } from './flow.ts';
 import { bindViewport, fit, screenToFlow } from './viewport.ts';
 
-const nodeTypes = { issue: IssueNode, note: NoteNode, agent: AgentNode, mr: MrNode };
+const nodeTypes = { issue: IssueNode, note: NoteNode, agent: AgentNode, mr: MrNode, browser: BrowserNode };
 const edgeTypes = { floating: FloatingEdge };
 const VIEW_KEY = 'ac-viewport';
 
@@ -228,7 +229,7 @@ export function Canvas() {
           else if (st.multi.length) st.setMulti([]);
         }}
         onNodeDoubleClick={(e, n) => {
-          if ((e.target as HTMLElement).closest('input,textarea,button,select')) return;
+          if ((e.target as HTMLElement).closest('input,textarea,button,select,.bscreen')) return;
           useStore.getState().openFocus(n.id);
         }}
         onPaneClick={() => useStore.getState().select(null)}

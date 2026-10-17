@@ -5,4 +5,5 @@ export * from './settings.ts';
 export * from './agents.ts';
 export * from './context.ts';
 export * from './claude.ts';
+export * from './browser.ts';
 export * from './names.ts';

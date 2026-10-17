@@ -63,6 +63,17 @@ export function newAgentAt(at?: { x: number; y: number }, opts: { repos?: number
   return nodeId;
 }
 
+/** Navegador novo no canvas; com `agentId`, é o navegador do agente e nasce ao lado dele. */
+export function newBrowserAt(at?: { x: number; y: number }, opts: { agentId?: string; url?: string } = {}) {
+  const st = useStore.getState();
+  const c = at ?? viewCenter();
+  const pos = freeSpot({ x: c.x - 330, y: c.y - 235 }, 660, 470);
+  const nodeId = st.createBrowser({ at: pos, ...opts });
+  st.setSideOpen(false);
+  revealWhenReady(nodeId);
+  return nodeId;
+}
+
 /** Inicia um agente para a issue, abaixo do cartão dela. */
 export function startIssueAgent(
   issueNodeId: string,
