@@ -277,8 +277,40 @@ function ProjectsStep({
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
+      {list.length > 0 && (
+        <div className="pick-bar">
+          <span className="lab">
+            {picked.size
+              ? `${picked.size} escolhido${picked.size === 1 ? '' : 's'}`
+              : 'Marque os projetos que você quer acompanhar'}
+            {found.length > 0 && q && ` · ${found.length} encontrado${found.length === 1 ? '' : 's'}`}
+          </span>
+          {list.some((p) => !picked.has(p.id)) && (
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() =>
+                setPicked((m) => {
+                  const n = new Map(m);
+                  for (const p of list) n.set(p.id, p);
+                  return n;
+                })
+              }
+            >
+              Marcar {q ? 'os encontrados' : 'todos'}
+            </button>
+          )}
+          {picked.size > 0 && (
+            <button type="button" className="link-btn" onClick={() => setPicked(new Map())}>
+              Limpar
+            </button>
+          )}
+        </div>
+      )}
       <div className="opts" role="group" aria-label="Projetos">
-        {list.length === 0 && <p className="tip">Nenhum projeto encontrado.</p>}
+        {list.length === 0 && (
+          <p className="tip">{q ? `Nenhum projeto com "${q}".` : 'Nenhum projeto encontrado.'}</p>
+        )}
         {list.map((p) => (
           <label className="opt" key={p.id}>
             <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p)} />
@@ -304,7 +336,11 @@ function ProjectsStep({
           </button>
         )}
         <button className="btn primary" onClick={save} disabled={busy || picked.size === 0}>
-          {busy ? 'Salvando…' : `Usar ${picked.size} projeto${picked.size === 1 ? '' : 's'}`}
+          {busy
+            ? 'Salvando…'
+            : picked.size
+              ? `Usar ${picked.size} projeto${picked.size === 1 ? '' : 's'}`
+              : 'Escolha ao menos um'}
         </button>
       </div>
     </div>

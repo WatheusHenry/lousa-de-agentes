@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useStore as useFlow, type NodeProps } from '@xyflow/react';
 import { memo } from 'react';
 import { IconExpand, IconNote } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
@@ -13,6 +13,8 @@ function NoteNodeView({ id, data }: NodeProps<FlowNode>) {
   const updateNote = useStore((s) => s.updateNote);
   const flushNote = useStore((s) => s.flushNote);
   const openFocus = useStore((s) => s.openFocus);
+  // zoom afastado: título e começo do texto em letra grande, sem os campos de edição
+  const far = useFlow((s) => s.transform[2] < 0.75);
   if (!note) return null;
 
   return (
@@ -35,25 +37,34 @@ function NoteNodeView({ id, data }: NodeProps<FlowNode>) {
           <IconExpand />
         </button>
       </div>
-      <input
-        className="ntitle-in nodrag"
-        value={note.title}
-        placeholder="Título da nota"
-        aria-label="Título da nota"
-        onChange={(e) => updateNote(note.id, { title: e.target.value })}
-        onBlur={(e) => {
-          if (!e.target.value.trim()) updateNote(note.id, { title: 'Sem título' });
-          flushNote(note.id);
-        }}
-      />
-      <textarea
-        className="nbody nodrag nowheel"
-        value={note.body}
-        placeholder="Escreva decisões, regras de negócio, links, trechos de log…"
-        aria-label="Texto da nota"
-        onChange={(e) => updateNote(note.id, { body: e.target.value })}
-        onBlur={() => flushNote(note.id)}
-      />
+      {far ? (
+        <div className="nsum">
+          <div className="nsum-t">{note.title || 'Sem título'}</div>
+          <div className="nsum-b">{note.body.replace(/[#*`>_-]+/g, ' ').trim() || 'Sem texto ainda.'}</div>
+        </div>
+      ) : (
+        <>
+          <input
+            className="ntitle-in nodrag"
+            value={note.title}
+            placeholder="Título da nota"
+            aria-label="Título da nota"
+            onChange={(e) => updateNote(note.id, { title: e.target.value })}
+            onBlur={(e) => {
+              if (!e.target.value.trim()) updateNote(note.id, { title: 'Sem título' });
+              flushNote(note.id);
+            }}
+          />
+          <textarea
+            className="nbody nodrag nowheel"
+            value={note.body}
+            placeholder="Escreva decisões, regras de negócio, links, trechos de log…"
+            aria-label="Texto da nota"
+            onChange={(e) => updateNote(note.id, { body: e.target.value })}
+            onBlur={() => flushNote(note.id)}
+          />
+        </>
+      )}
       <Handle
         type="source"
         position={Position.Right}

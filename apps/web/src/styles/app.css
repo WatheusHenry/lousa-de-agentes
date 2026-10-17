@@ -2692,7 +2692,8 @@ pre.cmd .c {
   }
 }
 
-@media (max-width: 1180px) {
+/* a toolbar é centralizada: abaixo disto os rótulos cedem espaço aos contadores do topo */
+@media (max-width: 1480px) {
   .tb-grp .lb {
     display: none;
   }
@@ -3948,11 +3949,6 @@ a.btn {
 .badge.crit {
   font-variant-numeric: tabular-nums;
 }
-.badge.quiet {
-  background: transparent;
-  color: var(--faint);
-  box-shadow: none;
-}
 /* janela do agente com zoom afastado: resumo em letra grande */
 .wsum {
   display: flex;
@@ -3984,4 +3980,58 @@ a.btn {
   margin-top: auto;
   font-size: 15px;
   color: var(--faint);
+}
+/* paleta de comandos (Ctrl/⌘ + K) */
+.pal-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(242, 242, 244, 0.35);
+}
+.cpop.palette {
+  left: 50%;
+  top: 14vh;
+  width: min(580px, calc(100vw - 32px));
+  translate: -50% 0;
+}
+.cpop.palette .ico.act {
+  background: var(--subtle);
+  color: var(--muted);
+}
+/* escolha de projetos: contagem e marcar/limpar */
+.pick-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -4px 2px -6px;
+  font-size: 12.5px;
+}
+.pick-bar .lab {
+  flex: 1;
+  margin: 0;
+}
+/* nota com zoom afastado */
+.nsum {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0 6px;
+}
+.nsum-t {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nsum-b {
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

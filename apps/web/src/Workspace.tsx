@@ -6,6 +6,7 @@ import { Toolbar } from './canvas/Toolbar.tsx';
 import { IconSide } from './icons.tsx';
 import { Focus } from './panels/Focus.tsx';
 import { Inspector } from './panels/Inspector.tsx';
+import { Palette } from './panels/Palette.tsx';
 import { Sidebar } from './panels/Sidebar.tsx';
 import { Toast } from './panels/Toast.tsx';
 import { newAgentAt } from './actions.ts';
@@ -56,6 +57,11 @@ export function Workspace() {
         st.undo();
         return;
       }
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        st.setPalette(!st.paletteOpen);
+        return;
+      }
       if (mod && e.key.toLowerCase() === 'b' && !typing) {
         e.preventDefault();
         if (innerWidth <= 860) st.setSideOpen(!st.sideOpen);
@@ -82,6 +88,7 @@ export function Workspace() {
           <Toast />
           <Focus />
           <Inspector />
+          <Palette />
           {connection === 'closed' && (
             <div className="offline" role="status">
               Sem conexão com o bridge. Tentando de novo…{' '}
@@ -149,13 +156,11 @@ function TopBar({ workspace }: { workspace: string }) {
       </div>
       <div className="spacer" />
       <div className="stats">
-        {active > 0 ? (
+        {active > 0 && (
           <span className="badge info live">
             <span className="d" />
             {active} trabalhando
           </span>
-        ) : (
-          <span className="badge quiet">Nenhum agente trabalhando</span>
         )}
         {waiting > 0 && (
           <button className="badge warn badge-btn" title="Ver ações pendentes" onClick={goActions}>
@@ -166,12 +171,12 @@ function TopBar({ workspace }: { workspace: string }) {
         {mrFailedCount > 0 && (
           <button className="badge bad badge-btn" title="Ver pipelines com falha" onClick={goActions}>
             <span className="d" />
-            {mrFailedCount} pipeline{mrFailedCount > 1 ? 's' : ''} com falha
+            {mrFailedCount} pipeline{mrFailedCount > 1 ? 's falharam' : ' falhou'}
           </button>
         )}
         {mrReadyCount > 0 ? (
           <button className="badge ok badge-btn" title="Ver MRs prontos para merge" onClick={goActions}>
-            {mrReadyCount} MR{mrReadyCount > 1 ? 's' : ''} pronto{mrReadyCount > 1 ? 's' : ''} para merge
+            {mrReadyCount} MR{mrReadyCount > 1 ? 's' : ''} pronto{mrReadyCount > 1 ? 's' : ''}
           </button>
         ) : (
           mrCount > 0 && (

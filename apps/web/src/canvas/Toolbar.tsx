@@ -1,6 +1,6 @@
 import { useStore as useFlowStore } from '@xyflow/react';
 import { newNoteAt } from '../actions.ts';
-import { IconBolt, IconFit, IconHelp, IconNewNote, IconZoomIn, IconZoomOut } from '../icons.tsx';
+import { IconBolt, IconFit, IconHelp, IconNewNote, IconSearch, IconZoomIn, IconZoomOut } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
 import { fit, zoomBy } from './viewport.ts';
 
@@ -40,6 +40,14 @@ export function Toolbar() {
         </button>
       </div>
       <div className="tb-grp" role="group" aria-label="Painéis">
+        <button
+          className="btn plain sm"
+          title="Buscar agentes, issues, notas e ações (Ctrl/⌘ + K)"
+          onClick={() => useStore.getState().setPalette(true)}
+        >
+          <IconSearch size={14} />
+          <span className="lb">Buscar</span>
+        </button>
         <button className="btn plain sm" title="Automações" onClick={() => setPanel('auto')}>
           <IconBolt />
           <span className="lb">Automações</span>

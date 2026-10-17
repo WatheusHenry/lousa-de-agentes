@@ -136,6 +136,9 @@ export interface CanvasState {
   setFilter(f: Filter): void;
   setQuery(q: string): void;
   setIssueProjects(ids: number[]): void;
+  /** Paleta de comandos (Ctrl/⌘ + K). */
+  paletteOpen: boolean;
+  setPalette(open: boolean): void;
   setSideHidden(v: boolean): void;
   setSideOpen(v: boolean): void;
   openFocus(id: string | null): void;
@@ -228,6 +231,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   filter: 'all',
   query: '',
   issueProjects: readIssueProjects(),
+  paletteOpen: false,
   sideHidden: readSideHidden(),
   sideOpen: false,
   focusId: null,
@@ -560,6 +564,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   setTab: (t) => set({ tab: t }),
   setFilter: (f) => set({ filter: f }),
   setQuery: (q) => set({ query: q }),
+  setPalette: (open) => set({ paletteOpen: open }),
   setIssueProjects(ids) {
     const unique = [...new Set(ids)];
     try {
