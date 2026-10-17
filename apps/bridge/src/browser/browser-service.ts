@@ -101,10 +101,10 @@ export class BrowserService {
     return b;
   }
 
-  /** Navegadores com nó vivo no canvas. */
-  list(): Browser[] {
+  /** Navegadores com nó vivo no canvas (com `ws`, só os desse workspace). */
+  list(ws?: string): Browser[] {
     return this.d.store
-      .liveNodes()
+      .liveNodes(ws)
       .filter((n) => n.type === 'browser')
       .map((n) => this.get(n.refId))
       .filter((b): b is Browser => !!b);
@@ -137,8 +137,9 @@ export class BrowserService {
       .values({ id, url, title: '', ownerAgentId: o.agentId ?? null, createdAt: nowIso() })
       .run();
     const agentNode = o.agentId ? this.d.store.liveNodeOf('agent', o.agentId) : null;
+    const nodeId = o.nodeId ?? newId('n');
     const out = this.d.store.placeBrowser({
-      nodeId: o.nodeId ?? newId('n'),
+      nodeId,
       browserId: id,
       ...(o.at ? { at: o.at } : {}),
       ...(agentNode ? { agentNodeId: agentNode.id } : {}),
@@ -147,7 +148,10 @@ export class BrowserService {
     this.d.hub.broadcast([
       { type: 'browser.upsert', browser: b },
       ...out,
-      this.d.store.logActivity(`Navegador aberto${url !== 'about:blank' ? ` em ${hostOf(url)}` : ''}`),
+      this.d.store.logActivity(
+        `Navegador aberto${url !== 'about:blank' ? ` em ${hostOf(url)}` : ''}`,
+        this.d.store.nodeWorkspace(nodeId) ?? undefined,
+      ),
     ]);
     void this.page(id).catch(() => {});
     return b;

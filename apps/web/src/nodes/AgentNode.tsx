@@ -2,11 +2,13 @@ import { Handle, Position, useStore as useFlow, type NodeProps } from '@xyflow/r
 import { memo, useState } from 'react';
 import type { Agent, AgentEvent } from '@agent-canvas/shared';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
+import { AgentName } from '../agents/AgentName.tsx';
 import { AutoModeToggle, autoModeKey } from '../agents/AutoModeToggle.tsx';
 import { ModelPicker } from '../agents/ModelPicker.tsx';
 import { fmtK, fmtUsd, isBlank, reposText, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
 import { IconExpand } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
+import { NodeResize } from '../canvas/NodeResize.tsx';
 import type { FlowNode } from '../canvas/flow.ts';
 
 const EMPTY: never[] = [];
@@ -37,7 +39,7 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
           <i />
           <i />
         </span>
-        <span className="wname">{agent.name}</span>
+        <AgentName agent={agent} className="wname" />
         <span className="wsub">
           {roleLabel(agent)} · {sub}
         </span>
@@ -98,6 +100,7 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
       )}
       <Handle type="target" position={Position.Top} className="hidden-handle" />
       <Handle type="source" position={Position.Bottom} className="hidden-handle" />
+      <NodeResize type="agent" />
     </div>
   );
 }

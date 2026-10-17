@@ -324,6 +324,7 @@ describe('canvas persistido', () => {
     });
     send({ type: 'note.link', edgeId: 'e1', noteId: 't1', targetNodeId: 'n-issue' });
     send({ type: 'node.move', nodeId: 'n-issue', x: 80, y: 90 });
+    send({ type: 'node.resize', nodeId: 'n-note', w: 9999, h: 300 });
     send({ type: 'note.update', noteId: 't1', body: 'CSV com ; e datas dd/mm/aaaa' });
     await boxB.waitFor('note.upsert');
     await new Promise((r) => setTimeout(r, 50));
@@ -334,6 +335,9 @@ describe('canvas persistido', () => {
 
     let s = await state();
     expect(s.nodes.find((n) => n.id === 'n-issue')).toMatchObject({ x: 80, y: 90, refId: '101#142' });
+    expect(s.nodes.find((n) => n.id === 'n-issue')).not.toHaveProperty('w');
+    // o tamanho fica preso no máximo do tipo
+    expect(s.nodes.find((n) => n.id === 'n-note')).toMatchObject({ w: 560, h: 300 });
     expect(s.issues.map((i) => i.iid)).toEqual([142]);
     expect(s.notes).toEqual([expect.objectContaining({ id: 't1', body: 'CSV com ; e datas dd/mm/aaaa' })]);
     expect(s.noteLinks).toEqual([{ noteId: 't1', targetNodeId: 'n-issue' }]);
@@ -392,6 +396,73 @@ describe('canvas persistido', () => {
     expect(await box.waitFor('error')).toMatchObject({
       message: expect.stringMatching(/Issue desconhecida/),
     });
+    a.terminate();
+  });
+
+  it('workspaces isolam canvas, atividade e projetos; trocar manda o estado novo', async () => {
+    await b.app.inject({ url: '/api/gitlab/issues', headers: b.headers });
+    const box = await connect(b);
+    const a = box.ws;
+    await box.waitFor('hello');
+    const send = (m: object) => a.send(JSON.stringify(m));
+    send({ type: 'issue.place', nodeId: 'n-issue', issueRef: '101#142', x: 0, y: 0 });
+    send({ type: 'note.create', nodeId: 'n-note', note: { id: 't1', title: 'A', body: '' }, x: 300, y: 0 });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const api = (method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) =>
+      b.app.inject({ method, url, headers: b.headers, ...(payload ? { payload } : {}) });
+
+    expect((await api('POST', '/api/workspaces', { name: '  ' })).statusCode).toBe(400);
+    const created = await api('POST', '/api/workspaces', { name: 'Cliente B' });
+    expect(created.statusCode).toBe(200);
+    const wsB = created.json().workspaceId as string;
+    expect(wsB).not.toBe('default');
+    expect(created.json().projects).toEqual([]);
+    const snap = (await box.waitFor('state.snapshot')) as Extract<ServerMessage, { type: 'state.snapshot' }>;
+    expect(snap.state.nodes).toEqual([]);
+    expect(snap.state.settings.workspaceId).toBe(wsB);
+
+    // projetos próprios: o workspace principal continua com os dele
+    const sel = await api('PUT', '/api/settings/projects', { projectIds: [102] });
+    expect(sel.json().projects.map((p: { id: number }) => p.id)).toEqual([102]);
+    expect(sel.json().workspaces).toEqual([
+      expect.objectContaining({ id: 'default', name: 'Principal', projects: 2 }),
+      expect.objectContaining({ id: wsB, name: 'Cliente B', projects: 1 }),
+    ]);
+    const issues = (await b.app.inject({ url: '/api/gitlab/issues', headers: b.headers })).json();
+    expect(issues.issues.every((i: { projectId: number }) => i.projectId === 102)).toBe(true);
+
+    // a issue do outro workspace não entra aqui
+    await api('PUT', '/api/settings/projects', { projectIds: [101, 102] });
+    send({ type: 'issue.place', nodeId: 'n-other', issueRef: '101#142', x: 0, y: 0 });
+    expect(await box.waitFor('error')).toMatchObject({ message: expect.stringMatching(/outro workspace/) });
+    send({ type: 'note.create', nodeId: 'n-b', note: { id: 't2', title: 'B', body: '' }, x: 0, y: 0 });
+    await new Promise((r) => setTimeout(r, 50));
+    let s = await state();
+    expect(s.nodes.map((n) => n.id)).toEqual(['n-b']);
+    expect(s.activity.map((x) => x.text)).toEqual(['Nota "B" criada']);
+
+    // de volta ao principal: o canvas dele, intacto
+    await api('PUT', '/api/workspaces/active', { id: 'default' });
+    s = await state();
+    expect(s.nodes.map((n) => n.id).sort()).toEqual(['n-issue', 'n-note']);
+    expect(s.settings.projects.map((p) => p.id).sort()).toEqual([101, 103]);
+    expect(s.activity.some((x) => x.text === 'Nota "B" criada')).toBe(false);
+
+    expect(
+      (await api('PATCH', `/api/workspaces/${wsB}`, { name: 'Cliente C' })).json().workspaces[1].name,
+    ).toBe('Cliente C');
+    expect((await api('PUT', '/api/workspaces/active', { id: 'nao-existe' })).statusCode).toBe(404);
+
+    // apagar tira o canvas dele; o último não sai
+    await api('PUT', '/api/workspaces/active', { id: wsB });
+    const del = await api('DELETE', `/api/workspaces/${wsB}`);
+    expect(del.json().workspaceId).toBe('default');
+    expect(del.json().workspaces).toHaveLength(1);
+    expect((await api('DELETE', '/api/workspaces/default')).statusCode).toBe(400);
+    s = await state();
+    expect(s.nodes).toHaveLength(2);
+    expect(s.settings.projects.map((p) => p.id).sort()).toEqual([101, 103]);
     a.terminate();
   });
 });

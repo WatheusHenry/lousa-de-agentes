@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { memo } from 'react';
 import { BrowserBar, BrowserScreen, shortUrl } from '../browser/BrowserView.tsx';
+import { NodeResize } from '../canvas/NodeResize.tsx';
 import { IconExpand, IconGlobe } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
 import type { FlowNode } from '../canvas/flow.ts';
@@ -33,6 +34,7 @@ function BrowserNodeView({ id, data }: NodeProps<FlowNode>) {
       </div>
       <BrowserBar browser={b} />
       <BrowserScreen browser={b} />
+      <NodeResize type="browser" />
       <Handle type="target" position={Position.Left} className="hidden-handle" />
       <Handle type="source" position={Position.Right} className="hidden-handle" />
     </div>

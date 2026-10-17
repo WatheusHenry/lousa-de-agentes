@@ -12,6 +12,7 @@ import { actionsCount } from '../panels/Sidebar.tsx';
 const AGENTS = {
   model: null,
   maxRunning: 4,
+  maxChildren: 4,
   maxAgentMinutes: 60,
   treeTokenBudget: 5_000_000,
   contextBudget: 60_000,
@@ -47,6 +48,8 @@ const empty: StateSnapshot = {
     agents: AGENTS,
     agentDefaults: AGENTS,
     trustedRepos: [],
+    workspaceId: 'default',
+    workspaces: [{ id: 'default', name: 'Principal', projects: 0, busy: 0 }],
     configured: true,
   },
   nodes: [],
@@ -154,6 +157,19 @@ describe('store do canvas', () => {
     expect(sent.filter((m) => m.type === 'node.move')).toEqual([
       { type: 'node.move', nodeId: id, x: 5, y: 6 },
     ]);
+  });
+
+  it('redimensionar prende nos limites do tipo e só envia quando o tamanho muda', () => {
+    const st = useStore.getState();
+    const id = st.placeIssue('101#142', { x: 0, y: 0 });
+    st.resizeNode(id, 100, 2000);
+    st.resizeNode(id, 284, 520);
+    st.resizeNode(id, 400.4, 300);
+    expect(sent.filter((m) => m.type === 'node.resize')).toEqual([
+      { type: 'node.resize', nodeId: id, w: 284, h: 520 },
+      { type: 'node.resize', nodeId: id, w: 400, h: 300 },
+    ]);
+    expect(useStore.getState().nodes[id]).toMatchObject({ w: 400, h: 300 });
   });
 
   it('erro do servidor vira aviso', () => {

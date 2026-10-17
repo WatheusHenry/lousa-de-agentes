@@ -1,8 +1,18 @@
 import type { Edge, Node } from '@xyflow/react';
+import type { CSSProperties } from 'react';
 import type { CanvasEdge, CanvasNode, EdgeKind } from '@agent-canvas/shared';
 
 export type FlowNode = Node<{ refId: string }, CanvasNode['type']>;
 export type FlowEdge = Edge<{ kind: EdgeKind }, 'floating'>;
+
+/**
+ * Tamanho do cartão como variáveis CSS (--nw largura, --nh altura mínima). O nó do React Flow
+ * fica sem width/height fixos: a altura acompanha o conteúdo e nunca fica menor que ele.
+ */
+export function sizeStyle(w?: number, h?: number): CSSProperties | undefined {
+  if (w === undefined || h === undefined) return undefined;
+  return { '--nw': `${w}px`, '--nh': `${h}px` } as CSSProperties;
+}
 
 /** Nó do React Flow a partir do nó do bridge. A nota só arrasta pelo cabeçalho (o resto é editável). */
 export function toFlowNode(n: CanvasNode, selected: boolean, prev?: FlowNode): FlowNode {
@@ -13,8 +23,12 @@ export function toFlowNode(n: CanvasNode, selected: boolean, prev?: FlowNode): F
     position: prev?.dragging ? prev.position : { x: n.x, y: n.y },
     data: prev?.data.refId === n.refId ? prev.data : { refId: n.refId },
     selected,
-    className: 'node',
-    ...(n.type === 'note' ? { dragHandle: '.nhead' } : n.type === 'agent'
+    // durante o redimensionar vale o tamanho local; o do bridge chega no fim
+    style: prev?.resizing ? prev.style : sizeStyle(n.w, n.h),
+    className: n.w !== undefined ? 'node sized' : 'node',
+    ...(n.type === 'note'
+      ? { dragHandle: '.nhead' }
+      : n.type === 'agent'
         ? { dragHandle: '.wbar' }
         : n.type === 'browser'
           ? { dragHandle: '.bbar' }

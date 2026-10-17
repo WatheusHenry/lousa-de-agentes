@@ -3,6 +3,7 @@ import { memo } from 'react';
 import { IconExpand, IconMr } from '../icons.tsx';
 import { DiffStat, MrBadge, mrName } from '../mrs/mr-ui.tsx';
 import { useStore } from '../state/store.ts';
+import { NodeResize } from '../canvas/NodeResize.tsx';
 import type { FlowNode } from '../canvas/flow.ts';
 
 function MrNodeView({ id, data }: NodeProps<FlowNode>) {
@@ -58,6 +59,7 @@ function MrNodeView({ id, data }: NodeProps<FlowNode>) {
         <DiffStat add={mr.additions} del={mr.deletions} />
       </div>
       {handles}
+      <NodeResize type="mr" />
     </div>
   );
 }

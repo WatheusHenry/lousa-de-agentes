@@ -19,7 +19,8 @@ import { useStore } from '../state/store.ts';
 import { IconAgent, IconIssue } from '../icons.tsx';
 import { openContextMenu } from './ContextMenu.tsx';
 import { EdgeMarkers, FloatingEdge } from './FloatingEdge.tsx';
-import { toFlowEdge, toFlowNode, type FlowNode } from './flow.ts';
+import { clampNodeSize } from '@agent-canvas/shared';
+import { sizeStyle, toFlowEdge, toFlowNode, type FlowNode } from './flow.ts';
 import { bindViewport, fit, screenToFlow } from './viewport.ts';
 
 const nodeTypes = { issue: IssueNode, note: NoteNode, agent: AgentNode, mr: MrNode, browser: BrowserNode };
@@ -80,8 +81,29 @@ export function Canvas() {
   }, [nodes, rf]);
 
   const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
-    setNodes((nds) => applyNodeChanges(changes, nds));
-    for (const c of changes) {
+    // redimensionar (NodeResize): o tamanho vira variável CSS do cartão, sem fixar width/height
+    // no nó, para a altura nunca ficar menor que o conteúdo; no fim grava no bridge
+    const resized = new Map<string, { w: number; h: number; resizing: boolean }>();
+    const rest = changes.filter((c) => {
+      if (c.type !== 'dimensions' || typeof c.resizing !== 'boolean' || !c.dimensions) return true;
+      const type = useStore.getState().nodes[c.id]?.type;
+      if (type)
+        resized.set(c.id, {
+          ...clampNodeSize(type, c.dimensions.width, c.dimensions.height),
+          resizing: c.resizing,
+        });
+      return false;
+    });
+    setNodes((nds) => {
+      const next = applyNodeChanges(rest, nds);
+      if (!resized.size) return next;
+      return next.map((n) => {
+        const r = resized.get(n.id);
+        return r ? { ...n, resizing: r.resizing, style: sizeStyle(r.w, r.h), className: 'node sized' } : n;
+      });
+    });
+    for (const [id, r] of resized) if (!r.resizing) useStore.getState().resizeNode(id, r.w, r.h);
+    for (const c of rest) {
       // fim do arrasto: grava a posição no bridge
       if (c.type === 'position' && c.dragging === false && c.position)
         useStore.getState().moveNode(c.id, c.position.x, c.position.y);
@@ -257,7 +279,10 @@ function MultiBar({ count }: { count: number }) {
   return (
     <div className="multibar" role="toolbar" aria-label="Itens selecionados">
       <b>{count} itens selecionados</b>
-      <button className="btn sm danger" onClick={() => useStore.getState().removeNodes(useStore.getState().multi)}>
+      <button
+        className="btn sm danger"
+        onClick={() => useStore.getState().removeNodes(useStore.getState().multi)}
+      >
         Remover
       </button>
       <button className="btn sm plain" onClick={() => useStore.getState().setMulti([])}>

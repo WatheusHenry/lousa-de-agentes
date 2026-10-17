@@ -48,8 +48,26 @@ export const SettingsView = z.object({
   agentDefaults: z.lazy(() => AgentSettings),
   /** Projetos em modo confiança: o trabalho comum no worktree não pede permissão. */
   trustedRepos: z.array(z.number()),
+  /** Workspace aberto: `projects` são os projetos dele. */
+  workspaceId: z.string(),
+  workspaces: z.array(z.lazy(() => WorkspaceInfo)),
 });
 export type SettingsView = z.infer<typeof SettingsView>;
+
+/** Um ambiente isolado: canvas, agentes, atividade e projetos próprios. */
+export const WorkspaceInfo = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Projetos escolhidos no workspace. */
+  projects: z.number(),
+  /** Agentes trabalhando agora (inclusive nos workspaces que não estão abertos). */
+  busy: z.number(),
+});
+export type WorkspaceInfo = z.infer<typeof WorkspaceInfo>;
+
+export const WORKSPACE_NAME_MAX = 60;
+export const WorkspaceInput = z.object({ name: z.string().trim().min(1).max(WORKSPACE_NAME_MAX) });
+export type WorkspaceInput = z.infer<typeof WorkspaceInput>;
 
 export const RepoPathInput = z.object({ path: z.string().trim().max(1024).nullable() });
 
@@ -89,6 +107,8 @@ export const AgentSettings = z.object({
   model: z.string().trim().min(1).max(100).nullable(),
   /** Agentes rodando ao mesmo tempo; o resto fica na fila. */
   maxRunning: z.number().int().min(1).max(20),
+  /** Sub-agentes trabalhando ao mesmo tempo para um mesmo agente (spawn_agent recusa além disso). */
+  maxChildren: z.number().int().min(1).max(20),
   /** Minutos de um agente antes de ser pausado. */
   maxAgentMinutes: z.number().int().min(1).max(600),
   /** Tokens (entrada + saída) de uma árvore de agentes. */

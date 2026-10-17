@@ -32,9 +32,16 @@ export const LIVE: AgentStatus[] = ['running', 'waiting', 'coordinating'];
 export const isLive = (a: Agent | undefined) => !!a && LIVE.includes(a.status);
 
 export const roleLabel = (a: Agent): string =>
-  ({ orchestrator: 'Orquestrador', sub: 'Sub-agente', reviewer: 'Revisor', fix: 'Correção', main: 'Agente' })[
-    a.role
-  ];
+  (
+    ({
+      orchestrator: 'Orquestrador',
+      sub: 'Sub-agente',
+      explorer: 'Explorador',
+      reviewer: 'Revisor',
+      fix: 'Correção',
+      main: 'Agente',
+    }) satisfies Record<Agent['role'], string>
+  )[a.role];
 
 export const isBlank = (a: Agent) => !a.sessionId && !a.instruction;
 

@@ -316,6 +316,51 @@ export const IconTheme = ({ size = 14 }: P) => (
     <path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" fill="currentColor" />
   </svg>
 );
+export const IconChevron = ({ size = 12 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 6l4 4 4-4" />
+  </svg>
+);
+export const IconCheck = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 8.5l3.2 3L13 4.5" />
+  </svg>
+);
+export const IconPencil = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M10.5 2.5l3 3-8 8H2.5v-3z" />
+  </svg>
+);
 export const IconGlobe = ({ size = 14 }: P) => (
   <svg
     viewBox="0 0 16 16"

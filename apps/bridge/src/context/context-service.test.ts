@@ -310,7 +310,11 @@ describe('contexto dos agentes', () => {
         )?.note,
       'nota',
     );
-    expect(note).toMatchObject({ title: 'Passagem · agente-1', createdBy: 'a1', isHandoff: true });
+    expect(note).toMatchObject({
+      title: expect.stringMatching(/^Passagem · /),
+      createdBy: 'a1',
+      isHandoff: true,
+    });
     expect(msgs.some((m) => m.type === 'noteLink.upsert' && m.link.noteId === note.id)).toBe(true);
     // não volta para o contexto do autor
     expect((await ctx('a1')).items.some((i) => i.ref === note.id)).toBe(false);

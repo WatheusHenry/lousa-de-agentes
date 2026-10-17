@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -10,6 +11,7 @@ import type {
   GitLabSettingsInput,
   GitLabUser,
   SettingsView,
+  WorkspaceInfo,
 } from '@agent-canvas/shared';
 import {
   DEFAULT_AUTOMATIONS,
@@ -17,7 +19,7 @@ import {
   type Automations,
 } from '@agent-canvas/shared';
 import type { Db } from './db/index.ts';
-import { issueCache, repo, setting } from './db/schema.ts';
+import { issueCache, repo, setting, workspace } from './db/schema.ts';
 import { cloneOfOtherProject, cloneRepo, cloneUrls, matchClone, scanClones } from './git/discover.ts';
 import { currentBranch, isGitRepo, originUrl, remoteKind, remoteWebUrl } from './git/local.ts';
 import { GitError } from './git/worktree.ts';
@@ -37,6 +39,8 @@ export class SettingsError extends Error {
 }
 
 const DEFAULT_BASE_URL = 'https://gitlab.com';
+/** Workspace criado pela migração com o canvas que já existia. */
+export const DEFAULT_WORKSPACE = 'default';
 
 /** Configurações do GitLab: URL e pasta no banco, token só no SecretStore. */
 export class SettingsService {
@@ -45,6 +49,7 @@ export class SettingsService {
   private agentDefaults: AgentSettings = {
     model: null,
     maxRunning: 4,
+    maxChildren: 4,
     maxAgentMinutes: 60,
     treeTokenBudget: 5_000_000,
     contextBudget: 60_000,
@@ -57,6 +62,9 @@ export class SettingsService {
     private readonly makeClient: ClientFactory,
   ) {}
 
+  /** Agentes trabalhando em cada workspace (o servidor liga ao supervisor). */
+  busyByWorkspace: () => Map<string, number> = () => new Map();
+
   view(): SettingsView {
     const mode = this.get<GitLabMode>('mode') ?? 'gitlab';
     const tok = this.secrets.gitlabToken();
@@ -68,7 +76,7 @@ export class SettingsService {
       hasToken: !!tok,
       tokenSource: tok?.source ?? null,
       user: user ?? null,
-      projects: this.projects(),
+      projects: this.workspaceProjects(),
       clones: this.db
         .select()
         .from(repo)
@@ -83,7 +91,144 @@ export class SettingsService {
       agents: this.agentSettings(),
       agentDefaults: this.agentDefaults,
       trustedRepos: this.trustedRepos(),
+      workspaceId: this.activeWorkspace(),
+      workspaces: this.workspaces(),
     };
+  }
+
+  // ---------- workspaces ----------
+
+  /** Workspace aberto, em memória: é lido a cada mensagem para o navegador. */
+  private activeWs: string | null = null;
+
+  /** Workspace aberto. Se o gravado sumiu, cai no principal (ou no primeiro que existir). */
+  activeWorkspace(): string {
+    this.activeWs ??= this.readActiveWorkspace();
+    return this.activeWs;
+  }
+
+  private readActiveWorkspace(): string {
+    const id = this.get<string>('activeWorkspace');
+    const rows = this.db.select({ id: workspace.id }).from(workspace).all();
+    if (id && rows.some((r) => r.id === id)) return id;
+    return rows.find((r) => r.id === DEFAULT_WORKSPACE)?.id ?? rows[0]?.id ?? this.ensureWorkspace();
+  }
+
+  /** Banco sem workspace nenhum (não deveria acontecer depois da migração): cria o principal. */
+  private ensureWorkspace(): string {
+    this.db
+      .insert(workspace)
+      .values({
+        id: DEFAULT_WORKSPACE,
+        name: 'Principal',
+        projectIds: this.repos().map((r) => r.gitlabProjectId),
+        createdAt: new Date().toISOString(),
+      })
+      .onConflictDoNothing()
+      .run();
+    return DEFAULT_WORKSPACE;
+  }
+
+  workspaces(): WorkspaceInfo[] {
+    const known = new Set(this.repos().map((r) => r.gitlabProjectId));
+    const busy = this.busyByWorkspace();
+    return this.db
+      .select()
+      .from(workspace)
+      .all()
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((w) => ({
+        id: w.id,
+        name: w.name,
+        projects: w.projectIds.filter((id) => known.has(id)).length,
+        busy: busy.get(w.id) ?? 0,
+      }));
+  }
+
+  /** Cria um workspace vazio e já o abre. */
+  createWorkspace(name: string): SettingsView {
+    const id = `w_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    this.db.insert(workspace).values({ id, name, projectIds: [], createdAt: new Date().toISOString() }).run();
+    this.set('activeWorkspace', id);
+    this.activeWs = null;
+    return this.view();
+  }
+
+  renameWorkspace(id: string, name: string): SettingsView {
+    const r = this.db.update(workspace).set({ name }).where(eq(workspace.id, id)).returning().get();
+    if (!r) throw new SettingsError('Workspace não encontrado.', 404);
+    return this.view();
+  }
+
+  switchWorkspace(id: string): SettingsView {
+    if (!this.db.select().from(workspace).where(eq(workspace.id, id)).get())
+      throw new SettingsError('Workspace não encontrado.', 404);
+    this.set('activeWorkspace', id);
+    this.activeWs = null;
+    return this.view();
+  }
+
+  /** Apaga o workspace (o último não sai). Se era o aberto, abre outro. */
+  deleteWorkspace(id: string): SettingsView {
+    const all = this.workspaces();
+    if (!all.some((w) => w.id === id)) throw new SettingsError('Workspace não encontrado.', 404);
+    if (all.length === 1) throw new SettingsError('Este é o único workspace: crie outro antes de apagar.');
+    const wasActive = this.activeWorkspace() === id;
+    this.db.delete(workspace).where(eq(workspace.id, id)).run();
+    if (wasActive) this.set('activeWorkspace', all.find((w) => w.id !== id)!.id);
+    this.activeWs = null;
+    this.dropOrphanRepos();
+    return this.view();
+  }
+
+  /** Ids dos projetos escolhidos no workspace. */
+  private workspaceProjectIds(id = this.activeWorkspace()): number[] {
+    return this.db.select().from(workspace).where(eq(workspace.id, id)).get()?.projectIds ?? [];
+  }
+
+  private setWorkspaceProjectIds(ids: number[], id = this.activeWorkspace()): void {
+    this.db
+      .update(workspace)
+      .set({ projectIds: [...new Set(ids)] })
+      .where(eq(workspace.id, id))
+      .run();
+  }
+
+  /** Workspace em que o projeto foi escolhido (o aberto, se estiver nele). */
+  workspaceOfProject(projectId: number): string | null {
+    const active = this.activeWorkspace();
+    if (this.workspaceProjectIds(active).includes(projectId)) return active;
+    return (
+      this.db
+        .select()
+        .from(workspace)
+        .all()
+        .find((w) => w.projectIds.includes(projectId))?.id ?? null
+    );
+  }
+
+  /** Projetos do workspace aberto: barra lateral, issues e configuração. */
+  workspaceProjects(): GitLabProject[] {
+    const ids = new Set(this.workspaceProjectIds());
+    return this.projects().filter((p) => ids.has(p.id));
+  }
+
+  /** Projetos do GitLab do workspace aberto: a lista de issues da barra lateral. */
+  workspaceGitlabProjects(): GitLabProject[] {
+    return this.workspaceProjects().filter((p) => !p.local);
+  }
+
+  /** Repositório que nenhum workspace usa mais sai da tabela (a pasta e o git não mudam). */
+  private dropOrphanRepos(): void {
+    const used = new Set(
+      this.db
+        .select()
+        .from(workspace)
+        .all()
+        .flatMap((w) => w.projectIds),
+    );
+    for (const r of this.repos())
+      if (!used.has(r.gitlabProjectId)) this.db.delete(repo).where(eq(repo.id, r.id)).run();
   }
 
   setAgentDefaults(d: AgentSettings): void {
@@ -125,6 +270,7 @@ export class SettingsService {
     return this.view();
   }
 
+  /** Projetos de todos os workspaces (os agentes de qualquer workspace continuam trabalhando). */
   projects(): GitLabProject[] {
     const baseUrl = this.get<string>('baseUrl');
     return this.db
@@ -144,7 +290,7 @@ export class SettingsService {
       }));
   }
 
-  /** Projetos do GitLab escolhidos (sem os repositórios locais): issues, MRs e poller. */
+  /** Projetos do GitLab escolhidos em qualquer workspace (sem os locais): MRs e poller. */
   gitlabProjects(): GitLabProject[] {
     return this.projects().filter((p) => !p.local);
   }
@@ -173,7 +319,14 @@ export class SettingsService {
       }
     };
     const dup = this.repos().find((r) => r.localPath && real(r.localPath) === path);
-    if (dup) throw new SettingsError(`${path} já está no canvas como ${dup.name}.`);
+    if (dup) {
+      // já escolhido em outro workspace: entra neste também
+      if (!this.workspaceProjectIds().includes(dup.gitlabProjectId)) {
+        this.setWorkspaceProjectIds([...this.workspaceProjectIds(), dup.gitlabProjectId]);
+        return this.view();
+      }
+      throw new SettingsError(`${path} já está no canvas como ${dup.name}.`);
+    }
     const remote = originUrl(path);
     const web = remote ? remoteWebUrl(remote) : null;
     const lowest =
@@ -196,6 +349,7 @@ export class SettingsService {
         local: true,
       })
       .run();
+    this.setWorkspaceProjectIds([...this.workspaceProjectIds(), id]);
     return this.view();
   }
 
@@ -203,11 +357,14 @@ export class SettingsService {
   removeLocalRepo(projectId: number): SettingsView {
     const r = this.repoOf(projectId);
     if (!r.local) throw new SettingsError('Só repositórios locais saem por aqui.');
-    this.db.delete(repo).where(eq(repo.id, r.id)).run();
-    this.set(
-      'trustedRepos',
-      (this.get<number[]>('trustedRepos') ?? []).filter((id) => id !== projectId),
-    );
+    // sai deste workspace; o registro só some quando nenhum outro o usa
+    this.setWorkspaceProjectIds(this.workspaceProjectIds().filter((id) => id !== projectId));
+    this.dropOrphanRepos();
+    if (!this.repos().some((x) => x.id === r.id))
+      this.set(
+        'trustedRepos',
+        (this.get<number[]>('trustedRepos') ?? []).filter((id) => id !== projectId),
+      );
     return this.view();
   }
 
@@ -281,25 +438,39 @@ export class SettingsService {
     this.set('agentReadySeen', [...this.agentReadySeen().filter((r) => r !== ref), ref].slice(-500));
   }
 
-  /** Grava os projetos escolhidos, buscando os dados de cada um no GitLab. */
+  /**
+   * Grava os projetos escolhidos no workspace aberto, buscando os dados de cada um no GitLab. Os
+   * repositórios locais do workspace ficam; os outros workspaces não mudam.
+   */
   async selectProjects(projectIds: number[]): Promise<SettingsView> {
     const client = this.client();
     const projects = await Promise.all(projectIds.map((id) => client.getProject(id)));
+    const locals = new Set(
+      this.repos()
+        .filter((r) => r.local)
+        .map((r) => r.gitlabProjectId),
+    );
     this.db.transaction((tx) => {
-      tx.delete(repo).where(eq(repo.local, false)).run();
       for (const p of projects) {
+        const values = {
+          gitlabProjectId: p.id,
+          pathWithNamespace: p.pathWithNamespace,
+          name: p.name,
+          description: p.description,
+          defaultBranch: p.defaultBranch,
+          webUrl: p.webUrl,
+        };
         tx.insert(repo)
-          .values({
-            gitlabProjectId: p.id,
-            pathWithNamespace: p.pathWithNamespace,
-            name: p.name,
-            description: p.description,
-            defaultBranch: p.defaultBranch,
-            webUrl: p.webUrl,
-          })
+          .values(values)
+          .onConflictDoUpdate({ target: repo.gitlabProjectId, set: values })
           .run();
       }
     });
+    this.setWorkspaceProjectIds([
+      ...this.workspaceProjectIds().filter((id) => locals.has(id)),
+      ...projects.map((p) => p.id),
+    ]);
+    this.dropOrphanRepos();
     this.locateClones();
     return this.view();
   }

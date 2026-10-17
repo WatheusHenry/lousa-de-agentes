@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// o pacote compila sem as libs do DOM e do Node; o URL existe nos dois lados
+declare const URL: new (s: string) => { protocol: string; href: string };
+
 /** Tamanho da página dos navegadores do canvas (em px CSS); a tela no cartão é escalada. */
 export const BROWSER_VIEWPORT = { width: 1280, height: 800 } as const;
 
