@@ -324,6 +324,7 @@ describe('canvas persistido', () => {
     });
     send({ type: 'note.link', edgeId: 'e1', noteId: 't1', targetNodeId: 'n-issue' });
     send({ type: 'node.move', nodeId: 'n-issue', x: 80, y: 90 });
+    send({ type: 'node.resize', nodeId: 'n-note', w: 9999, h: 300 });
     send({ type: 'note.update', noteId: 't1', body: 'CSV com ; e datas dd/mm/aaaa' });
     await boxB.waitFor('note.upsert');
     await new Promise((r) => setTimeout(r, 50));
@@ -334,6 +335,9 @@ describe('canvas persistido', () => {
 
     let s = await state();
     expect(s.nodes.find((n) => n.id === 'n-issue')).toMatchObject({ x: 80, y: 90, refId: '101#142' });
+    expect(s.nodes.find((n) => n.id === 'n-issue')).not.toHaveProperty('w');
+    // o tamanho fica preso no máximo do tipo
+    expect(s.nodes.find((n) => n.id === 'n-note')).toMatchObject({ w: 560, h: 300 });
     expect(s.issues.map((i) => i.iid)).toEqual([142]);
     expect(s.notes).toEqual([expect.objectContaining({ id: 't1', body: 'CSV com ; e datas dd/mm/aaaa' })]);
     expect(s.noteLinks).toEqual([{ noteId: 't1', targetNodeId: 'n-issue' }]);

@@ -97,6 +97,7 @@ Modelo, limites e orçamento de contexto também mudam na tela, em **Automaçõe
 - **Notas**: botão **Nota** na toolbar, **duplo clique** no fundo ou **botão direito → Nova nota aqui**. Escreva direto no cartão; salva sozinho.
 - **Vincular**: arraste o **+** amarelo da nota até uma issue, ou use **Vincular a…** no painel da nota.
 - **Mover**: arraste pelo cartão (a nota arrasta pelo cabeçalho). A posição fica no SQLite.
+- **Redimensionar**: arraste a borda direita, a de baixo ou o canto (a alça aparece ao passar o mouse). O tamanho padrão é o mínimo e o cartão nunca fica menor que o conteúdo; o máximo é 560 px de largura nas issues, MRs e notas e 900 px no agente. O tamanho fica no SQLite.
 - **Foco**: duplo clique num item (ou o ícone ↗) abre a issue como documento, com critérios de aceite e discussão do GitLab, e a nota como editor. **Esc** fecha.
 - **Remover**: **Delete** ou botão direito. O aviso tem **Desfazer** (ou **Ctrl/⌘ + Z**).
 - **Uso do Claude**: na toolbar, ao lado de **Como funciona**, um círculo enche conforme a sessão de 5 horas do seu plano é usada (azul, amarelo a partir de 75%, vermelho a partir de 90%). Clique para ver também o uso da semana e quando cada um zera. O bridge consulta a Anthropic com o login do Claude Code desta máquina (`~/.claude/.credentials.json` ou o Keychain no macOS), no máximo uma vez por minuto; o token não sai do bridge. Com login por chave de API, o círculo não aparece.
