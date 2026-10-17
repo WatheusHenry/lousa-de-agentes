@@ -135,6 +135,8 @@ function flip(sheet: HTMLElement, nodeId: string, opening: boolean): Animation |
   });
 }
 
+import { AgentName } from '../agents/AgentName.tsx';
+
 function Head({
   icon,
   name,
@@ -143,7 +145,7 @@ function Head({
   onClose,
 }: {
   icon: ReactNode;
-  name: string;
+  name: ReactNode;
   sub: string;
   status: ReactNode;
   onClose(): void;
@@ -1112,7 +1114,7 @@ function AgentDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             <i />
           </span>
         }
-        name={agent.name}
+        name={<AgentName agent={agent} />}
         sub={`${roleLabel(agent)} · ${reposText(agent, projects)}${agent.branch ? ` · ${agent.branch}` : ''}`}
         status={
           <>
