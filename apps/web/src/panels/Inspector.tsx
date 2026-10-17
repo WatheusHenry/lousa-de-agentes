@@ -3,6 +3,7 @@ import { detectRepos, type Automations as AutomationsT, type Issue } from '@agen
 import { api, ApiError } from '../api/http.ts';
 import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
+import { AgentSettingsForm } from './AgentSettingsForm.tsx';
 import { Markdown } from '../components/Markdown.tsx';
 import { IconAgent, IconExpand, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel } from '../lib/format.ts';
@@ -573,8 +574,10 @@ function Automations() {
         ))}
       </div>
       <p className="lab" style={{ margin: 0 }}>
-        Agentes criados por automação pedem permissão como os outros, e o merge continua sendo seu.
+        Agentes criados por automação pedem permissão como os outros (menos nos repositórios em modo
+        confiança, na aba Repos), e o merge continua sendo seu.
       </p>
+      <AgentSettingsForm />
     </>
   );
 }

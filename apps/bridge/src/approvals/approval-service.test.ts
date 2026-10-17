@@ -108,4 +108,37 @@ describe('regras de permissão no serviço de aprovações', () => {
       stableJson({ a: { c: null, d: [1, { x: 1, y: 2 }] }, b: 1 }),
     );
   });
+
+  it('modo confiança: libera o trabalho comum no worktree só do projeto escolhido, sem furar as negações', async () => {
+    const { svc, seen, pending, close } = setup();
+    svc.trusted = (id) => id === 101;
+    expect(
+      await svc.request(req('', { toolName: 'Edit', input: { file_path: `${WT}/a.ts` } })),
+    ).toMatchObject({
+      behavior: 'allow',
+    });
+    expect(await svc.request(req('npm test && git add . && git commit -m x'))).toMatchObject({
+      behavior: 'allow',
+    });
+    expect(seen.at(-1)).toMatchObject({ status: 'allowed', decidedBy: 'modo confiança' });
+    // negações padrão continuam
+    expect(await svc.request(req('git push --force'))).toMatchObject({ behavior: 'deny' });
+    expect(
+      await svc.request(req('', { toolName: 'Write', input: { file_path: '/etc/hosts' } })),
+    ).toMatchObject({
+      behavior: 'deny',
+    });
+    // fora da lista ou de outro projeto: pergunta
+    const install = svc.request(req('npm install left-pad'));
+    await Promise.resolve();
+    expect(pending().summary).toContain('npm install');
+    svc.decide(pending().id, 'deny');
+    await install;
+    const other = svc.request(req('npm test', { repoId: 102 }));
+    await Promise.resolve();
+    expect(pending().status).toBe('pending');
+    svc.decide(pending().id, 'allow');
+    await other;
+    close();
+  });
 });

@@ -153,4 +153,35 @@ describe('limites do supervisor', () => {
     await until(() => agent('a2')?.status === 'done', 'segundo terminou depois da vaga');
     expect(runner.starts).toBe(2);
   });
+
+  it('limites e modelo ajustados na tela valem na hora, e null volta ao padrão', async () => {
+    const runner = new Runner((n) => (n === 1 ? null : 10));
+    await boot(runner, { maxRunning: 4 });
+    const put = async (payload: object) =>
+      (
+        await b!.app.inject({ method: 'PUT', url: '/api/settings/agents', headers: b!.headers, payload })
+      ).json() as {
+        agents: { maxRunning: number; model: string | null };
+        agentDefaults: { maxRunning: number };
+      };
+    const view = await put({ maxRunning: 1, model: 'haiku' });
+    expect(view.agents).toMatchObject({ maxRunning: 1, model: 'haiku' });
+    expect(view.agentDefaults.maxRunning).toBe(4);
+    expect(
+      (
+        await b!.app.inject({
+          method: 'PUT',
+          url: '/api/settings/agents',
+          headers: b!.headers,
+          payload: { maxRunning: 0 },
+        })
+      ).statusCode,
+    ).toBe(400);
+
+    create('a1');
+    await until(() => agent('a1')?.status === 'running', 'primeiro rodando');
+    create('a2');
+    await until(() => agent('a2')?.status === 'queued', 'segundo na fila pelo limite da tela');
+    expect((await put({ maxRunning: null })).agents.maxRunning).toBe(4);
+  });
 });

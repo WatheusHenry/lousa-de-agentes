@@ -825,6 +825,31 @@ function ReposTab() {
                 </button>
               </p>
             )}
+            {c?.path && (
+              <label
+                className="trust-row"
+                title="Edições de arquivo e comandos comuns (git local, testes, lint, build, leitura) dentro do worktree do agente passam sem pedir permissão. Push forçado, rede, instalar pacotes e qualquer coisa fora do worktree continuam pedindo."
+              >
+                <span className="switch sm">
+                  <input
+                    type="checkbox"
+                    checked={settings.trustedRepos.includes(p.id)}
+                    disabled={busy === `trust-${p.id}`}
+                    onChange={(e) => run(`trust-${p.id}`, () => api.setTrust(p.id, e.target.checked))}
+                    aria-label={`Modo confiança em ${p.name}`}
+                  />
+                  <i />
+                </span>
+                <span>
+                  Modo confiança
+                  <small>
+                    {settings.trustedRepos.includes(p.id)
+                      ? 'edições, testes e commits no worktree sem pedir'
+                      : 'pede permissão para cada comando'}
+                  </small>
+                </span>
+              </label>
+            )}
           </div>
         );
       })}

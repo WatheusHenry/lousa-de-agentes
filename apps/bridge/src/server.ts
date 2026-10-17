@@ -5,7 +5,9 @@ import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
   ClientMessage,
+  AgentSettingsInput,
   AutomationsInput,
+  DEFAULT_CONTEXT_BUDGET,
   ProjectSelectionInput,
   RepoPathInput,
   SESSION_HEADER,
@@ -15,7 +17,7 @@ import {
   type ServerMessage,
   type StateSnapshot,
 } from '@agent-canvas/shared';
-import { AgentError, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
+import { AgentError, DEFAULT_LIMITS, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
 import { AutomationService } from './automations/automation-service.ts';
 import { WorktreeCleanup } from './agents/worktree-cleanup.ts';
 import { QuestionService } from './agents/questions.ts';
@@ -72,8 +74,16 @@ export interface ServerDeps {
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const { config, db, session, settings } = deps;
   const store = new CanvasStore(db);
+  // padrões das variáveis de ambiente; a tela de Automações → Agentes muda por cima
+  settings.setAgentDefaults({
+    ...DEFAULT_LIMITS,
+    ...deps.limits,
+    model: deps.model ?? null,
+    contextBudget: deps.contextBudget ?? DEFAULT_CONTEXT_BUDGET,
+  });
   const hub = new Hub();
   const approvals = new ApprovalService(db, hub);
+  approvals.trusted = (repoId) => settings.trustedRepos().includes(repoId);
   const mrs = new MrService(db, hub, store, settings);
   const context = new ContextService({
     db,
@@ -82,7 +92,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     settings,
     mrs,
     summarizer: deps.summarizer ?? new CliSummarizer(),
-    ...(deps.contextBudget ? { budget: deps.contextBudget } : {}),
     ...(deps.contextDebounceMs !== undefined ? { debounceMs: deps.contextDebounceMs } : {}),
   });
   const questions = new QuestionService(db, hub);
@@ -95,11 +104,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     runner: deps.runner,
     home: deps.home,
     bridgePort: config.port,
-    ...(deps.model ? { model: deps.model } : {}),
     context,
     questions,
     mrOfAgent: (id) => mrs.mrOfAgent(id),
-    ...(deps.limits ? { limits: deps.limits } : {}),
   });
   supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
@@ -330,6 +337,30 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       String((req.query as { q?: string }).q ?? '').slice(0, 200),
     ),
   );
+  app.put('/api/settings/agents', async (req) => {
+    const parsed = AgentSettingsInput.safeParse(req.body);
+    if (!parsed.success) throw new SettingsError('Valor inválido nas configurações dos agentes.');
+    const view = settings.setAgentSettings(parsed.data);
+    broadcast([
+      { type: 'settings.updated', settings: view },
+      store.logActivity('Configurações dos agentes salvas'),
+    ]);
+    return view;
+  });
+
+  /** Modo confiança do projeto: edições e comandos comuns no worktree sem pedir permissão. */
+  app.put('/api/repos/:projectId/trust', async (req) => {
+    const on = (req.body as { trusted?: unknown })?.trusted;
+    if (typeof on !== 'boolean') throw new SettingsError('Envie trusted: true ou false.');
+    const view = settings.setTrusted(projectParam(req), on);
+    const name = view.projects.find((p) => p.id === projectParam(req))?.name ?? 'projeto';
+    broadcast([
+      { type: 'settings.updated', settings: view },
+      store.logActivity(`Modo confiança ${on ? 'ligado' : 'desligado'} em ${name}`),
+    ]);
+    return view;
+  });
+
   app.put('/api/settings/automations', async (req) => {
     const parsed = AutomationsInput.safeParse(req.body);
     if (!parsed.success) throw new SettingsError('Automação inválida.');

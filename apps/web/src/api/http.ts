@@ -2,6 +2,7 @@ import {
   SESSION_HEADER,
   SESSION_META,
   type AgentContext,
+  type AgentSettingsInput,
   type Automations,
   type GitLabProject,
   type GitLabSettingsInput,
@@ -79,6 +80,10 @@ export const api = {
     call<string[]>(`/api/agents/${encodeURIComponent(agentId)}/files?q=${encodeURIComponent(q)}`),
   setAutomations: (patch: Partial<Automations>) =>
     call<SettingsView>('/api/settings/automations', { method: 'PUT', body: JSON.stringify(patch) }),
+  setAgentSettings: (patch: AgentSettingsInput) =>
+    call<SettingsView>('/api/settings/agents', { method: 'PUT', body: JSON.stringify(patch) }),
+  setTrust: (projectId: number, trusted: boolean) =>
+    call<SettingsView>(`/api/repos/${projectId}/trust`, { method: 'PUT', body: JSON.stringify({ trusted }) }),
   rescanRepos: () => call<SettingsView>('/api/repos/rescan', { method: 'POST' }),
   setRepoPath: (projectId: number, path: string | null) =>
     call<SettingsView>(`/api/repos/${projectId}/path`, { method: 'PUT', body: JSON.stringify({ path }) }),

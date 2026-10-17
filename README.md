@@ -69,6 +69,8 @@ Em vez de salvar o token pela tela, você pode criar um `.env` na raiz do reposi
 
 ### Variáveis de ambiente
 
+Modelo, limites e orçamento de contexto também mudam na tela, em **Automações → Agentes**; as variáveis abaixo viram o padrão (o botão **Voltar ao padrão** volta para elas).
+
 | Variável                         | Padrão            | Uso                                                         |
 | -------------------------------- | ----------------- | ----------------------------------------------------------- |
 | `AGENT_CANVAS_HOME`              | `~/.agent-canvas` | Pasta de dados                                              |
@@ -176,6 +178,12 @@ O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado
 - **Visibilidade**: o painel do agente ganhou a **Linha do tempo** (tarefa, pedidos de permissão, commits, envio do MR, fim do turno, erros) e o total de tokens e custo da árvore de agentes. Quando um agente espera você, o título da aba do navegador mostra `(N) Aguardando você`, além do aviso no topo.
 
 ![Agente de correção deixando o pipeline verde](docs/screenshots/fase-6/agente-de-correcao.png)
+
+## Modo confiança, avisos e configurações
+
+- **Modo confiança** (aba **Repos**, um interruptor por projeto): dentro do worktree do agente, edições de arquivo e comandos comuns passam sem pedir permissão: leitura (`ls`, `cat`, `grep`…), `git` local (`status`, `diff`, `add`, `commit`…), testes, lint e build (`npm test`, `npm run`, `pnpm`, `pytest`, `go test`, `cargo test`, `make test`…), `mkdir`/`touch`/`cp`/`mv` com caminhos no worktree. Num comando composto, todas as partes precisam estar na lista; redirecionamento (`>`) só para arquivo do worktree. Continuam pedindo: instalar pacotes, push, rede, `sudo`, `$(…)` e o resto. As negações padrão (push forçado, `rm -r` fora, rede, arquivos fora do worktree) valem sempre. Cada liberação fica registrada como "modo confiança".
+- **Notificações do sistema** (Automações → Avisos): com o canvas em segundo plano, o navegador avisa pedido de permissão, pergunta, agente concluído ou com erro, MR pronto para merge e pipeline com falha. Clicar leva ao item.
+- **Agentes** (Automações → Agentes): modelo, agentes ao mesmo tempo, tempo máximo de um agente, orçamento da árvore e contexto recomendado. Vale a partir do próximo turno, sem reiniciar.
 
 ## Robustez (Fase 7)
 

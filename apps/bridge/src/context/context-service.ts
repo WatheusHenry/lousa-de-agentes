@@ -111,7 +111,7 @@ export class ContextService {
   ) {}
 
   private get budget() {
-    return this.d.budget ?? DEFAULT_CONTEXT_BUDGET;
+    return this.d.settings.agentSettings().contextBudget ?? DEFAULT_CONTEXT_BUDGET;
   }
 
   private agentRow(agentId: string): AgentRow {

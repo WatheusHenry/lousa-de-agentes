@@ -41,6 +41,12 @@ export const SettingsView = z.object({
   clones: z.array(z.object({ projectId: z.number(), path: z.string().nullable(), manual: z.boolean() })),
   configured: z.boolean(),
   automations: z.lazy(() => Automations),
+  /** Modelo e limites dos agentes em uso (o que foi mudado na tela, senão o padrão). */
+  agents: z.lazy(() => AgentSettings),
+  /** Padrões vindos das variáveis de ambiente (ou do app), para o "voltar ao padrão". */
+  agentDefaults: z.lazy(() => AgentSettings),
+  /** Projetos em modo confiança: o trabalho comum no worktree não pede permissão. */
+  trustedRepos: z.array(z.number()),
 });
 export type SettingsView = z.infer<typeof SettingsView>;
 
@@ -71,3 +77,25 @@ export const DEFAULT_AUTOMATIONS: Automations = {
 /** Label que coloca uma issue para os agentes (automação agentReady). */
 export const AGENT_READY_LABEL = 'agent-ready';
 export const AutomationsInput = Automations.partial();
+
+/** Modelo e limites dos agentes, ajustáveis na tela (o padrão vem das variáveis de ambiente). */
+export const AgentSettings = z.object({
+  /** Modelo dos agentes (`opus`, `sonnet`, `haiku` ou um id); nulo = padrão do Claude Code. */
+  model: z.string().trim().min(1).max(100).nullable(),
+  /** Agentes rodando ao mesmo tempo; o resto fica na fila. */
+  maxRunning: z.number().int().min(1).max(20),
+  /** Minutos de um agente antes de ser pausado. */
+  maxAgentMinutes: z.number().int().min(1).max(600),
+  /** Tokens (entrada + saída) de uma árvore de agentes. */
+  treeTokenBudget: z.number().int().min(10_000).max(500_000_000),
+  /** Tokens recomendados no contexto de um agente (medidor). */
+  contextBudget: z.number().int().min(5_000).max(1_000_000),
+});
+export type AgentSettings = z.infer<typeof AgentSettings>;
+/** PUT /api/settings/agents: só os campos enviados mudam; `null` volta ao padrão. */
+export const AgentSettingsInput = z.object(
+  Object.fromEntries(
+    Object.entries(AgentSettings.shape).map(([k, v]) => [k, (v as z.ZodType).nullable().optional()]),
+  ) as { [K in keyof AgentSettings]: z.ZodOptional<z.ZodNullable<(typeof AgentSettings.shape)[K]>> },
+);
+export type AgentSettingsInput = z.infer<typeof AgentSettingsInput>;

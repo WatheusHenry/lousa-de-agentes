@@ -6,6 +6,7 @@ import type { Db } from '../db/index.ts';
 import { approval, policy } from '../db/schema.ts';
 import type { Hub } from '../hub.ts';
 import { defaultDeny, matchingRules, splitRules, suggestRule } from './rules.ts';
+import { trustedAllows } from './trust.ts';
 
 export type Decision =
   { behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string };
@@ -44,6 +45,8 @@ export class ApprovalService {
    * agente retomado pede a mesma coisa, o pedido antigo (e a decisão, se já houver) é reaproveitado.
    */
   private orphans = new Set<string>();
+  /** Projeto em modo confiança (configurado pelo servidor). */
+  trusted: (repoId: number) => boolean = () => false;
   /** Avisado quando um pedido fica pendente ou é decidido (o agente muda de status). */
   onChange: (agentId: string, a: Approval) => void = () => {};
 
@@ -84,6 +87,15 @@ export class ApprovalService {
     }
     if (matched) {
       this.record(req, 'allowed', `regra ${matched.join(', ')}`);
+      return { behavior: 'allow', updatedInput: req.input };
+    }
+    // modo confiança: depois das negações padrão, o trabalho comum no worktree passa direto
+    if (
+      req.repoId !== null &&
+      this.trusted(req.repoId) &&
+      trustedAllows(req.toolName, req.input, req.worktree)
+    ) {
+      this.record(req, 'allowed', 'modo confiança');
       return { behavior: 'allow', updatedInput: req.input };
     }
     const orphan = this.adoptOrphan(req);

@@ -3,6 +3,8 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import type {
+  AgentSettings,
+  AgentSettingsInput,
   GitLabMode,
   GitLabProject,
   GitLabSettingsInput,
@@ -38,6 +40,14 @@ const DEFAULT_BASE_URL = 'https://gitlab.com';
 /** Configurações do GitLab: URL e pasta no banco, token só no SecretStore. */
 export class SettingsService {
   private cachedClient: { key: string; client: GitLabClient } | null = null;
+  /** Padrões dos agentes (variáveis de ambiente ou do app), definidos pelo servidor ao subir. */
+  private agentDefaults: AgentSettings = {
+    model: null,
+    maxRunning: 4,
+    maxAgentMinutes: 60,
+    treeTokenBudget: 5_000_000,
+    contextBudget: 60_000,
+  };
 
   constructor(
     private readonly db: Db,
@@ -68,7 +78,49 @@ export class SettingsService {
         })),
       configured: mode === 'demo' || (!!tok && !!user),
       automations: this.automations(),
+      agents: this.agentSettings(),
+      agentDefaults: this.agentDefaults,
+      trustedRepos: this.trustedRepos(),
     };
+  }
+
+  setAgentDefaults(d: AgentSettings): void {
+    this.agentDefaults = d;
+  }
+
+  /** Modelo e limites em uso: o que foi mudado na tela por cima dos padrões. */
+  agentSettings(): AgentSettings {
+    return { ...this.agentDefaults, ...this.get<Partial<AgentSettings>>('agentSettings') };
+  }
+
+  /** Muda só os campos enviados; `null` volta ao padrão. */
+  setAgentSettings(patch: AgentSettingsInput): SettingsView {
+    const merged: Record<string, unknown> = {
+      ...this.get<Partial<AgentSettings>>('agentSettings'),
+      ...patch,
+    };
+    // null volta ao padrão: o campo sai do que foi mudado na tela
+    this.set(
+      'agentSettings',
+      Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== null && v !== undefined)),
+    );
+    return this.view();
+  }
+
+  /** Projetos em modo confiança (o trabalho comum no worktree não pede permissão). */
+  trustedRepos(): number[] {
+    const chosen = new Set(this.projects().map((p) => p.id));
+    return (this.get<number[]>('trustedRepos') ?? []).filter((id) => chosen.has(id));
+  }
+
+  setTrusted(projectId: number, on: boolean): SettingsView {
+    if (!this.projects().some((p) => p.id === projectId))
+      throw new SettingsError('Projeto não escolhido.', 404);
+    const cur = new Set(this.get<number[]>('trustedRepos') ?? []);
+    if (on) cur.add(projectId);
+    else cur.delete(projectId);
+    this.set('trustedRepos', [...cur]);
+    return this.view();
   }
 
   projects(): GitLabProject[] {

@@ -4,6 +4,7 @@ import { SettingsScreen } from './settings/SettingsScreen.tsx';
 import { useStore } from './state/store.ts';
 import { Workspace } from './Workspace.tsx';
 import { BridgeSocket } from './ws/client.ts';
+import { notifyFor } from './notify.ts';
 
 export function App() {
   const settings = useStore((s) => s.settings);
@@ -19,7 +20,11 @@ export function App() {
     const st = useStore.getState();
     // depois de uma queda (bridge reiniciou), o estado volta inteiro: o que mudou no meio se perdeu
     let opened = false;
-    const socket = new BridgeSocket(token, st.applyServer, (c) => {
+    const onMessage = (m: Parameters<typeof st.applyServer>[0]) => {
+      notifyFor(m, useStore.getState());
+      useStore.getState().applyServer(m);
+    };
+    const socket = new BridgeSocket(token, onMessage, (c) => {
       useStore.getState().setConnection(c);
       if (c !== 'open') return;
       if (opened)

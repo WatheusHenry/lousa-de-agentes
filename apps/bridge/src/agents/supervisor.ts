@@ -100,7 +100,6 @@ export interface SupervisorDeps {
   /** Pasta de dados do app (worktrees e configs MCP ficam aqui). */
   home: string;
   bridgePort: number;
-  model?: string;
   /** Monta o context.md com os itens de contexto do agente. */
   context: {
     render(agentId: string): Promise<string>;
@@ -110,7 +109,6 @@ export interface SupervisorDeps {
   questions: QuestionService;
   /** MR do agente, para o resumo do wait_for_agents. */
   mrOfAgent?: (agentId: string) => MergeRequest | null;
-  limits?: Partial<SupervisorLimits>;
 }
 
 /** Fila de agentes esperando vaga para rodar. */
@@ -129,7 +127,6 @@ export class Supervisor {
   private queue: Queued[] = [];
   /** wait_for_agents em andamento: quem espera, quais filhos e como responder. */
   private waiters: { callerId: string; ids: string[]; done: (cancelled: string | null) => void }[] = [];
-  private readonly limits: SupervisorLimits;
   private closed = false;
   /** Agentes começando (worktree e contexto sendo preparados): já ocupam vaga no limite. */
   private starting = new Set<string>();
@@ -137,7 +134,6 @@ export class Supervisor {
   private interrupted: string[] = [];
 
   constructor(private readonly d: SupervisorDeps) {
-    this.limits = { ...DEFAULT_LIMITS, ...d.limits };
     d.approvals.onChange = (agentId, a) => this.onApproval(agentId, a);
     d.questions.onChange = (q) => this.onQuestion(q);
     // agentes que estavam trabalhando quando o bridge parou: recover() retoma ou pausa
@@ -444,6 +440,16 @@ export class Supervisor {
 
   // ---------- execução ----------
 
+  /** Limites em uso: ajustados na tela (configurações dos agentes) ou os padrões. */
+  private get limits(): SupervisorLimits {
+    const a = this.d.settings.agentSettings();
+    return {
+      maxRunning: a.maxRunning,
+      maxAgentMinutes: a.maxAgentMinutes,
+      treeTokenBudget: a.treeTokenBudget,
+    };
+  }
+
   /** Processos rodando que contam no limite (coordenando, esperando os filhos, não conta). */
   private runningCount(): number {
     let n = 0;
@@ -505,7 +511,7 @@ export class Supervisor {
         );
       if (this.treeTokens(agentId) > this.limits.treeTokenBudget)
         throw new AgentError(
-          `A árvore deste agente passou do orçamento de ${Math.round(this.limits.treeTokenBudget / 1000)}k tokens (AGENT_CANVAS_TREE_TOKEN_BUDGET).`,
+          `A árvore deste agente passou do orçamento de ${Math.round(this.limits.treeTokenBudget / 1000)}k tokens. Aumente em Automações → Agentes para continuar.`,
         );
       // o agente fix trabalha no worktree do autor: um de cada vez
       const sharing = a.worktreePath
@@ -590,7 +596,7 @@ export class Supervisor {
           allowedTools: [...CANVAS_TOOLS, ...this.d.approvals.allowedTools(repoId)],
           disallowedTools: DISALLOWED_TOOLS,
           ...(a.role === 'orchestrator' ? { addDirs: repos.map((x) => x.localPath) } : {}),
-          ...(this.d.model ? { model: this.d.model } : {}),
+          ...(this.d.settings.agentSettings().model ? { model: this.d.settings.agentSettings().model! } : {}),
         },
         {
           onLine: (line) => this.onLine(agentId, line),
@@ -602,7 +608,7 @@ export class Supervisor {
         if (!this.live.has(agentId) || cur?.status === 'coordinating') return;
         this.event(agentId, {
           kind: 'error',
-          message: `Passou do tempo máximo de ${this.limits.maxAgentMinutes} min (AGENT_CANVAS_MAX_AGENT_MINUTES). Pausado; retome para continuar.`,
+          message: `Passou do tempo máximo de ${this.limits.maxAgentMinutes} min (Automações → Agentes). Pausado; retome para continuar.`,
         });
         this.pause(agentId);
       }, this.limits.maxAgentMinutes * 60_000);
