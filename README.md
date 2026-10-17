@@ -11,7 +11,7 @@ Canvas para orquestrar agentes do Claude Code a partir de issues e repositórios
 | ------------------- | ------------------------------------------------------------------------------------ | ------ |
 | 0 · Base            | Monorepo, bridge com token de sessão, tela de configuração do GitLab                 | pronta |
 | 1 · Canvas          | Issues reais no canvas, notas, vínculos, desfazer, persistência                      | pronta |
-| 2 · Um agente real  | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela aba Ações     | pronta |
+| 2 · Um agente real  | Agente `claude` num worktree, saída ao vivo, conversa, permissões pela seção Ações   | pronta |
 | 3 · MRs e pipelines | Agente abre o MR, nó no canvas com pipeline ao vivo, diff, discussão, merge humano   | pronta |
 | 4 · Contexto        | Itens de contexto, medidor de tokens, resumo, sugestões, releitura ao vivo, passagem | pronta |
 | 5 · Orquestração    | Orquestrador para issues com vários repositórios, sub-agentes, plano, perguntas      | pronta |
@@ -47,7 +47,7 @@ Sem token à mão, use **Usar dados de exemplo**: o canvas funciona com os mesmo
 
 Para abrir a configuração de novo, clique em "GitLab conectado" no rodapé da barra lateral.
 
-A aba **Repos** mostra onde está o clone de cada projeto. Para o que faltar:
+A seção **Repositórios** da barra lateral mostra onde está o clone de cada projeto. Para o que faltar:
 
 - **Clonar**: `git clone` na pasta dos repositórios (ou em `~/projetos`), com a sua chave SSH ou o credential helper do git. O token do GitLab nunca é usado para clonar, porque ficaria gravado no `.git/config`.
 - **Escolher pasta…**: aponta, pelo mesmo navegador de pastas, um clone que está em outro lugar. Se o remoto dele for de outro projeto, o bridge recusa.
@@ -89,7 +89,8 @@ Modelo, limites e orçamento de contexto também mudam na tela, em **Automaçõe
 
 ## Usando o canvas (Fase 1)
 
-- **Issues**: a aba Issues lista as issues abertas dos projetos escolhidos (até 300 por projeto, atualizadas a cada minuto; **↻** busca na hora). Com mais de um projeto, o seletor no topo da aba escolhe de quais projetos ver as issues: marque os que quiser (com a contagem de cada um), use **Só este** para um projeto ou **Todos** para voltar a ver tudo. A escolha fica salva no navegador. Arraste uma issue para o canvas ou use o **+** da linha. Se ela já estiver no canvas, o botão vira **mostrar**.
+- **Barra lateral**: uma lista só, com as seções **Ações**, **Issues**, **Repositórios** e **Atividade**. Clique no título para recolher ou abrir (a escolha fica salva no navegador). A busca no topo procura em tudo ao mesmo tempo: issues, repositórios, pedidos, perguntas, MRs, agentes parados, regras e atividade; com busca, as seções sem resultado somem e **Esc** limpa o campo.
+- **Issues**: a seção Issues lista as issues abertas dos projetos escolhidos (até 300 por projeto, atualizadas a cada minuto; **↻** busca na hora). Com mais de um projeto, o seletor no topo da seção escolhe de quais projetos ver as issues: marque os que quiser (com a contagem de cada um), use **Só este** para um projeto ou **Todos** para voltar a ver tudo. A escolha fica salva no navegador. Arraste uma issue para o canvas ou use o **+** da linha. Se ela já estiver no canvas, o botão vira **mostrar**.
 - **Markdown**: descrições de issues e MRs, comentários, notas no painel e respostas dos agentes aparecem formatados.
 - **Notas**: botão **Nota** na toolbar, **duplo clique** no fundo ou **botão direito → Nova nota aqui**. Escreva direto no cartão; salva sozinho.
 - **Vincular**: arraste o **+** amarelo da nota até uma issue, ou use **Vincular a…** no painel da nota.
@@ -103,9 +104,9 @@ Recarregar a página mantém tudo: nós, posições, notas e vínculos vêm do b
 ## Agentes (Fase 2)
 
 - **A partir de uma issue**: **Iniciar** no cartão (ou **Iniciar agente** no painel, com instruções extras). O agente nasce abaixo da issue, ligado a ela, trabalha no projeto da issue e começa na hora.
-- **Agente em branco**: **+ Novo agente**, **botão direito → Novo agente aqui**, ou arraste um repositório da aba Repos para o canvas. Dê contexto arrastando um repositório ou uma issue para cima da janela dele (ou escolhendo o repositório no painel) e escreva a primeira instrução.
+- **Agente em branco**: **+ Novo agente**, **botão direito → Novo agente aqui**, ou arraste um repositório da seção Repositórios para o canvas. Dê contexto arrastando um repositório ou uma issue para cima da janela dele (ou escolhendo o repositório no painel) e escreva a primeira instrução.
 - **Conversa**: pelo campo da janela ou pelo **modo foco** (ícone ↗ ou duplo clique). A saída é estruturada como no protótipo (texto, ferramenta, resultado, pedido de permissão); **Saída bruta** no foco mostra as linhas do stream-json, para depuração.
-- **Permissões**: quando o agente quer rodar algo que não está liberado, a janela mostra o pedido e ele aparece na aba **Ações** (com contador). **Permitir**, **Negar**, **Sempre permitir** (grava a regra no formato do Claude Code, por exemplo `Bash(npm test:*)`, e libera na hora os pedidos iguais) e **Permitir todos**. As regras ficam em **Sempre permitidos**, na mesma aba.
+- **Permissões**: quando o agente quer rodar algo que não está liberado, a janela mostra o pedido e ele aparece na seção **Ações** (com contador). **Permitir**, **Negar**, **Sempre permitir** (grava a regra no formato do Claude Code, por exemplo `Bash(npm test:*)`, e libera na hora os pedidos iguais) e **Permitir todos**. As regras ficam em **Sempre permitidos**, na mesma seção.
 - **Pausar, Retomar, Parar**: no painel do agente ou no botão direito. Pausar interrompe o turno; Retomar continua a mesma sessão (`--resume`). Remover o agente do canvas para o processo.
 - **Onde ficam as mudanças**: cada agente trabalha em `~/.agent-canvas/worktrees/<id>`, num branch `agent/<iid>-<slug>` do seu clone. Os commits aparecem nesse branch (`git log agent/…` no clone). O agente não faz push por conta própria e nunca faz merge.
 
@@ -156,7 +157,7 @@ Para regravar as saídas reais usadas nos testes do parser (por exemplo, depois 
 - **O orquestrador** não escreve código: trabalha numa pasta própria, lê os clones dos repositórios (`--add-dir`), publica o plano em checklist, cria os agentes, espera por eles, confere a consistência entre os MRs e comenta na issue o resumo e a ordem de merge. No fim, deixa a nota de passagem.
 - **Agentes filhos** herdam a issue, as notas ligadas aos agentes acima deles e o plano do pai (no `context.md`). Num repositório diferente do pai, o filho abre o próprio MR, que fecha a issue de outro projeto com a referência completa (`Closes grupo/projeto#iid`). No mesmo repositório, o filho é um **sub-agente**: trabalha num branch criado a partir do branch do pai, sem MR próprio, e o pai junta o branch dele com `git merge`.
 - **No canvas**: os filhos aparecem abaixo do pai, ligados por arestas tracejadas. O painel do agente mostra o **Plano** (cada passo com o agente responsável, marcado quando ele termina) e a **Equipe** (a árvore a partir da raiz). A janela mostra o plano, os agentes criados, a espera e as perguntas.
-- **Perguntas**: um agente pode perguntar algo com `ask_human`. A pergunta entra na aba **Ações**, com as opções sugeridas ou resposta livre, e o agente espera.
+- **Perguntas**: um agente pode perguntar algo com `ask_human`. A pergunta entra na seção **Ações**, com as opções sugeridas ou resposta livre, e o agente espera.
 - **Limites do supervisor**: até 4 agentes rodando ao mesmo tempo (`AGENT_CANVAS_MAX_AGENTS`), o resto fica **Na fila**; quem está coordenando (esperando os filhos) não conta. Cada agente roda até 60 min por vez (`AGENT_CANVAS_MAX_AGENT_MINUTES`) antes de ser pausado. Uma árvore de agentes para de criar filhos e de começar turnos depois de 5 milhões de tokens (`AGENT_CANVAS_TREE_TOKEN_BUDGET`).
 
 ![Orquestrador com dois agentes e dois MRs](docs/screenshots/fase-5/final.png)
@@ -173,7 +174,7 @@ O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado
 | Agente concluiu                 | Nota de passagem (Fase 4).                                                                                                                                                                               | ligada    |
 | Label `agent-ready` na issue    | A issue entra no canvas e um agente (ou orquestrador, se ela cita outros projetos) começa com **Abrir MR ao final**. Cada issue dispara uma vez só.                                                      | desligada |
 
-- A correção automática para depois de 3 tentativas no mesmo MR; aí o MR fica em **Pipelines com falha**, na aba Ações, com o botão **Criar agente para corrigir** (que também funciona com a regra desligada). Se o autor ainda está trabalhando, o aviso e o log vão para ele em vez de criar outro agente.
+- A correção automática para depois de 3 tentativas no mesmo MR; aí o MR fica em **Pipelines com falha**, na seção Ações, com o botão **Criar agente para corrigir** (que também funciona com a regra desligada). Se o autor ainda está trabalhando, o aviso e o log vão para ele em vez de criar outro agente.
 - Agentes criados por automação pedem permissão como qualquer outro, e o merge continua sendo seu.
 - **Visibilidade**: o painel do agente ganhou a **Linha do tempo** (tarefa, pedidos de permissão, commits, envio do MR, fim do turno, erros) e o total de tokens e custo da árvore de agentes. Quando um agente espera você, o título da aba do navegador mostra `(N) Aguardando você`, além do aviso no topo.
 
@@ -181,22 +182,21 @@ O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado
 
 ## Modo confiança, avisos e configurações
 
-- **Modo automático** (padrão para agentes novos): o agente faz tudo sem pedir permissão (editar, testar, instalar pacotes, commitar), como o modo automático do Claude Code. Continuam valendo as travas: `git push` (o envio é pelo canvas), `sudo`, merge de MR/PR pela linha de comando, escrita fora do worktree e as negações padrão (push forçado, `rm -r` fora, rede sem regra). No terminal do agente, o botão **⏵⏵ auto / ✋ pede** (ou **Shift+Tab** no campo de mensagem) alterna o modo, e cada pedido de permissão tem **⏵⏵ Modo automático**, que libera o pedido e os próximos. O padrão para agentes novos fica em Automações → Agentes, ou em `AGENT_CANVAS_AUTO_MODE=0`. Sub-agentes herdam o modo do pai. Os agentes criados antes desta versão continuam pedindo.
-- **Modo confiança** (aba **Repos**, um interruptor por projeto): dentro do worktree do agente, edições de arquivo e comandos comuns passam sem pedir permissão: leitura (`ls`, `cat`, `grep`…), `git` local (`status`, `diff`, `add`, `commit`…), testes, lint e build (`npm test`, `npm run`, `pnpm`, `pytest`, `go test`, `cargo test`, `make test`…), `mkdir`/`touch`/`cp`/`mv` com caminhos no worktree. Num comando composto, todas as partes precisam estar na lista; redirecionamento (`>`) só para arquivo do worktree. Continuam pedindo: instalar pacotes, push, rede, `sudo`, `$(…)` e o resto. As negações padrão (push forçado, `rm -r` fora, rede, arquivos fora do worktree) valem sempre. Cada liberação fica registrada como "modo confiança".
+- **Modo confiança** (seção **Repositórios**, um interruptor por projeto): dentro do worktree do agente, edições de arquivo e comandos comuns passam sem pedir permissão: leitura (`ls`, `cat`, `grep`…), `git` local (`status`, `diff`, `add`, `commit`…), testes, lint e build (`npm test`, `npm run`, `pnpm`, `pytest`, `go test`, `cargo test`, `make test`…), `mkdir`/`touch`/`cp`/`mv` com caminhos no worktree. Num comando composto, todas as partes precisam estar na lista; redirecionamento (`>`) só para arquivo do worktree. Continuam pedindo: instalar pacotes, push, rede, `sudo`, `$(…)` e o resto. As negações padrão (push forçado, `rm -r` fora, rede, arquivos fora do worktree) valem sempre. Cada liberação fica registrada como "modo confiança".
 - **Notificações do sistema** (Automações → Avisos): com o canvas em segundo plano, o navegador avisa pedido de permissão, pergunta, agente concluído ou com erro, MR pronto para merge e pipeline com falha. Clicar leva ao item.
 - **Agentes** (Automações → Agentes): modelo, agentes ao mesmo tempo, tempo máximo de um agente, orçamento da árvore e contexto recomendado. Vale a partir do próximo turno, sem reiniciar.
 
 ## Fechar uma issue: merge em sequência e arquivo
 
 - **Mergear na ordem**: com dois ou mais MRs abertos, o painel da issue lista os MRs na ordem do plano do orquestrador (ou do mais antigo para o mais novo), com ↑↓ para mudar. **Mergear na ordem** pede confirmação e o bridge mergeia um de cada vez: espera o pipeline do MR passar, faz o merge e só então segue para o próximo. Para na primeira falha (pipeline com falha, MR fechado, GitLab recusou), sempre dizendo o motivo, e tem **Cancelar sequência**. O merge continua sendo seu: só começa com o seu clique.
-- **Arquivar**: no painel da issue ou no botão direito, tira do canvas a issue com os agentes dela, os MRs e as notas que só servem a ela. Não arquiva com agente trabalhando. Nada é apagado: a seção **Arquivadas** da aba Issues tem **Restaurar**, e arrastar a issue de novo do backlog também traz tudo de volta.
+- **Arquivar**: no painel da issue ou no botão direito, tira do canvas a issue com os agentes dela, os MRs e as notas que só servem a ela. Não arquiva com agente trabalhando. Nada é apagado: a seção **Arquivadas** da seção Issues tem **Restaurar**, e arrastar a issue de novo do backlog também traz tudo de volta.
 - **Paleta Ctrl/⌘ + K** (ou **Buscar** na toolbar): acha qualquer agente, issue, nota ou MR, traz issues do backlog e roda as ações mais usadas pelo teclado.
 
 ## Sem GitLab: repositórios locais
 
 Dá para usar o canvas só com repositórios da sua máquina, sem token nem issues:
 
-- **Começar**: na tela inicial, **Usar sem GitLab**, e depois **+ Adicionar repositório** com a pasta de um repositório git. Com o GitLab ligado, os repositórios locais também funcionam junto dos projetos (aba **Repos** → **+ Local**).
+- **Começar**: na tela inicial, **Usar sem GitLab**, e depois **+ Adicionar repositório** com a pasta de um repositório git. Com o GitLab ligado, os repositórios locais também funcionam junto dos projetos (seção **Repositórios** → **+ Local**).
 - **Trabalhar**: crie um agente em branco (**N** ou **+ Novo agente**), escolha o repositório e escreva a tarefa. Ele trabalha num worktree próprio, num branch criado a partir do branch em que o clone estava quando você o adicionou. Modo confiança, sub-agentes e orquestrador funcionam igual.
 - **Revisar**: ao terminar, o agente entrega o branch (`open_merge_request`) e aparece um cartão **Revisão #N** com o diff, a busca e o comentário em linha, que vai direto para o agente.
 - **Mergear**: **Mergear em main** faz o merge no seu clone. Se você estiver em outro branch, o merge acontece num worktree temporário e o seu checkout não muda. Com mudanças não salvas no branch base, ou com conflito, o app não mexe em nada e mostra o comando para rodar no terminal. O merge continua sendo só seu.
@@ -206,8 +206,8 @@ Dá para usar o canvas só com repositórios da sua máquina, sem token nem issu
 ## Revisar, acompanhar gastos e teclado
 
 - **Diff do MR** (modo foco): clique numa linha para comentar. O comentário vai direto ao agente autor e, se marcado, também para o MR no GitLab. **Buscar nas mudanças** marca as ocorrências (Enter vai à próxima, Shift + Enter à anterior); com vários arquivos, a lista no topo pula para cada um, e cada arquivo pode ser recolhido.
-- **Gastos dos agentes** (aba **Atividade**): hoje, 7 dias e total, por issue ou por projeto, e um gráfico dos últimos 30 dias. O gasto de cada agente conta no dia em que ele começou. Em **Avisar acima de US$ … por dia**, o canvas avisa uma vez por dia quando o gasto passa do limite (só avisa, não para os agentes; o limite fica neste navegador).
-- **Atalhos no canvas** (fora de campos de texto): **N** novo agente, **Shift + N** nova nota, **setas** vão ao item vizinho, **Enter** abre o item selecionado em foco, **A** aba Ações, **F** enquadra tudo, **?** abre a ajuda com a lista completa.
+- **Gastos dos agentes** (seção **Atividade**): hoje, 7 dias e total, por issue ou por projeto, e um gráfico dos últimos 30 dias. O gasto de cada agente conta no dia em que ele começou. Em **Avisar acima de US$ … por dia**, o canvas avisa uma vez por dia quando o gasto passa do limite (só avisa, não para os agentes; o limite fica neste navegador).
+- **Atalhos no canvas** (fora de campos de texto): **N** novo agente, **Shift + N** nova nota, **setas** vão ao item vizinho, **Enter** abre o item selecionado em foco, **A** seção Ações, **F** enquadra tudo, **?** abre a ajuda com a lista completa.
 - **Tema escuro**: segue o sistema por padrão; em Automações → Aparência dá para fixar Claro ou Escuro (ou trocar pela paleta).
 
 - **Login do Claude Code expirado**: se o `claude` desta máquina perder o login, o terminal do agente mostra **Entrar de novo no Claude**. O bridge roda `claude auth login`, que abre a página de login no navegador. Se a página mostrar um código, cole no campo da caixa. Depois, **Reenviar a última mensagem** retoma o agente de onde parou.
@@ -215,10 +215,10 @@ Dá para usar o canvas só com repositórios da sua máquina, sem token nem issu
 ## Robustez (Fase 7)
 
 - **Reinício do bridge**: canvas, notas, histórico dos agentes, MRs, regras e pedidos de permissão ficam no SQLite. Se o bridge cair (crash, `kill -9`, `tsx watch` recarregando) ou for desligado, quem estava trabalhando volta sozinho quando ele sobe de novo: o bridge retoma cada sessão com `--resume` e avisa o agente que houve um reinício. Com `AGENT_CANVAS_AUTO_RESUME=0`, eles ficam **Pausados** para você retomar.
-- **Pedidos e perguntas pendentes** continuam na aba Ações depois do reinício. Quando o agente retomado pede a mesma coisa de novo, o pedido antigo é reaproveitado; se você já respondeu enquanto ele voltava, a resposta vale na hora.
+- **Pedidos e perguntas pendentes** continuam na seção Ações depois do reinício. Quando o agente retomado pede a mesma coisa de novo, o pedido antigo é reaproveitado; se você já respondeu enquanto ele voltava, a resposta vale na hora.
 - **O que não pode voltar** fica como **Erro**, com o motivo: worktree apagado, sessão que o `claude` não acha mais, `claude` fora do PATH.
 - **A página reconecta sozinha**: o token de sessão vale entre reinícios (por 7 dias), e depois da reconexão o estado é recarregado inteiro. Não precisa recarregar a página.
-- **Limpeza de pastas**: na aba **Repos**, a seção "Pastas de agentes removidos" lista os worktrees (e pastas de orquestrador) de agentes que saíram do canvas, com os arquivos sem commit e os commits não enviados. Apagar pede confirmação, avisa o que se perde e usa `git worktree remove`; o branch continua no clone.
+- **Limpeza de pastas**: na seção **Repositórios**, a seção "Pastas de agentes removidos" lista os worktrees (e pastas de orquestrador) de agentes que saíram do canvas, com os arquivos sem commit e os commits não enviados. Apagar pede confirmação, avisa o que se perde e usa `git worktree remove`; o branch continua no clone.
 - **Testes**: além dos testes de cada parte (`pnpm test`), `pnpm e2e` roda o caminho completo com o cliente do GitLab de verdade: configurar, abrir o MR pelo agente (push), acompanhar o pipeline, diff, comentário e reinício do bridge. Sem variáveis, usa um GitLab falso embutido cujo pipeline roda `npm test`. Para rodar contra um projeto de sandbox seu:
 
   ```sh

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Issue, Question, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
@@ -20,7 +20,7 @@ import {
 } from '../icons.tsx';
 import { clock, isBug, isP1, remoteLabel, repoName } from '../lib/format.ts';
 import { DiffStat, mrFailed, mrNum, mrReady } from '../mrs/mr-ui.tsx';
-import { activeFixer, liveMrs, mrNodeOf, useStore, type CanvasState, type Tab } from '../state/store.ts';
+import { activeFixer, liveMrs, mrNodeOf, useStore, type CanvasState, type Section } from '../state/store.ts';
 
 /**
  * Contador da aba Ações: só o que espera uma decisão sua (permissões, perguntas, MR pronto para
@@ -32,84 +32,93 @@ export function actionsCount(s: CanvasState): number {
   return n;
 }
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'issues', label: 'Issues' },
+const SECTIONS: { id: Section; label: string }[] = [
   { id: 'actions', label: 'Ações' },
-  { id: 'repos', label: 'Repos' },
+  { id: 'issues', label: 'Issues' },
+  { id: 'repos', label: 'Repositórios' },
   { id: 'feed', label: 'Atividade' },
 ];
 
+const readCollapsed = (): Section[] => {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem('ac-side-collapsed') ?? '["feed"]');
+    return Array.isArray(v) ? v.filter((x): x is Section => SECTIONS.some((t) => t.id === x)) : [];
+  } catch {
+    return ['feed'];
+  }
+};
+
+/** O texto bate com a busca da barra lateral (busca vazia bate com tudo). */
+const hit = (q: string, ...parts: (string | number | undefined | null)[]) =>
+  !q || parts.join(' ').toLowerCase().includes(q);
+
 export function Sidebar() {
-  const tab = useStore((s) => s.tab);
-  const setTab = useStore((s) => s.setTab);
   const query = useStore((s) => s.query);
   const setQuery = useStore((s) => s.setQuery);
-  const filter = useStore((s) => s.filter);
-  const setFilter = useStore((s) => s.setFilter);
   const sideOpen = useStore((s) => s.sideOpen);
   const settings = useStore((s) => s.settings)!;
   const connection = useStore((s) => s.connection);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
-  const idx = TABS.findIndex((t) => t.id === tab);
-  const actionCount = useStore((s) => actionsCount(s));
+  const section = useStore((s) => s.section);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const body = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  // a pílula do segmento só anima quando a aba muda por clique, não na primeira pintura
-  const indRef = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => {
-    if (indRef.current) indRef.current.style.transform = `translateX(${idx * 100}%)`;
-  }, [idx]);
+  const toggle = (id: Section) =>
+    setCollapsed((cur) => {
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      try {
+        localStorage.setItem('ac-side-collapsed', JSON.stringify(next));
+      } catch {
+        /* armazenamento indisponível: só não lembra */
+      }
+      return next;
+    });
 
-  const localOnly = settings?.mode === 'local';
+  // pedido de outra parte da tela (atalho A, aviso, botão): abre a seção e rola até ela
+  useEffect(() => {
+    if (!section.seq) return;
+    if (useStore.getState().query) setQuery('');
+    setCollapsed((cur) => cur.filter((x) => x !== section.id));
+    requestAnimationFrame(() =>
+      body.current
+        ?.querySelector(`[data-sec="${section.id}"]`)
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+    );
+  }, [section, setQuery]);
+
+  const q = query.trim().toLowerCase();
+  // com busca, todas as seções abrem e as sem resultado somem
+  const open = (id: Section) => !!q || !collapsed.includes(id);
+
   return (
     <aside className={`side${sideOpen ? ' open' : ''}`} id="side" aria-label="Barra lateral">
       <div className="side-h">
-        <div className="seg" role="tablist" aria-label="Fontes">
-          <span className="seg-ind" ref={indRef} aria-hidden="true" />
-          {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
-              {t.label}
-              {t.id === 'actions' && actionCount > 0 && <span className="cnt">{actionCount}</span>}
-            </button>
-          ))}
+        <div className="search-w">
+          <IconSearch />
+          <input
+            ref={searchRef}
+            className="field search"
+            type="search"
+            placeholder="Buscar issues, repositórios, ações…"
+            aria-label="Buscar na barra lateral"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && query) {
+                e.stopPropagation();
+                setQuery('');
+              }
+            }}
+          />
         </div>
-        {((tab === 'issues' && !localOnly) || tab === 'repos') && (
-          <div className="search-w">
-            <IconSearch />
-            <input
-              className="field search"
-              type="search"
-              placeholder="Buscar"
-              aria-label="Buscar"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-        )}
-        {tab === 'issues' && (settings?.projects.filter((p) => !p.local).length ?? 0) > 1 && (
-          <ProjectPicker />
-        )}
-        {tab === 'issues' && !localOnly && (
-          <div className="chips" role="group" aria-label="Filtrar issues">
-            {(
-              [
-                ['all', 'Todas'],
-                ['bug', 'Bugs'],
-                ['agents', 'Com agentes'],
-              ] as const
-            ).map(([f, label]) => (
-              <button key={f} className="chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>
-                {label}
-              </button>
-            ))}
-            <RefreshIssues />
-          </div>
-        )}
       </div>
-      <div className="side-b">
-        {tab === 'issues' && <IssuesTab />}
-        {tab === 'actions' && <ActionsTab />}
-        {tab === 'repos' && <ReposTab />}
-        {tab === 'feed' && <FeedTab />}
+      <div className="side-b" ref={body}>
+        <ActionsSection q={q} open={open('actions')} onToggle={() => toggle('actions')} />
+        <IssuesSection q={q} open={open('issues')} onToggle={() => toggle('issues')} />
+        <ReposSection q={q} open={open('repos')} onToggle={() => toggle('repos')} />
+        <FeedSection q={q} open={open('feed')} onToggle={() => toggle('feed')} />
+        {q && <p className="tip side-none">Nada encontrado para "{query.trim()}".</p>}
       </div>
       <div className="side-f">
         <span
@@ -145,9 +154,60 @@ export function Sidebar() {
   );
 }
 
-function IssuesTab() {
+type SectionProps = { q: string; open: boolean; onToggle(): void };
+
+/** Seção recolhível da barra lateral; o cabeçalho fica preso no topo ao rolar. */
+function Sec({
+  id,
+  count,
+  alert,
+  tools,
+  open,
+  onToggle,
+  children,
+}: {
+  id: Section;
+  count?: number;
+  /** Contador em destaque: algo espera você. */
+  alert?: number;
+  tools?: ReactNode;
+  open: boolean;
+  onToggle(): void;
+  children: ReactNode;
+}) {
+  const label = SECTIONS.find((t) => t.id === id)!.label;
+  return (
+    <section className="sec" data-sec={id} aria-label={label}>
+      <div className="sec-h">
+        <button className="sec-tg" aria-expanded={open} onClick={onToggle}>
+          <span className={`caret${open ? ' open' : ''}`} aria-hidden="true">
+            ▸
+          </span>
+          <span>{label}</span>
+          {alert ? (
+            <span className="cnt alert" title="Esperando você">
+              {alert}
+            </span>
+          ) : count !== undefined ? (
+            <span className="cnt">{count}</span>
+          ) : null}
+        </button>
+        {open && tools}
+      </div>
+      {open && <div className="sec-b">{children}</div>}
+    </section>
+  );
+}
+
+function IssuesSection({ q, open, onToggle }: SectionProps) {
   const local = useStore((s) => s.settings?.mode === 'local');
-  return local ? <NoGitLab /> : <IssueList />;
+  if (local)
+    return q ? null : (
+      <Sec id="issues" open={open} onToggle={onToggle}>
+        <NoGitLab />
+      </Sec>
+    );
+  return <IssueList q={q} open={open} onToggle={onToggle} />;
 }
 
 /** Sem GitLab não há issues: o trabalho começa por um agente em branco num repositório local. */
@@ -163,7 +223,7 @@ function NoGitLab() {
         <button className="btn sm primary" onClick={() => newAgentAt()}>
           <IconAgent /> Novo agente
         </button>
-        <button className="btn sm plain" onClick={() => useStore.getState().setTab('repos')}>
+        <button className="btn sm plain" onClick={() => useStore.getState().showSection('repos')}>
           Repositórios
         </button>
       </div>
@@ -177,12 +237,13 @@ function NoGitLab() {
   );
 }
 
-function IssueList() {
+function IssueList({ q, open, onToggle }: SectionProps) {
   const refs = useStore((s) => s.openIssueRefs);
   const issues = useStore((s) => s.issues);
   const nodes = useStore((s) => s.nodes);
-  const query = useStore((s) => s.query).toLowerCase();
   const filter = useStore((s) => s.filter);
+  const setFilter = useStore((s) => s.setFilter);
+  const manyProjects = useStore((s) => (s.settings?.projects.filter((p) => !p.local).length ?? 0) > 1);
   const loading = useStore((s) => s.issuesLoading);
   const error = useStore((s) => s.issuesError);
   const agents = useStore((s) => s.agents);
@@ -219,20 +280,31 @@ function IssueList() {
       .map((r) => issues[r])
       .filter((i): i is Issue => !!i && !archivedRefs.has(i.ref))
       .filter((i) => !shown || shown.has(i.projectId))
-      .filter(
-        (i) =>
-          !query ||
-          `${i.title} ${i.iid} ${i.labels.join(' ')} ${i.projectPath}`.toLowerCase().includes(query),
-      )
+      .filter((i) => hit(q, i.title, `#${i.iid}`, i.labels.join(' '), i.projectPath))
       .filter((i) => (filter === 'bug' ? isBug(i) : filter === 'agents' ? activity.has(i.ref) : true));
     const onCanvas = (i: Issue) => onRefs.has(i.ref);
     return { on: list.filter(onCanvas), off: list.filter((i) => !onCanvas(i)), total: list.length };
-  }, [refs, issues, nodes, query, filter, activity, shown, archived]);
-
-  if (!refs.length && loading) return <p className="tip">Carregando issues do GitLab…</p>;
+  }, [refs, issues, nodes, q, filter, activity, shown, archived]);
+  const archivedHits = archived.filter((a) => hit(q, a.title, `#${a.iid}`, a.projectPath));
+  if (q && !total && !archivedHits.length) return null;
 
   return (
-    <>
+    <Sec id="issues" count={total} open={open} onToggle={onToggle} tools={<RefreshIssues />}>
+      {manyProjects && <ProjectPicker />}
+      <div className="chips" role="group" aria-label="Filtrar issues">
+        {(
+          [
+            ['all', 'Todas'],
+            ['bug', 'Bugs'],
+            ['agents', 'Com agentes'],
+          ] as const
+        ).map(([f, label]) => (
+          <button key={f} className="chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {!refs.length && loading && <p className="tip">Carregando issues do GitLab…</p>}
       {error && (
         <p className="tip" role="alert" style={{ color: 'var(--bad)' }}>
           {error}
@@ -249,14 +321,16 @@ function IssueList() {
           ))}
         </>
       )}
-      <div className="grp-h">
-        <span>Backlog</span>
-        <span className="cnt">{off.length}</span>
-      </div>
+      {(!q || off.length > 0) && (
+        <div className="grp-h">
+          <span>Backlog</span>
+          <span className="cnt">{off.length}</span>
+        </div>
+      )}
       {off.map((i) => (
         <IssueRow key={i.ref} issue={i} onCanvas={false} state={activity.get(i.ref)} />
       ))}
-      {!off.length && (
+      {!off.length && !q && !(loading && !refs.length) && (
         <p className="tip">
           {filter === 'agents'
             ? 'Nenhuma issue com agentes ainda.'
@@ -265,18 +339,20 @@ function IssueList() {
               : 'Nenhuma issue aberta com esse filtro.'}
         </p>
       )}
-      <p className="tip">
-        <IconDrag /> Arraste para o canvas, ou use o + para adicionar no meio da tela.
-      </p>
-      <ArchivedList />
-    </>
+      {!q && (
+        <p className="tip">
+          <IconDrag /> Arraste para o canvas, ou use o + para adicionar no meio da tela.
+        </p>
+      )}
+      <ArchivedList archived={archivedHits} forceOpen={!!q} />
+    </Sec>
   );
 }
 
 /** Issues arquivadas (com agentes, MRs e notas): restaurar devolve tudo ao canvas. */
-function ArchivedList() {
-  const archived = useStore((s) => s.archived);
-  const [open, setOpen] = useState(false);
+function ArchivedList({ archived, forceOpen }: { archived: CanvasState['archived']; forceOpen: boolean }) {
+  const [opened, setOpen] = useState(false);
+  const open = opened || forceOpen;
   if (!archived.length) return null;
   return (
     <>
@@ -424,6 +500,11 @@ function ProjectPicker() {
 
 const EMPTY_PROJECTS: never[] = [];
 const STOP_ORDER = ['error', 'idle', 'done'];
+const STOP_LABEL: Record<string, string> = {
+  idle: 'sem instrução',
+  error: 'parou com erro',
+  done: 'turno concluído',
+};
 
 function IssueRow({
   issue: i,
@@ -480,7 +561,7 @@ function IssueRow({
   );
 }
 
-function ActionsTab() {
+function ActionsSection({ q, open, onToggle }: SectionProps) {
   const approvals = useStore((s) => s.approvals);
   const agents = useStore((s) => s.agents);
   const nodes = useStore((s) => s.nodes);
@@ -488,6 +569,9 @@ function ActionsTab() {
   const questions = useStore((s) => s.questions);
   const mergeRequests = useStore((s) => s.mergeRequests);
   const st = useStore.getState();
+  const waitingCount = useStore((s) => actionsCount(s));
+  const repoOf = (agentId: string) =>
+    st.settings?.projects.find((x) => x.id === agents[agentId]?.repos[0])?.name ?? '';
   const mrs = useMemo(
     () =>
       Object.values(nodes)
@@ -496,14 +580,17 @@ function ActionsTab() {
         .filter((m) => !!m),
     [nodes, mergeRequests],
   );
-  const ready = mrs.filter(mrReady);
+  const mrHit = (m: (typeof mrs)[number]) => hit(q, mrNum(m), m.title, m.projectPath);
+  const ready = mrs.filter(mrReady).filter(mrHit);
   // com um agente fix trabalhando, a falha não espera você
-  const failed = mrs.filter((m) => mrFailed(m) && !activeFixer({ agents }, m.ref));
+  const failed = mrs.filter((m) => mrFailed(m) && !activeFixer({ agents }, m.ref)).filter(mrHit);
   const focusMr = (ref: string) => {
     const n = mrNodeOf(useStore.getState(), ref);
     if (n) st.openFocus(n.id);
   };
-  const pending = Object.values(approvals).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const pending = Object.values(approvals)
+    .filter((p) => hit(q, agents[p.agentId]?.name, repoOf(p.agentId), p.toolName, p.summary))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const idle = Object.values(nodes)
     .filter((n) => n.type === 'agent')
     .map((n) => ({ node: n, agent: agents[n.refId] }))
@@ -516,15 +603,16 @@ function ActionsTab() {
   const nodeOf = (agentId: string) =>
     Object.values(nodes).find((n) => n.type === 'agent' && n.refId === agentId);
 
-  const policiesBlock = (
+  const rules = policies.filter((p) => hit(q, p.pattern));
+  const policiesBlock = (q ? rules.length > 0 : true) && (
     <>
       <div className="grp-h">
         <span>Sempre permitidos</span>
-        <span className="cnt">{policies.length}</span>
+        <span className="cnt">{rules.length}</span>
       </div>
-      {policies.length ? (
+      {rules.length ? (
         <div className="pol">
-          {policies.map((p) => (
+          {rules.map((p) => (
             <span className="chipx" key={p.id}>
               <code>{p.pattern}</code>
               <button
@@ -545,9 +633,18 @@ function ActionsTab() {
     </>
   );
 
-  const asks = Object.values(questions).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  if (!pending.length && !idle.length && !ready.length && !failed.length && !asks.length)
-    return (
+  const asks = Object.values(questions)
+    .filter((x) => hit(q, agents[x.agentId]?.name, x.text, x.options.join(' ')))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const total = pending.length + idle.length + ready.length + failed.length + asks.length;
+  const sec = (children: ReactNode) => (
+    <Sec id="actions" count={total} alert={waitingCount} open={open} onToggle={onToggle}>
+      {children}
+    </Sec>
+  );
+  if (q && !total && !rules.length) return null;
+  if (!total)
+    return sec(
       <>
         <div className="empty-act">
           <span className="ico agent">
@@ -557,10 +654,10 @@ function ActionsTab() {
           <span>Quando um agente pedir permissão ou um MR ficar pronto, aparece aqui.</span>
         </div>
         {policiesBlock}
-      </>
+      </>,
     );
 
-  return (
+  return sec(
     <>
       {pending.length > 0 && (
         <>
@@ -716,13 +813,7 @@ function ActionsTab() {
               <div className="act-top">
                 <span className={`sd ${agent!.status === 'idle' ? 'idle' : agent!.status}`} />
                 <b>{agent!.name}</b>
-                <span className="lab">
-                  {agent!.status === 'idle'
-                    ? 'sem instrução'
-                    : agent!.status === 'error'
-                      ? 'parou com erro'
-                      : 'turno concluído'}
-                </span>
+                <span className="lab">{STOP_LABEL[agent!.status]}</span>
               </div>
               <div className="act-btns">
                 <button className="btn sm" onClick={() => st.openFocus(node.id)}>
@@ -734,7 +825,7 @@ function ActionsTab() {
         </>
       )}
       {policiesBlock}
-    </>
+    </>,
   );
 }
 
@@ -791,11 +882,12 @@ function QuestionCard({ q, agentName, onOpen }: { q: Question; agentName: string
   );
 }
 
-function ReposTab() {
+function ReposSection({ q, open, onToggle }: SectionProps) {
   const settings = useStore((s) => s.settings)!;
-  const query = useStore((s) => s.query).toLowerCase();
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
-  const list = settings.projects.filter((p) => !query || p.pathWithNamespace.toLowerCase().includes(query));
+  const list = settings.projects.filter((p) =>
+    hit(q, p.pathWithNamespace, settings.clones.find((c) => c.projectId === p.id)?.path),
+  );
   const agents = useStore((s) => s.agents);
   const nodes = useStore((s) => s.nodes);
   const [busy, setBusy] = useState<string | null>(null);
@@ -829,33 +921,34 @@ function ReposTab() {
     }
   }
 
-  return (
+  if (q && !list.length) return null;
+  const tools = (
     <>
-      <div className="grp-h">
-        <span>Repositórios</span>
-        <span className="cnt">{list.length}</span>
-        <span className="spacer" style={{ marginLeft: 'auto' }} />
-        {hasGitLab && (
-          <button
-            className="btn sm plain"
-            disabled={!!busy}
-            title="Procura os clones de novo, pelo remoto do git"
-            onClick={() =>
-              run('rescan', api.rescanRepos, missing ? undefined : 'Todos os projetos têm clone local.')
-            }
-          >
-            {busy === 'rescan' ? 'Procurando…' : 'Procurar de novo'}
-          </button>
-        )}
+      {hasGitLab && (
         <button
           className="btn sm plain"
           disabled={!!busy}
-          title="Um repositório git da sua máquina, sem precisar do GitLab"
-          onClick={() => setAddingLocal(true)}
+          title="Procura os clones de novo, pelo remoto do git"
+          onClick={() =>
+            run('rescan', api.rescanRepos, missing ? undefined : 'Todos os projetos têm clone local.')
+          }
         >
-          + Local
+          {busy === 'rescan' ? 'Procurando…' : 'Procurar de novo'}
         </button>
-      </div>
+      )}
+      <button
+        className="btn sm plain"
+        disabled={!!busy}
+        title="Um repositório git da sua máquina, sem precisar do GitLab"
+        onClick={() => setAddingLocal(true)}
+      >
+        + Local
+      </button>
+    </>
+  );
+
+  return (
+    <Sec id="repos" count={list.length} open={open} onToggle={onToggle} tools={tools}>
       {list.map((p) => {
         const c = cloneOf(p.id);
         return (
@@ -1004,7 +1097,7 @@ function ReposTab() {
           }}
         />
       )}
-      {missing > 0 && (
+      {missing > 0 && !q && (
         <p className="tip">
           <span>
             O clone é reconhecido pelo remoto do git, em até 4 níveis de subpastas da pasta dos repositórios.
@@ -1012,28 +1105,34 @@ function ReposTab() {
           </span>
         </p>
       )}
-      <p className="tip">
-        <IconDrag /> Arraste um repositório para o canvas para criar um agente, ou solte em cima de um agente
-        em branco.
-      </p>
-      <Leftovers />
-      <p className="tip">
-        <button className="link-btn" onClick={() => setSettingsOpen(true)}>
-          {settings.mode === 'local' ? 'Conectar ao GitLab' : 'Escolher projetos'}
-        </button>
-      </p>
-    </>
+      {!q && (
+        <>
+          <p className="tip">
+            <IconDrag /> Arraste um repositório para o canvas para criar um agente, ou solte em cima de um
+            agente em branco.
+          </p>
+          <Leftovers />
+          <p className="tip">
+            <button className="link-btn" onClick={() => setSettingsOpen(true)}>
+              {settings.mode === 'local' ? 'Conectar ao GitLab' : 'Escolher projetos'}
+            </button>
+          </p>
+        </>
+      )}
+    </Sec>
   );
 }
 
 /** /home/ana/projetos/x → ~/projetos/x (o bridge não diz a home; deduz pelo padrão comum). */
 const shortPath = (p: string) => p.replace(/^\/(home|Users)\/[^/]+/, '~');
 
-function FeedTab() {
-  const activity = useStore((s) => s.activity);
+function FeedSection({ q, open, onToggle }: SectionProps) {
+  const all = useStore((s) => s.activity);
+  const activity = useMemo(() => all.filter((f) => hit(q, f.text)), [all, q]);
+  if (q && !activity.length) return null;
   return (
-    <>
-      <CostPanel />
+    <Sec id="feed" count={q ? activity.length : undefined} open={open} onToggle={onToggle}>
+      {!q && <CostPanel />}
       {!activity.length && <p className="tip">Nada aconteceu ainda.</p>}
       <ol className="tl">
         {activity.map((f, i) => (
@@ -1046,6 +1145,6 @@ function FeedTab() {
           </li>
         ))}
       </ol>
-    </>
+    </Sec>
   );
 }

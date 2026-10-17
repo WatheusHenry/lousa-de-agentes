@@ -259,7 +259,7 @@ function EmptyCanvas() {
             <button className="btn sm primary" onClick={() => newAgentAt()}>
               + Agente em branco
             </button>
-            <button className="btn sm" onClick={() => st.setTab('repos')}>
+            <button className="btn sm" onClick={() => st.showSection('repos')}>
               Repositórios
             </button>
             <button className="btn sm plain" onClick={() => st.setPanel('help')}>
@@ -280,7 +280,7 @@ function EmptyCanvas() {
           Arraste uma issue da barra lateral para cá, ou use o + ao lado dela. Depois é só clicar em Iniciar.
         </p>
         <div className="act-btns">
-          <button className="btn sm primary" onClick={() => st.setTab('issues')}>
+          <button className="btn sm primary" onClick={() => st.showSection('issues')}>
             Ver issues
           </button>
           <button className="btn sm" onClick={() => newAgentAt()}>

@@ -112,7 +112,7 @@ export function Workspace() {
         else newAgentAt();
       } else if (k === 'a') {
         e.preventDefault();
-        st.setTab('actions');
+        st.showSection('actions');
         if (innerWidth <= 860) st.setSideOpen(true);
         else if (st.sideHidden) st.setSideHidden(false);
       } else if (k === 'f') {
@@ -176,7 +176,7 @@ function TopBar({ workspace }: { workspace: string }) {
     (s) => liveMrs(s).filter((m) => mrFailed(m) && !activeFixer(s, m.ref)).length,
   );
   const goActions = () => {
-    useStore.getState().setTab('actions');
+    useStore.getState().showSection('actions');
     if (innerWidth <= 860) setSideOpen(true);
     else if (sideHidden) setSideHidden(false);
   };

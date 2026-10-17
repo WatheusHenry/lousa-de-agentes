@@ -70,7 +70,7 @@ export function notifyFor(m: ServerMessage, prev: CanvasState): void {
     const n = agentNodeOf(useStore.getState(), agentId);
     if (n) useStore.getState().select(n.id);
   };
-  const actions = () => useStore.getState().setTab('actions');
+  const actions = () => useStore.getState().showSection('actions');
 
   if (m.type === 'approval.upsert' && m.approval.status === 'pending' && !prev.approvals[m.approval.id]) {
     show(

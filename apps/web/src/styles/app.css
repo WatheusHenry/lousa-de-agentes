@@ -251,41 +251,6 @@ select {
   flex-direction: column;
   gap: 10px;
 }
-.seg {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  background: var(--hover);
-  border-radius: var(--r-sm);
-  padding: 2px;
-}
-.seg-ind {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 2px;
-  width: calc((100% - 4px) / 4);
-  border-radius: calc(var(--r-sm) - 2px);
-  background: var(--surface);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.08),
-    0 0 0 0.5px rgba(0, 0, 0, 0.06);
-  transition: transform 220ms var(--ease-out);
-}
-.seg button {
-  position: relative;
-  border: 0;
-  background: transparent;
-  padding: 5px 0;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 150ms ease;
-}
-.seg button[aria-selected='true'] {
-  color: var(--fg);
-}
 .field {
   width: 100%;
   padding: 8px 10px;
@@ -1886,14 +1851,70 @@ svg.edges {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* aba Ações */
-.seg button .cnt {
-  margin-left: 4px;
+/* barra lateral: seções recolhíveis numa lista só */
+.sec + .sec {
+  border-top: 1px solid var(--line);
+}
+.sec-h {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px 6px 0;
+  background: var(--surface);
+}
+.sec-tg {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.sec-tg:hover {
+  background: var(--hover);
+}
+.sec-tg .caret {
+  width: 10px;
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 160ms var(--ease-out);
+}
+.sec-tg .caret.open {
+  transform: rotate(90deg);
+}
+.sec-tg .cnt {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 16px;
+  padding: 0 6px;
+}
+.sec-tg .cnt.alert {
   background: var(--bad);
   color: #fff;
-  font-size: 10px;
-  line-height: 16px;
-  padding: 0 5px;
+}
+.sec-b {
+  padding-bottom: 10px;
+}
+.sec-b > .chips,
+.sec-b > .proj-pick {
+  margin: 0 2px 8px;
+}
+.sec ~ .side-none {
+  display: none;
 }
 .act-card {
   display: flex;
@@ -2809,7 +2830,7 @@ pre.cmd .c {
   .main.side-hidden .side {
     transform: none;
   }
-  .seg-ind {
+  .sec-tg .caret {
     transition: none;
   }
   .cpop,
