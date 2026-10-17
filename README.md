@@ -97,6 +97,7 @@ Modelo, limites e orçamento de contexto também mudam na tela, em **Automaçõe
 - **Mover**: arraste pelo cartão (a nota arrasta pelo cabeçalho). A posição fica no SQLite.
 - **Foco**: duplo clique num item (ou o ícone ↗) abre a issue como documento, com critérios de aceite e discussão do GitLab, e a nota como editor. **Esc** fecha.
 - **Remover**: **Delete** ou botão direito. O aviso tem **Desfazer** (ou **Ctrl/⌘ + Z**).
+- **Uso do Claude**: na toolbar, ao lado de **Como funciona**, um círculo enche conforme a sessão de 5 horas do seu plano é usada (azul, amarelo a partir de 75%, vermelho a partir de 90%). Clique para ver também o uso da semana e quando cada um zera. O bridge consulta a Anthropic com o login do Claude Code desta máquina (`~/.claude/.credentials.json` ou o Keychain no macOS), no máximo uma vez por minuto; o token não sai do bridge. Com login por chave de API, o círculo não aparece.
 - **Câmera**: arraste o fundo ou role para mover, **Ctrl/⌘ + scroll** para zoom, **Ajustar** enquadra tudo na área livre entre os painéis. **Ctrl/⌘ + B** mostra ou esconde a barra lateral.
 
 Recarregar a página mantém tudo: nós, posições, notas e vínculos vêm do bridge.

@@ -2,6 +2,7 @@ import { useStore as useFlowStore } from '@xyflow/react';
 import { newNoteAt } from '../actions.ts';
 import { IconBolt, IconFit, IconHelp, IconNewNote, IconSearch, IconZoomIn, IconZoomOut } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
+import { UsageRing } from './UsageRing.tsx';
 import { fit, zoomBy } from './viewport.ts';
 
 /** Toolbar flutuante no topo, em grupos (zoom, criar, painéis). */
@@ -56,6 +57,7 @@ export function Toolbar() {
           <IconHelp />
           <span className="lb">Como funciona</span>
         </button>
+        <UsageRing />
       </div>
     </div>
   );

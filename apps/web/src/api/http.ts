@@ -9,6 +9,7 @@ import {
   type Issue,
   type IssueComment,
   type ClaudeLoginState,
+  type ClaudeUsage,
   type MergeRequest,
   type MrDiffFile,
   type SettingsView,
@@ -107,5 +108,6 @@ export const api = {
   claudeLoginCode: (code: string) =>
     call<ClaudeLoginState>('/api/claude/login/code', { method: 'POST', body: JSON.stringify({ code }) }),
   cancelClaudeLogin: () => call<ClaudeLoginState>('/api/claude/login', { method: 'DELETE' }),
+  claudeUsage: (force = false) => call<ClaudeUsage>(`/api/claude/usage${force ? '?force=1' : ''}`),
   mrComments: (ref: string) => call<IssueComment[]>(`/api/mrs/${encodeURIComponent(ref)}/comments`),
 };
