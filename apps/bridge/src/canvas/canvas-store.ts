@@ -12,7 +12,17 @@ import {
   type ServerMessage,
 } from '@agent-canvas/shared';
 import type { Db } from '../db/index.ts';
-import { activity, agent, edge, issueCache, mergeRequestCache, node, note, noteLink } from '../db/schema.ts';
+import {
+  activity,
+  agent,
+  browser,
+  edge,
+  issueCache,
+  mergeRequestCache,
+  node,
+  note,
+  noteLink,
+} from '../db/schema.ts';
 
 export class CanvasError extends Error {}
 
@@ -36,6 +46,7 @@ const NODE_SIZE: Record<CanvasNode['type'], { w: number; h: number }> = {
   agent: { w: 404, h: 380 },
   mr: { w: 250, h: 175 },
   note: { w: 290, h: 240 },
+  browser: { w: 660, h: 470 },
 };
 
 export class CanvasStore {
@@ -400,7 +411,7 @@ export class CanvasStore {
     return [
       { type: 'node.remove', nodeId },
       this.logActivity(
-        `${this.describe(r, true)} ${r.type === 'note' ? 'excluída' : r.type === 'agent' || r.type === 'mr' ? 'removido do canvas' : 'removida do canvas'}`,
+        `${this.describe(r, true)} ${r.type === 'note' ? 'excluída' : r.type === 'agent' || r.type === 'mr' || r.type === 'browser' ? 'removido do canvas' : 'removida do canvas'}`,
       ),
     ];
   }
@@ -441,11 +452,20 @@ export class CanvasStore {
       .all()
       .map((m) => `${m.projectId}!${m.iid}`);
     const live = this.db.select().from(node).where(isNull(node.removedAt)).all();
+    const browserIds = agentIds.length
+      ? this.db
+          .select({ id: browser.id })
+          .from(browser)
+          .where(inArray(browser.ownerAgentId, agentIds))
+          .all()
+          .map((b) => b.id)
+      : [];
     const group = live.filter(
       (n) =>
         n.id === issueNode.id ||
         (n.type === 'agent' && agentIds.includes(n.refId)) ||
-        (n.type === 'mr' && mrRefs.includes(n.refId)),
+        (n.type === 'mr' && mrRefs.includes(n.refId)) ||
+        (n.type === 'browser' && browserIds.includes(n.refId)),
     );
     const ids = new Set(group.map((n) => n.id));
     for (const n of live.filter((x) => x.type === 'note')) {
@@ -545,8 +565,53 @@ export class CanvasStore {
         tx.delete(noteLink).where(eq(noteLink.noteId, n.refId)).run();
         tx.delete(note).where(eq(note.id, n.refId)).run();
       }
+      if (n.type === 'browser') tx.delete(browser).where(eq(browser.id, n.refId)).run();
       tx.delete(node).where(eq(node.id, nodeId)).run();
     });
+  }
+
+  /**
+   * Nó de um navegador (a linha em `browser` já existe). Com `agentNodeId`, liga o agente ao
+   * navegador por uma aresta. Sem posição, procura um lugar livre ao lado do agente.
+   */
+  placeBrowser(o: {
+    nodeId: string;
+    browserId: string;
+    at?: { x: number; y: number };
+    agentNodeId?: string;
+  }): ServerMessage[] {
+    const agentNode = o.agentNodeId
+      ? this.db
+          .select()
+          .from(node)
+          .where(and(eq(node.id, o.agentNodeId), isNull(node.removedAt)))
+          .get()
+      : undefined;
+    const at =
+      o.at ?? this.freeSpot('browser', { x: (agentNode?.x ?? 0) + 460, y: agentNode?.y ?? 0 });
+    const row = this.db
+      .insert(node)
+      .values({ id: o.nodeId, type: 'browser', refId: o.browserId, x: at.x, y: at.y, createdAt: nowIso() })
+      .returning()
+      .get();
+    const out: ServerMessage[] = [{ type: 'node.upsert', node: toNode(row) }];
+    if (agentNode) {
+      const e: CanvasEdge = {
+        id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+        fromNodeId: agentNode.id,
+        toNodeId: o.nodeId,
+        kind: 'browser',
+      };
+      this.db.insert(edge).values(e).run();
+      out.push({ type: 'edge.upsert', edge: e });
+    }
+    return out;
+  }
+
+  /** Nó vivo de um item pelo tipo e pela referência. */
+  liveNodeOf(type: NodeRow['type'], refId: string): CanvasNode | null {
+    const r = this.liveNodeByRef(type, refId);
+    return r ? toNode(r) : null;
   }
 
   /**
@@ -602,6 +667,7 @@ export class CanvasStore {
       return a?.name ?? (capital ? 'Agente' : 'agente');
     }
     if (n.type === 'mr') return `MR !${n.refId.split('!')[1] ?? n.refId}`;
+    if (n.type === 'browser') return capital ? 'Navegador' : 'navegador';
     return capital ? 'Item' : 'item';
   }
 }
