@@ -192,7 +192,7 @@ export function AgentPanel({
           <span>Este agente está aguardando sua permissão.</span>
           <button
             className="btn sm"
-            onClick={() => (focusId === nodeId ? st.setTab('actions') : st.openFocus(nodeId))}
+            onClick={() => (focusId === nodeId ? st.showSection('actions') : st.openFocus(nodeId))}
           >
             Revisar
           </button>
