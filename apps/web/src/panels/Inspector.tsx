@@ -4,7 +4,7 @@ import { api, ApiError } from '../api/http.ts';
 import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { Markdown } from '../components/Markdown.tsx';
-import { IconAgent, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
+import { IconAgent, IconExpand, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel } from '../lib/format.ts';
 import { fixPipeline } from '../actions.ts';
 import { DiffStat, MrBadge, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
@@ -76,12 +76,7 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
     <span className="badge issue">Issue #{i.iid}</span>,
     <>
       <div className="grp">
-        <h3>{i.title}</h3>
-        <div>
-          <button className="btn primary" onClick={() => s.openFocus(nodeId)}>
-            Expandir issue
-          </button>
-        </div>
+        <TitleRow title={i.title} label="Expandir issue" onExpand={() => s.openFocus(nodeId)} />
         {desc ? (
           <Markdown className="desc" compact baseUrl={i.webUrl.replace(/\/-\/issues\/\d+$/, '')}>
             {desc.length > 600 ? desc.slice(0, 600) + '…' : desc}
@@ -117,6 +112,7 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
           )}
         </dl>
       </div>
+      <IssueStart key={nodeId} nodeId={nodeId} issue={i} />
       <div className="grp">
         <h4>Notas</h4>
         {notes.length ? (
@@ -149,7 +145,6 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
           </ul>
         </div>
       )}
-      <IssueStart key={nodeId} nodeId={nodeId} issue={i} />
       <div className="row2">
         <a className="btn" href={i.webUrl} target="_blank" rel="noreferrer noopener">
           Abrir no GitLab
@@ -178,10 +173,19 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
     setRepos(next);
   };
   const orch = repos.length > 1;
+  const names = repos.map((id) => projects.find((p) => p.id === id)?.name).filter(Boolean);
+  const summary = [
+    orch ? `${names.length} repositórios` : (names[0] ?? 'repositório da issue'),
+    depth === 0 ? 'sem sub-agentes' : `sub-agentes até ${depth} nível${depth > 1 ? 's' : ''}`,
+    openMr ? 'abre MR ao final' : 'sem MR',
+  ].join(' · ');
   return (
     <>
       <div className="grp">
-        <h4>Repositórios afetados</h4>
+        <h4>Iniciar trabalho</h4>
+        <p className="lab" style={{ margin: 0 }}>
+          Repositórios afetados
+        </p>
         <div className="opts">
           {projects.map((p) => (
             <label className="opt" key={p.id}>
@@ -232,18 +236,32 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
           O agente recebe a issue, os comentários e as notas vinculadas em .agent-canvas/context.md.
         </p>
       </div>
-      <button
-        className="btn primary"
-        style={{ justifyContent: 'center', padding: 10 }}
-        onClick={() => startIssueAgent(nodeId, extra, { repos, maxDepth: depth, openMr })}
-      >
-        {orch ? `Iniciar orquestrador (${repos.length} repositórios)` : 'Iniciar agente'}
-      </button>
+      <div className="insp-cta">
+        <span className="lab">{summary}</span>
+        <button
+          className="btn primary"
+          onClick={() => startIssueAgent(nodeId, extra, { repos, maxDepth: depth, openMr })}
+        >
+          {orch ? `Iniciar orquestrador (${repos.length} repositórios)` : 'Iniciar agente'}
+        </button>
+      </div>
     </>
   );
 }
 
 const NO_PROJECTS: never[] = [];
+
+/** Título do painel com o botão de expandir (abre o modo foco), como o ↗ dos cartões. */
+function TitleRow({ title, label, onExpand }: { title: string; label: string; onExpand(): void }) {
+  return (
+    <div className="insp-title">
+      <h3>{title}</h3>
+      <button className="btn plain icon" aria-label={label} title={label} onClick={onExpand}>
+        <IconExpand />
+      </button>
+    </div>
+  );
+}
 
 function MrPanel(nodeId: string): [ReactNode, ReactNode] {
   const s = useStore.getState();
@@ -257,9 +275,9 @@ function MrPanel(nodeId: string): [ReactNode, ReactNode] {
     <span className="badge mrb">MR !{m.iid}</span>,
     <>
       <div className="grp">
-        <h3>{m.title}</h3>
+        <TitleRow title={m.title} label="Ver diff e discussão" onExpand={() => s.openFocus(nodeId)} />
         <div>
-          <button className="btn primary" onClick={() => s.openFocus(nodeId)}>
+          <button className="btn sm" onClick={() => s.openFocus(nodeId)}>
             Ver diff e discussão
           </button>
         </div>
@@ -347,7 +365,7 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
     </span>,
     <>
       <div className="grp">
-        <h3>{nt.title}</h3>
+        <TitleRow title={nt.title} label="Expandir nota" onExpand={() => s.openFocus(nodeId)} />
         {nt.body ? (
           <Markdown className="desc" compact>
             {nt.body}
@@ -355,11 +373,6 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
         ) : (
           <p className="desc">Sem texto ainda. Escreva direto no cartão.</p>
         )}
-      </div>
-      <div>
-        <button className="btn primary" onClick={() => s.openFocus(nodeId)}>
-          Expandir nota
-        </button>
       </div>
       <div className="grp">
         <h4>Vinculada a</h4>

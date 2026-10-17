@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
-import { addIssue, newAgentAt, newNoteAt, noteFor, startIssueAgent } from '../actions.ts';
+import { addIssue, newAgentAt, newNoteAt, noteFor, startFromCard } from '../actions.ts';
 import { isLive, roleLabel } from '../agents/agent-ui.ts';
 import {
   IconAgent,
@@ -111,7 +111,7 @@ function nodeMenu(id: string): Item[] {
     return [
       { header: `Issue #${i?.iid ?? ''}` },
       { icon: <IconExpand />, label: 'Expandir', hint: 'Duplo clique', run: () => s.openFocus(id) },
-      { icon: <IconAgent />, label: 'Iniciar agente', run: () => startIssueAgent(id) },
+      { icon: <IconAgent />, label: 'Iniciar agente', run: () => void startFromCard(id) },
       { icon: <IconNote />, label: 'Nova nota ligada', run: () => noteFor(id) },
       { sep: true },
       rm,

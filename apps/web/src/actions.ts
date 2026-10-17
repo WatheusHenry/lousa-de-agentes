@@ -1,4 +1,5 @@
-import { focusNode, freeSpot, viewCenter } from './canvas/viewport.ts';
+import { detectRepos } from '@agent-canvas/shared';
+import { focusNode, freeSpot, revealWhenReady, viewCenter } from './canvas/viewport.ts';
 import { agentNodeOf, issueNodeOf, useStore } from './state/store.ts';
 
 /** Ações de alto nível, usadas pela barra lateral, menus, painel e atalhos. */
@@ -57,6 +58,7 @@ export function newAgentAt(at?: { x: number; y: number }, opts: { repos?: number
   const pos = freeSpot({ x: c.x - 200, y: c.y - 160 }, 400, 330);
   const { nodeId } = st.createAgent({ at: pos, ...(opts.repos ? { repos: opts.repos } : {}) });
   st.setSideOpen(false);
+  revealWhenReady(nodeId);
   focusComposer(nodeId);
   return nodeId;
 }
@@ -80,7 +82,38 @@ export function startIssueAgent(
     ...(opts.maxDepth !== undefined ? { maxDepth: opts.maxDepth } : {}),
     ...(opts.openMr !== undefined ? { openMr: opts.openMr } : {}),
   });
+  revealWhenReady(nodeId);
   return nodeId;
+}
+
+/**
+ * "Iniciar" no cartão da issue, com as mesmas escolhas do painel: num repositório só, começa
+ * na hora (sem sub-agentes, abrindo MR ao final). Se a issue cita outros repositórios, abre o
+ * painel no botão de iniciar, para o usuário conferir antes de criar um orquestrador.
+ */
+export function startFromCard(issueNodeId: string): string | null {
+  const st = useStore.getState();
+  const n = st.nodes[issueNodeId];
+  const issue = n ? st.issues[n.refId] : undefined;
+  if (!n || !issue) return null;
+  const repos = detectRepos(issue, st.settings?.projects ?? []);
+  if (repos.length === 1)
+    return startIssueAgent(issueNodeId, undefined, { repos, maxDepth: 0, openMr: true });
+  st.openFocus(null);
+  st.select(issueNodeId);
+  focusStartButton();
+  return null;
+}
+
+/** Rola o painel até o botão de iniciar da issue e foca nele (o painel pode ainda estar abrindo). */
+function focusStartButton(tries = 30) {
+  const btn = document.querySelector<HTMLButtonElement>('.insp.open .insp-cta .btn.primary');
+  if (btn) {
+    btn.scrollIntoView({ block: 'nearest' });
+    btn.focus({ preventScroll: true });
+    return;
+  }
+  if (tries > 0) requestAnimationFrame(() => focusStartButton(tries - 1));
 }
 
 /**

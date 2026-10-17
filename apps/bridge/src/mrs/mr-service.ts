@@ -203,8 +203,7 @@ export class MrService {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'mr' as const,
       refId: mr.ref,
-      x: (agentNode?.x ?? 0) + 460,
-      y: (agentNode?.y ?? 0) + 40,
+      ...this.store.freeSpot('mr', { x: (agentNode?.x ?? 0) + 460, y: (agentNode?.y ?? 0) + 40 }),
       createdAt: nowIso(),
     };
     this.db.insert(node).values(n).run();

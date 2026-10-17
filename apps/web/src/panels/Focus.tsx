@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { Markdown } from '../components/Markdown.tsx';
 import type { IssueComment, MrDiffFile } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
-import { noteFor, startIssueAgent } from '../actions.ts';
+import { noteFor, startFromCard } from '../actions.ts';
 import { AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { nodeScreenRect, reducedMotion } from '../canvas/viewport.ts';
 import { IconAgent, IconIssue, IconMr, IconNote } from '../icons.tsx';
@@ -318,7 +318,7 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           <button
             type="button"
             onClick={() => {
-              const id = startIssueAgent(nodeId);
+              const id = startFromCard(nodeId);
               if (id) openFocus(id);
             }}
           >

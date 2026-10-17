@@ -99,6 +99,25 @@ export function focusNode(id: string) {
   });
 }
 
+/**
+ * Nó recém-criado: quando o React Flow já mediu o cartão, centraliza a câmera nele se ele não
+ * couber inteiro na área livre (ex.: "+ Novo agente" achou espaço abaixo da tela).
+ */
+export function revealWhenReady(id: string, tries = 30) {
+  const n = rf?.getInternalNode(id);
+  if (!rf || !n?.measured.width) {
+    if (tries > 0) requestAnimationFrame(() => revealWhenReady(id, tries - 1));
+    return;
+  }
+  const { x, y, zoom } = rf.getViewport();
+  const r = sizeOf(id);
+  const A = safeArea();
+  const left = r.x * zoom + x;
+  const top = r.y * zoom + y;
+  const inside = left >= A.x && top >= A.y && left + r.w * zoom <= A.x + A.w && top + r.h * zoom <= A.y + A.h;
+  if (!inside) focusNode(id);
+}
+
 export function zoomBy(f: number) {
   if (!rf) return;
   const v = rf.getViewport();

@@ -891,8 +891,10 @@ export class Supervisor {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'agent' as const,
       refId: id,
-      x: (pn?.x ?? 0) + (siblings % 3) * 436 - (siblings >= 3 ? 0 : 0),
-      y: (pn?.y ?? 0) + 420 + Math.floor(siblings / 3) * 400,
+      ...this.d.store.freeSpot('agent', {
+        x: (pn?.x ?? 0) + (siblings % 3) * 436,
+        y: (pn?.y ?? 0) + 420 + Math.floor(siblings / 3) * 400,
+      }),
       createdAt: nowIso(),
     };
     const e = {
@@ -986,8 +988,7 @@ export class Supervisor {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'agent' as const,
       refId: id,
-      x: (mn?.x ?? 0) + 380,
-      y: (mn?.y ?? 0) - 40 + helpers * 420,
+      ...this.d.store.freeSpot('agent', { x: (mn?.x ?? 0) + 310, y: (mn?.y ?? 0) - 40 + helpers * 420 }),
       createdAt: nowIso(),
     };
     const e = {

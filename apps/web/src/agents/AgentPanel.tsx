@@ -201,13 +201,39 @@ export function AgentPanel({
       )}
 
       {blank ? (
-        <div className="callout info">
-          <span>
-            {repo
-              ? 'Contexto pronto. Envie a primeira instrução pela janela do agente.'
-              : 'Escolha um repositório (ou arraste uma issue para cima do agente) e envie a primeira instrução.'}
-          </span>
-        </div>
+        <ol className="steps">
+          <li className={repo ? 'ok' : 'cur'}>
+            <b>Repositório</b>
+            {repo ? (
+              <span className="badge repo">{repo.name}</span>
+            ) : (
+              <>
+                <select
+                  className="field"
+                  value=""
+                  aria-label="Repositório do agente"
+                  onChange={(e) =>
+                    e.target.value && st.updateAgent(a.id, { repos: [Number(e.target.value)] })
+                  }
+                >
+                  <option value="">Escolher…</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.pathWithNamespace}
+                    </option>
+                  ))}
+                </select>
+                <span className="lab">
+                  Ou arraste um repositório da aba Repos, ou uma issue, para cima do agente.
+                </span>
+              </>
+            )}
+          </li>
+          <li className={repo ? 'cur' : ''}>
+            <b>Primeira instrução</b>
+            <span className="lab">Escreva na janela do agente. Ele começa por ela.</span>
+          </li>
+        </ol>
       ) : (
         live && (
           <div className="prog">
@@ -219,24 +245,26 @@ export function AgentPanel({
         )
       )}
 
-      <div className="stats3">
-        <div className="stat">
-          <b>{fmtK(a.inputTokens + a.outputTokens)}</b>
-          <span>Tokens</span>
+      {a.sessionId && (
+        <div className="stats3">
+          <div className="stat">
+            <b>{fmtK(a.inputTokens + a.outputTokens)}</b>
+            <span>Tokens</span>
+          </div>
+          <div className="stat">
+            <b>{fmtUsd(a.costUsd)}</b>
+            <span>Custo</span>
+          </div>
+          <div className="stat">
+            <b>{turns}</b>
+            <span>Turnos</span>
+          </div>
         </div>
-        <div className="stat">
-          <b>{fmtUsd(a.costUsd)}</b>
-          <span>Custo</span>
-        </div>
-        <div className="stat">
-          <b>{turns}</b>
-          <span>Turnos</span>
-        </div>
-      </div>
+      )}
 
       <PlanAndTeam agent={a} />
 
-      <ContextSection agent={a} />
+      {(!blank || repo) && <ContextSection agent={a} />}
 
       <AgentTimeline key={a.id} agentId={a.id} />
 
@@ -244,29 +272,7 @@ export function AgentPanel({
         <h4>Detalhes</h4>
         <dl className="kv">
           <dt>Repositório</dt>
-          <dd>
-            {a.worktreePath || !blank ? (
-              repo ? (
-                <span className="badge repo">{repo.name}</span>
-              ) : (
-                '—'
-              )
-            ) : (
-              <select
-                className="field"
-                value={a.repos[0] ?? ''}
-                aria-label="Repositório do agente"
-                onChange={(e) => e.target.value && st.updateAgent(a.id, { repos: [Number(e.target.value)] })}
-              >
-                <option value="">Escolher…</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.pathWithNamespace}
-                  </option>
-                ))}
-              </select>
-            )}
-          </dd>
+          <dd>{repo ? <span className="badge repo">{repo.name}</span> : '—'}</dd>
           {a.branch && (
             <>
               <dt>Branch</dt>

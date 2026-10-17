@@ -21,14 +21,13 @@ import { clock, isBug, isP1, repoName } from '../lib/format.ts';
 import { DiffStat, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
 import { activeFixer, liveMrs, mrNodeOf, useStore, type CanvasState, type Tab } from '../state/store.ts';
 
-/** Itens da aba Ações: permissões, MRs prontos ou com pipeline falho e agentes esperando instrução. */
+/**
+ * Contador da aba Ações: só o que espera uma decisão sua (permissões, perguntas, MR pronto para
+ * merge, pipeline com falha sem agente corrigindo). Agentes parados aparecem na aba, sem contar.
+ */
 export function actionsCount(s: CanvasState): number {
   let n = Object.keys(s.approvals).length + Object.keys(s.questions).length;
   for (const m of liveMrs(s)) if (mrReady(m) || (mrFailed(m) && !activeFixer(s, m.ref))) n++;
-  for (const node of Object.values(s.nodes)) {
-    const a = node.type === 'agent' ? s.agents[node.refId] : undefined;
-    if (a && (a.status === 'idle' || a.status === 'done' || a.status === 'error')) n++;
-  }
   return n;
 }
 
@@ -335,6 +334,7 @@ function ProjectPicker() {
 }
 
 const EMPTY_PROJECTS: never[] = [];
+const STOP_ORDER = ['error', 'idle', 'done'];
 
 function IssueRow({
   issue: i,
@@ -421,7 +421,9 @@ function ActionsTab() {
     .filter(
       (x) =>
         x.agent && (x.agent.status === 'idle' || x.agent.status === 'done' || x.agent.status === 'error'),
-    );
+    )
+    // erro primeiro, depois quem espera a primeira instrução, depois os concluídos
+    .sort((a, b) => STOP_ORDER.indexOf(a.agent!.status) - STOP_ORDER.indexOf(b.agent!.status));
   const nodeOf = (agentId: string) =>
     Object.values(nodes).find((n) => n.type === 'agent' && n.refId === agentId);
 
@@ -617,7 +619,7 @@ function ActionsTab() {
       {idle.length > 0 && (
         <>
           <div className="grp-h">
-            <span>Aguardando instrução</span>
+            <span>Agentes parados</span>
             <span className="cnt">{idle.length}</span>
           </div>
           {idle.map(({ node, agent }) => (

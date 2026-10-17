@@ -209,8 +209,7 @@ export class AutomationService {
       instruction: `Iniciado pela label ${AGENT_READY_LABEL}. Ao terminar, abra o MR.`,
       maxDepth: 1,
       openMr: true,
-      x: ix + 460,
-      y: iy,
+      ...store.freeSpot('agent', { x: ix, y: iy + 230 }),
     });
   }
 }

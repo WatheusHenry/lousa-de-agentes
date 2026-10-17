@@ -3749,3 +3749,94 @@ a.btn {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* painel: título com o botão de expandir e rodapé fixo com a ação principal */
+.insp-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.insp-title h3 {
+  flex: 1;
+  min-width: 0;
+}
+.insp-title .btn {
+  flex: none;
+  margin-top: -2px;
+}
+.insp-cta {
+  position: sticky;
+  bottom: -20px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 -18px -20px;
+  padding: 12px 18px 18px;
+  background: var(--surface);
+  box-shadow: 0 -1px 0 var(--line);
+}
+.insp-cta .btn {
+  justify-content: center;
+  padding: 10px;
+}
+.insp-cta .lab {
+  margin: 0;
+  font-size: 12px;
+}
+/* agente em branco: os dois passos para começar */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  counter-reset: step;
+}
+.steps li {
+  counter-increment: step;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px 10px 42px;
+  border-radius: var(--r-md);
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--subtle);
+  color: var(--muted);
+}
+.steps li.cur {
+  background: var(--accent-soft);
+}
+.steps li.cur::before {
+  background: var(--accent);
+  color: #fff;
+}
+.steps li.ok::before {
+  content: '✓';
+  background: var(--ok);
+  color: #fff;
+}
+.steps li b {
+  font-size: 13px;
+}
+.steps li .lab {
+  margin: 0;
+  font-size: 12px;
+}
+.steps select {
+  width: 100%;
+}

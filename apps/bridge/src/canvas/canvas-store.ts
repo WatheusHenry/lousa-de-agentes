@@ -30,6 +30,14 @@ const toNode = (r: NodeRow): CanvasNode => ({
 });
 
 /** Estado do canvas no SQLite: nós, arestas, notas, vínculos e atividade. */
+/** Tamanho aproximado de cada cartão no canvas (zoom 100%), para achar lugar livre. */
+const NODE_SIZE: Record<CanvasNode['type'], { w: number; h: number }> = {
+  issue: { w: 290, h: 175 },
+  agent: { w: 404, h: 380 },
+  mr: { w: 250, h: 175 },
+  note: { w: 290, h: 240 },
+};
+
 export class CanvasStore {
   constructor(private readonly db: Db) {}
 
@@ -248,8 +256,7 @@ export class CanvasStore {
     }
     const id = `t_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const nodeId = `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
-    const x = (agentNode?.x ?? 0) + 460;
-    const y = (agentNode?.y ?? 0) + 260;
+    const { x, y } = this.freeSpot('note', { x: (agentNode?.x ?? 0) + 460, y: (agentNode?.y ?? 0) + 260 });
     const out: ServerMessage[] = [];
     this.db.transaction((tx) => {
       tx.insert(note)
@@ -441,6 +448,31 @@ export class CanvasStore {
       }
       tx.delete(node).where(eq(node.id, nodeId)).run();
     });
+  }
+
+  /**
+   * Lugar livre perto de `at` para um nó novo do tipo dado (o bridge cria filhos, MRs, notas de
+   * passagem e agentes de correção sem o navegador). Desce em passos de 50 px; se a coluna estiver
+   * cheia, tenta as colunas à direita. Tamanhos aproximados dos cartões no zoom 100%.
+   */
+  freeSpot(type: CanvasNode['type'], at: { x: number; y: number }): { x: number; y: number } {
+    const rects = this.liveNodes().map((n) => ({
+      x: n.x,
+      y: n.y,
+      w: NODE_SIZE[n.type].w,
+      h: NODE_SIZE[n.type].h,
+    }));
+    const { w, h } = NODE_SIZE[type];
+    const GAP = 30;
+    const free = (x: number, y: number) =>
+      !rects.some(
+        (r) => x < r.x + r.w + GAP && x + w + GAP > r.x && y < r.y + r.h + GAP && y + h + GAP > r.y,
+      );
+    for (let col = 0; col < 6; col++) {
+      const x = at.x + col * (w + GAP * 2);
+      for (let i = 0; i < 40; i++) if (free(x, at.y + i * 50)) return { x, y: at.y + i * 50 };
+    }
+    return at;
   }
 
   /** Nó pelo id, removido ou não. */
