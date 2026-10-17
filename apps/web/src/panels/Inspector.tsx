@@ -152,6 +152,7 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
         <a className="btn" href={i.webUrl} target="_blank" rel="noreferrer noopener">
           Abrir no GitLab
         </a>
+        <ArchiveButton nodeId={nodeId} issueRef={i.ref} />
       </div>
       <div className="foot-danger">
         <button className="btn plain danger sm" onClick={() => s.removeNode(nodeId)}>
@@ -255,6 +256,29 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
 }
 
 const NO_PROJECTS: never[] = [];
+
+/** Arquivar: some do canvas com agentes, MRs e notas; volta pela aba Issues. */
+function ArchiveButton({ nodeId, issueRef }: { nodeId: string; issueRef: string }) {
+  const busy = useStore((s) =>
+    Object.values(s.agents).find(
+      (a) => a.issueRef === issueRef && ['running', 'waiting', 'coordinating', 'queued'].includes(a.status),
+    ),
+  );
+  return (
+    <button
+      className="btn"
+      disabled={!!busy}
+      title={
+        busy
+          ? `${busy.name} ainda está trabalhando. Pare ou espere para arquivar.`
+          : 'Tira do canvas a issue com os agentes, MRs e notas dela. Volta pela aba Issues → Arquivadas.'
+      }
+      onClick={() => useStore.getState().archiveIssue(nodeId)}
+    >
+      Arquivar
+    </button>
+  );
+}
 
 /** Título do painel com o botão de expandir (abre o modo foco), como o ↗ dos cartões. */
 function TitleRow({ title, label, onExpand }: { title: string; label: string; onExpand(): void }) {

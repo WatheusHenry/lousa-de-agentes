@@ -31,6 +31,18 @@ export const StateSnapshot = z.object({
   mergeRequests: z.array(MergeRequest),
   /** Perguntas pendentes dos agentes (ask_human). */
   questions: z.array(Question),
+  /** Issues arquivadas (com agentes, MRs e notas), para restaurar. */
+  archived: z.array(
+    z.object({
+      issueRef: z.string(),
+      iid: z.number(),
+      title: z.string(),
+      projectPath: z.string(),
+      archivedAt: z.string(),
+      /** Agentes, MRs e notas arquivados junto. */
+      items: z.number(),
+    }),
+  ),
 });
 export type StateSnapshot = z.infer<typeof StateSnapshot>;
 
@@ -48,6 +60,9 @@ export const ClientMessage = z.discriminatedUnion('type', [
     y: Coord,
   }),
   z.object({ type: z.literal('node.move'), nodeId: Id, x: Coord, y: Coord }),
+  /** Tira do canvas a issue com os agentes, MRs e notas dela, sem apagar (restaura depois). */
+  z.object({ type: z.literal('issue.archive'), nodeId: Id }),
+  z.object({ type: z.literal('issue.unarchive'), issueRef: IssueRef }),
   /** Remoção suave: o nó some, mas pode voltar com node.restore (desfazer). */
   z.object({ type: z.literal('node.remove'), nodeId: Id }),
   z.object({ type: z.literal('node.restore'), nodeId: Id }),

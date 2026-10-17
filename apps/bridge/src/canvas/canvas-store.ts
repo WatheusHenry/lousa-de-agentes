@@ -12,7 +12,7 @@ import {
   type ServerMessage,
 } from '@agent-canvas/shared';
 import type { Db } from '../db/index.ts';
-import { activity, agent, edge, issueCache, node, note, noteLink } from '../db/schema.ts';
+import { activity, agent, edge, issueCache, mergeRequestCache, node, note, noteLink } from '../db/schema.ts';
 
 export class CanvasError extends Error {}
 
@@ -201,6 +201,8 @@ export class CanvasStore {
       .all();
     const live = existing.find((n) => !n.removedAt);
     if (live) return [{ type: 'node.upsert', node: toNode(live) }];
+    // arquivada: volta com agentes, MRs e notas, no lugar onde estava
+    if (existing.some((n) => n.archivedAt)) return this.unarchiveIssue(ref);
     // uma issue removida e trazida de novo começa limpa: o nó antigo some de vez
     for (const old of existing) this.purgeNode(old.id);
     const row = this.db
@@ -413,13 +415,110 @@ export class CanvasStore {
     return [this.logActivity('Remoção desfeita')];
   }
 
+  /**
+   * Nós que saem do canvas junto com a issue ao arquivar: a issue, os agentes dela (inclusive
+   * filhos, correção e revisão, que herdam a issue), os MRs dela e as notas que só servem a esse
+   * grupo (as de passagem dos agentes e as ligadas só a eles ou à issue).
+   */
+  archiveGroup(issueNodeId: string): { issue: NodeRow; nodes: NodeRow[]; agentIds: string[] } {
+    const issueNode = this.db
+      .select()
+      .from(node)
+      .where(and(eq(node.id, issueNodeId), eq(node.type, 'issue'), isNull(node.removedAt)))
+      .get();
+    if (!issueNode) throw new CanvasError('Issue não está no canvas.');
+    const ref = issueNode.refId;
+    const agentIds = this.db
+      .select({ id: agent.id })
+      .from(agent)
+      .where(eq(agent.issueRef, ref))
+      .all()
+      .map((a) => a.id);
+    const mrRefs = this.db
+      .select()
+      .from(mergeRequestCache)
+      .where(eq(mergeRequestCache.issueRef, ref))
+      .all()
+      .map((m) => `${m.projectId}!${m.iid}`);
+    const live = this.db.select().from(node).where(isNull(node.removedAt)).all();
+    const group = live.filter(
+      (n) =>
+        n.id === issueNode.id ||
+        (n.type === 'agent' && agentIds.includes(n.refId)) ||
+        (n.type === 'mr' && mrRefs.includes(n.refId)),
+    );
+    const ids = new Set(group.map((n) => n.id));
+    for (const n of live.filter((x) => x.type === 'note')) {
+      const nt = this.db.select().from(note).where(eq(note.id, n.refId)).get();
+      const targets = this.db.select().from(noteLink).where(eq(noteLink.noteId, n.refId)).all();
+      const byGroupAgent = !!nt && agentIds.includes(nt.createdBy);
+      const onlyGroup = targets.length > 0 && targets.every((l) => ids.has(l.targetNodeId));
+      if (byGroupAgent || onlyGroup) group.push(n);
+    }
+    return { issue: issueNode, nodes: group, agentIds };
+  }
+
+  /** Arquiva o grupo da issue (some do canvas, não é apagado pela limpeza). */
+  archiveIssue(issueNodeId: string): ServerMessage[] {
+    const { issue, nodes } = this.archiveGroup(issueNodeId);
+    const ts = nowIso();
+    this.db
+      .update(node)
+      .set({ removedAt: ts, archivedAt: ts })
+      .where(
+        inArray(
+          node.id,
+          nodes.map((n) => n.id),
+        ),
+      )
+      .run();
+    const i = this.cachedIssue(issue.refId);
+    return [
+      ...nodes.map((n) => ({ type: 'node.remove' as const, nodeId: n.id })),
+      this.logActivity(
+        `Issue #${i?.iid ?? issue.refId.split('#')[1]} arquivada com ${nodes.length - 1} ite${nodes.length - 1 === 1 ? 'm' : 'ns'}`,
+      ),
+    ];
+  }
+
+  /** Devolve ao canvas o grupo arquivado da issue (mesmo carimbo de arquivamento). */
+  unarchiveIssue(ref: string): ServerMessage[] {
+    const issueNode = this.db
+      .select()
+      .from(node)
+      .where(and(eq(node.type, 'issue'), eq(node.refId, ref), isNotNull(node.archivedAt)))
+      .orderBy(desc(node.archivedAt))
+      .get();
+    if (!issueNode) throw new CanvasError('Issue não está arquivada.');
+    this.db
+      .update(node)
+      .set({ removedAt: null, archivedAt: null })
+      .where(eq(node.archivedAt, issueNode.archivedAt!))
+      .run();
+    const i = this.cachedIssue(ref);
+    return [this.logActivity(`Issue #${i?.iid ?? ref.split('#')[1]} restaurada do arquivo`)];
+  }
+
+  /** Issues arquivadas, da mais recente para a mais antiga. */
+  archivedIssues(): { issueRef: string; archivedAt: string; items: number }[] {
+    const rows = this.db.select().from(node).where(isNotNull(node.archivedAt)).all();
+    return rows
+      .filter((r) => r.type === 'issue')
+      .map((r) => ({
+        issueRef: r.refId,
+        archivedAt: r.archivedAt!,
+        items: rows.filter((x) => x.archivedAt === r.archivedAt).length - 1,
+      }))
+      .sort((a, b) => b.archivedAt.localeCompare(a.archivedAt));
+  }
+
   /** Apaga de vez os nós removidos há mais de `olderThanMs` (padrão: 1 dia). */
   purgeRemoved(olderThanMs = 86_400_000): number {
     const limit = new Date(Date.now() - olderThanMs).toISOString();
     const old = this.db
       .select()
       .from(node)
-      .where(and(isNotNull(node.removedAt), lt(node.removedAt, limit)))
+      .where(and(isNotNull(node.removedAt), isNull(node.archivedAt), lt(node.removedAt, limit)))
       .all();
     old.forEach((n) => this.purgeNode(n.id));
     // mantém só as últimas entradas de atividade

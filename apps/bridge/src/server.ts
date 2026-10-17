@@ -221,6 +221,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     policies: approvals.policies(),
     mergeRequests: mrs.canvasMrs(),
     questions: questions.pending(),
+    archived: store.archivedIssues().flatMap((a) => {
+      const i = store.cachedIssue(a.issueRef);
+      return i ? [{ ...a, iid: i.iid, title: i.title, projectPath: i.projectPath }] : [];
+    }),
   });
 
   // ---------- HTTP ----------
@@ -481,6 +485,33 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
           if (!known) app.log.error(err);
           send({ type: 'error', message: known ? (err as Error).message : 'Erro ao falar com o agente.' });
         });
+        return;
+      }
+      // arquivar confere se algum agente do grupo ainda trabalha; restaurar traz o estado inteiro
+      if (
+        msg.type === 'issue.archive' ||
+        msg.type === 'issue.unarchive' ||
+        (msg.type === 'issue.place' && store.archivedIssues().some((a) => a.issueRef === msg.issueRef))
+      ) {
+        try {
+          let out: ServerMessage[];
+          if (msg.type === 'issue.archive') {
+            const busy = store
+              .archiveGroup(msg.nodeId)
+              .agentIds.map((id) => supervisor.get(id))
+              .find((a) => a && supervisor.busy(a.id));
+            if (busy)
+              throw new CanvasError(
+                `${busy.name} ainda está trabalhando. Pare ou espere ele terminar para arquivar.`,
+              );
+            out = store.archiveIssue(msg.nodeId);
+          } else out = store.unarchiveIssue(msg.issueRef);
+          broadcast(out);
+          broadcast([{ type: 'state.snapshot', state: snapshot() }]);
+        } catch (err) {
+          send({ type: 'error', message: err instanceof CanvasError ? err.message : 'Erro ao arquivar.' });
+          if (!(err instanceof CanvasError)) app.log.error(err);
+        }
         return;
       }
       try {

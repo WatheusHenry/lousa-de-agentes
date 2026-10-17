@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { addIssue, newAgentAt, newNoteAt, noteFor, startFromCard } from '../actions.ts';
 import { isLive, roleLabel } from '../agents/agent-ui.ts';
 import {
+  IconDoc,
   IconAgent,
   IconExpand,
   IconFit,
@@ -114,6 +115,7 @@ function nodeMenu(id: string): Item[] {
       { icon: <IconAgent />, label: 'Iniciar agente', run: () => void startFromCard(id) },
       { icon: <IconNote />, label: 'Nova nota ligada', run: () => noteFor(id) },
       { sep: true },
+      { icon: <IconDoc />, label: 'Arquivar com agentes e MRs', run: () => s.archiveIssue(id) },
       rm,
     ];
   }

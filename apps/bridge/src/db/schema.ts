@@ -48,6 +48,11 @@ export const node = sqliteTable(
     createdAt: text('created_at').notNull(),
     /** Remoção suave, para o desfazer. */
     removedAt: text('removed_at'),
+    /**
+     * Arquivado junto com a issue (também tem removedAt, então some do canvas). A limpeza dos
+     * removidos não apaga arquivados; restaurar devolve o grupo inteiro (mesmo carimbo).
+     */
+    archivedAt: text('archived_at'),
   },
   (t) => [index('node_ref_idx').on(t.type, t.refId)],
 );

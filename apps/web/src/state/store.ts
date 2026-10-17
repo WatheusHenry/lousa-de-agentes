@@ -56,6 +56,10 @@ export interface CanvasState {
   mergeRequests: Record<string, MergeRequest>;
   /** Perguntas pendentes dos agentes (ask_human). */
   questions: Record<string, Question>;
+  /** Issues arquivadas, para restaurar. */
+  archived: StateSnapshot['archived'];
+  archiveIssue(nodeId: string): void;
+  unarchiveIssue(issueRef: string): void;
   /** Contexto de cada agente (itens, tokens, sugestões), conforme o bridge manda. */
   contexts: Record<string, AgentContext>;
   /** Muda quando a discussão de um MR ou issue muda no GitLab (para recarregar). */
@@ -220,6 +224,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   policies: [],
   mergeRequests: {},
   questions: {},
+  archived: [],
   contexts: {},
   threadVersion: {},
   openIssueRefs: [],
@@ -260,6 +265,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
         policies: s.policies,
         mergeRequests: Object.fromEntries(s.mergeRequests.map((m) => [m.ref, m])),
         questions: byId(s.questions),
+        archived: s.archived,
         selected: st.selected && nodes[st.selected] ? st.selected : null,
         focusId: st.focusId && nodes[st.focusId] ? st.focusId : null,
       };
@@ -565,6 +571,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
   setFilter: (f) => set({ filter: f }),
   setQuery: (q) => set({ query: q }),
   setPalette: (open) => set({ paletteOpen: open }),
+  archiveIssue: (nodeId) => send({ type: 'issue.archive', nodeId }),
+  unarchiveIssue: (issueRef) => send({ type: 'issue.unarchive', issueRef }),
   setIssueProjects(ids) {
     const unique = [...new Set(ids)];
     try {

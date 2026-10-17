@@ -161,7 +161,10 @@ function IssuesTab() {
     return m;
   }, [nodes, agents]);
 
+  const archived = useStore((s) => s.archived);
   const { on, off, total } = useMemo(() => {
+    // arquivadas ficam na seção delas, não no backlog
+    const archivedRefs = new Set(archived.map((a) => a.issueRef));
     const onRefs = new Set(
       Object.values(nodes)
         .filter((n) => n.type === 'issue')
@@ -169,7 +172,7 @@ function IssuesTab() {
     );
     const list = refs
       .map((r) => issues[r])
-      .filter((i): i is Issue => !!i)
+      .filter((i): i is Issue => !!i && !archivedRefs.has(i.ref))
       .filter((i) => !shown || shown.has(i.projectId))
       .filter(
         (i) =>
@@ -179,7 +182,7 @@ function IssuesTab() {
       .filter((i) => (filter === 'bug' ? isBug(i) : filter === 'agents' ? activity.has(i.ref) : true));
     const onCanvas = (i: Issue) => onRefs.has(i.ref);
     return { on: list.filter(onCanvas), off: list.filter((i) => !onCanvas(i)), total: list.length };
-  }, [refs, issues, nodes, query, filter, activity, shown]);
+  }, [refs, issues, nodes, query, filter, activity, shown, archived]);
 
   if (!refs.length && loading) return <p className="tip">Carregando issues do GitLab…</p>;
 
@@ -220,6 +223,45 @@ function IssuesTab() {
       <p className="tip">
         <IconDrag /> Arraste para o canvas, ou use o + para adicionar no meio da tela.
       </p>
+      <ArchivedList />
+    </>
+  );
+}
+
+/** Issues arquivadas (com agentes, MRs e notas): restaurar devolve tudo ao canvas. */
+function ArchivedList() {
+  const archived = useStore((s) => s.archived);
+  const [open, setOpen] = useState(false);
+  if (!archived.length) return null;
+  return (
+    <>
+      <button className="grp-h grp-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span>Arquivadas</span>
+        <span className="cnt">{archived.length}</span>
+        <span className="caret" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open &&
+        archived.map((a) => (
+          <div className="iss archived" key={a.issueRef}>
+            <span className="iss-ic">
+              <IconIssue />
+            </span>
+            <div className="iss-b">
+              <div className="iss-t">{a.title}</div>
+              <div className="iss-m">
+                <span className="mono">#{a.iid}</span> {a.projectPath.split('/').pop()}
+                {a.items ? ` · ${a.items} ite${a.items === 1 ? 'm' : 'ns'} junto` : ''}
+              </div>
+            </div>
+            <div className="iss-r">
+              <button className="btn sm" onClick={() => useStore.getState().unarchiveIssue(a.issueRef)}>
+                Restaurar
+              </button>
+            </div>
+          </div>
+        ))}
     </>
   );
 }
