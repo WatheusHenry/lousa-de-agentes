@@ -27,6 +27,7 @@ export async function makeBridge(
     /** Pasta de dados e banco em arquivo, para simular um reinício do bridge (a pasta fica). */
     home?: string;
     autoResume?: boolean;
+    autoMode?: boolean;
   } = {},
 ) {
   const home = opts.home ?? mkdtempSync(join(tmpdir(), 'agent-canvas-test-'));
@@ -44,6 +45,8 @@ export async function makeBridge(
     contextDebounceMs: opts.contextDebounceMs ?? 0,
     ...(opts.limits ? { limits: opts.limits } : {}),
     ...(opts.autoResume !== undefined ? { autoResume: opts.autoResume } : {}),
+    // os testes de permissão esperam pedidos pendentes: agentes novos começam pedindo
+    autoMode: opts.autoMode ?? false,
     summarizer: opts.summarizer ?? {
       summarize: async () => {
         throw new Error('resumo não configurado neste teste');

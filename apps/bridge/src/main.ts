@@ -48,6 +48,7 @@ const app = await buildServer({
     : {}),
   home: config.home,
   autoResume: process.env.AGENT_CANVAS_AUTO_RESUME !== '0',
+  autoMode: process.env.AGENT_CANVAS_AUTO_MODE !== '0',
   ...(process.env.AGENT_CANVAS_MODEL ? { model: process.env.AGENT_CANVAS_MODEL } : {}),
   logger: true,
 });

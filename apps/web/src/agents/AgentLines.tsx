@@ -1,6 +1,7 @@
 import { memo, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Markdown } from '../components/Markdown.tsx';
-import type { Agent, AgentEvent } from '@agent-canvas/shared';
+import { needsClaudeLogin, type Agent, type AgentEvent } from '@agent-canvas/shared';
+import { ClaudeLoginBox } from './ClaudeLoginBox.tsx';
 import { useStore } from '../state/store.ts';
 import { fmtUsd } from './agent-ui.ts';
 
@@ -19,6 +20,9 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
   const decide = useStore((s) => s.decideApproval);
   const out: ReactNode[] = [];
   let inits = 0;
+  let lastUser: string | null = null;
+  // a caixa de login só aparece no último resultado (os antigos já foram resolvidos)
+  const lastResult = events.findLast((e) => e.body.kind === 'result')?.id;
   for (const e of events) {
     const b = e.body;
     const k = e.id;
@@ -33,6 +37,7 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         );
         break;
       case 'user_message':
+        lastUser = b.text;
         out.push(
           <div key={k} className="l user">
             <small>Você</small>
@@ -142,6 +147,15 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
                 >
                   Sempre permitir
                 </button>
+                {!agent.autoMode && (
+                  <button
+                    className="btn sm plain nodrag"
+                    title="Libera este pedido e os próximos deste agente (menos push, sudo, merge e arquivos fora do worktree)"
+                    onClick={() => useStore.getState().setAgentMode(agent.id, true)}
+                  >
+                    ⏵⏵ Modo automático
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -179,9 +193,18 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
               <div key={k} className="l dim">
                 — turno interrompido —
               </div>
+            ) : needsClaudeLogin(b.text) ? (
+              k === lastResult && agent.status === 'error' ? (
+                <ClaudeLoginBox key={k} agent={agent} lastMessage={lastUser} follow />
+              ) : (
+                <div key={k} className="l out err">
+                  ⎿ o login do Claude Code tinha expirado
+                </div>
+              )
             ) : (
               <div key={k} className="l out err">
-                ⎿ o turno terminou com erro ({b.subtype})
+                ⎿ o turno terminou com erro
+                {b.text?.trim() ? `: ${firstLines(b.text, 1)}` : ` (${b.subtype})`}
               </div>
             )
           ) : (

@@ -84,7 +84,15 @@ export interface ParsedLine {
   /** Tamanho do contexto no último pedido ao modelo (entrada + cache). */
   contextTokens?: number;
   /** Totais do turno, vindos do evento result. */
-  turn?: { inputTokens: number; outputTokens: number; costUsd: number; isError: boolean; subtype: string };
+  turn?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    isError: boolean;
+    subtype: string;
+    /** Texto final do turno (no erro, o motivo). */
+    text?: string | null;
+  };
   controlResponse?: { requestId?: string; ok: boolean };
 }
 
@@ -176,6 +184,7 @@ export function parseLine(line: string): ParsedLine {
         costUsd: d.total_cost_usd,
         isError: d.is_error,
         subtype: d.subtype,
+        text: d.result ?? null,
       },
       events: [
         {

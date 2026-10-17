@@ -8,6 +8,7 @@ import {
   type GitLabSettingsInput,
   type Issue,
   type IssueComment,
+  type ClaudeLoginState,
   type MergeRequest,
   type MrDiffFile,
   type SettingsView,
@@ -102,5 +103,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ agentIds }),
     }),
+  claudeLogin: () => call<ClaudeLoginState>('/api/claude/login', { method: 'POST' }),
+  claudeLoginCode: (code: string) =>
+    call<ClaudeLoginState>('/api/claude/login/code', { method: 'POST', body: JSON.stringify({ code }) }),
+  cancelClaudeLogin: () => call<ClaudeLoginState>('/api/claude/login', { method: 'DELETE' }),
   mrComments: (ref: string) => call<IssueComment[]>(`/api/mrs/${encodeURIComponent(ref)}/comments`),
 };

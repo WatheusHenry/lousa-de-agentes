@@ -2,6 +2,7 @@ import { Handle, Position, useStore as useFlow, type NodeProps } from '@xyflow/r
 import { memo, useState } from 'react';
 import type { Agent, AgentEvent } from '@agent-canvas/shared';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
+import { AutoModeToggle, autoModeKey } from '../agents/AutoModeToggle.tsx';
 import { fmtK, fmtUsd, isBlank, reposText, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
 import { IconExpand } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
@@ -84,7 +85,9 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
               placeholder={blank ? `Primeira instrução para ${agent.name}` : `Mensagem para ${agent.name}`}
               aria-label={`Mensagem para ${agent.name}`}
               autoComplete="off"
+              onKeyDown={(e) => autoModeKey(e, agent)}
             />
+            <AutoModeToggle agent={agent} />
             <button className="send" aria-label="Enviar" disabled={!text.trim()}>
               ↑
             </button>

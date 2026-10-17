@@ -15,6 +15,7 @@ const AGENTS = {
   maxAgentMinutes: 60,
   treeTokenBudget: 5_000_000,
   contextBudget: 60_000,
+  autoMode: true,
 };
 
 const issue: Issue = {

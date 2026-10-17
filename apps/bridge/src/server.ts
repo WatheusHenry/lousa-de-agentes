@@ -21,6 +21,7 @@ import {
 } from '@agent-canvas/shared';
 import { AgentError, DEFAULT_LIMITS, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
 import { AutomationService } from './automations/automation-service.ts';
+import { ClaudeLogin } from './agents/claude-login.ts';
 import { WorktreeCleanup } from './agents/worktree-cleanup.ts';
 import { QuestionService } from './agents/questions.ts';
 import type { AgentRunner } from './agents/runner.ts';
@@ -64,9 +65,13 @@ export interface ServerDeps {
   pollMrsEveryMs?: number;
   /** Intervalo do polling de issues (label agent-ready). */
   pollIssuesEveryMs?: number;
+  /** Comando do `claude` para refazer o login (os testes trocam por um falso). */
+  claudeBin?: string;
   /** Resumidor de itens pesados (o padrão roda `claude -p` com um modelo pequeno). */
   summarizer?: Summarizer;
   contextBudget?: number;
+  /** Agentes novos no modo automático (padrão: sim). */
+  autoMode?: boolean;
   limits?: Partial<SupervisorLimits>;
   /** Retomar sozinhos, com --resume, os agentes interrompidos por um reinício (padrão: sim). */
   autoResume?: boolean;
@@ -84,6 +89,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     ...deps.limits,
     model: deps.model ?? null,
     contextBudget: deps.contextBudget ?? DEFAULT_CONTEXT_BUDGET,
+    autoMode: deps.autoMode ?? true,
   });
   const hub = new Hub();
   const approvals = new ApprovalService(db, hub);
@@ -112,6 +118,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     questions,
     mrOfAgent: (id) => mrs.mrOfAgent(id),
   });
+  approvals.auto = (agentId) => !!supervisor.get(agentId)?.autoMode;
   supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
   const automations = new AutomationService({ hub, store, settings, mrs, supervisor, context });
@@ -210,6 +217,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   const broadcast = hub.broadcast.bind(hub);
+  const claudeLogin = new ClaudeLogin((login) => broadcast({ type: 'claude.login', login }), deps.claudeBin);
 
   const snapshot = (): StateSnapshot => ({
     settings: settings.view(),
@@ -405,6 +413,26 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   /** Pastas de trabalho de agentes removidos (a limpeza só apaga o que o usuário confirmar). */
+  // ---------- login do Claude Code desta máquina (quando expira, os agentes param) ----------
+
+  app.get('/api/claude/login', async () => claudeLogin.state());
+  app.post('/api/claude/login', async () => claudeLogin.start());
+  app.post('/api/claude/login/code', async (req) => {
+    const code = (req.body as { code?: unknown })?.code;
+    if (typeof code !== 'string' || !code.trim() || code.length > 2000)
+      throw new SettingsError('Cole o código que a página de login mostrou.');
+    try {
+      claudeLogin.code(code);
+    } catch (err) {
+      throw new SettingsError((err as Error).message, 409);
+    }
+    return claudeLogin.state();
+  });
+  app.delete('/api/claude/login', async () => {
+    claudeLogin.cancel();
+    return claudeLogin.state();
+  });
+
   app.get('/api/worktrees/leftovers', async () => cleanup.list());
   app.post('/api/worktrees/cleanup', async (req) => {
     const ids = (req.body as { agentIds?: unknown })?.agentIds;
@@ -666,6 +694,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.addHook('preClose', async () => {
     poller.stop();
+    if (claudeLogin.state().state === 'waiting') claudeLogin.cancel();
     context.shutdown();
     supervisor.shutdown();
     for (const ws of hub.clients) ws.terminate();

@@ -22,6 +22,7 @@ import type { CanvasStore } from '../canvas/canvas-store.ts';
 import { writeContext } from '../context/builder.ts';
 import type { Db } from '../db/index.ts';
 import { agent as agentT, agentEvent, edge, node, repo as repoT } from '../db/schema.ts';
+import { turnErrorMessage } from './turn-error.ts';
 import { createWorktree, localDiff, slugify } from '../git/worktree.ts';
 import type { Hub } from '../hub.ts';
 import { APPROVE_TOOL, CANVAS_TOOLS, MCP_SERVER_NAME, type McpAgentContext } from '../mcp/canvas-server.ts';
@@ -255,6 +256,8 @@ export class Supervisor {
         return this.create(msg);
       case 'agent.update':
         return this.update(msg);
+      case 'agent.mode':
+        return void this.setAutoMode(msg.agentId, msg.auto);
       case 'agent.message':
         return this.message(msg.agentId, msg.text);
       case 'agent.pause':
@@ -296,6 +299,7 @@ export class Supervisor {
       depth: 0,
       maxDepth: msg.maxDepth,
       openMr: msg.openMr,
+      autoMode: this.d.settings.agentSettings().autoMode,
       inputTokens: 0,
       outputTokens: 0,
       contextTokens: 0,
@@ -330,6 +334,17 @@ export class Supervisor {
       this.event(row.id, { kind: 'user_message', text: instruction });
       await this.launch(row.id, issue ? instructionForIssue(instruction) : instruction, false);
     }
+  }
+
+  /** Liga/desliga o modo automático; ao ligar, libera o que o agente estava esperando. */
+  setAutoMode(agentId: string, on: boolean): Agent {
+    this.mustGet(agentId);
+    const a = this.save(agentId, { autoMode: on });
+    if (on) this.d.approvals.releaseAuto(agentId);
+    this.d.hub.broadcast(
+      this.d.store.logActivity(`${a.name} ${on ? 'no modo automático' : 'voltou a pedir permissão'}`),
+    );
+    return a;
   }
 
   private update(msg: Extract<ClientMessage, { type: 'agent.update' }>): void {
@@ -747,7 +762,7 @@ export class Supervisor {
       return;
     }
     if (turn.isError) {
-      this.save(agentId, { error: `O turno terminou com erro (${turn.subtype}).` });
+      this.save(agentId, { error: turnErrorMessage(turn.subtype, turn.text) });
       if (l) closeInput(l);
       this.setStatus(agentId, 'error');
       return;
@@ -882,6 +897,8 @@ export class Supervisor {
       maxDepth: p.maxDepth,
       // sub-agente no mesmo repositório entrega pelo branch; o pai abre o MR
       openMr: role === 'sub' ? false : p.openMr,
+      // filhos herdam o modo do pai
+      autoMode: p.autoMode,
       inputTokens: 0,
       outputTokens: 0,
       contextTokens: 0,
@@ -977,6 +994,7 @@ export class Supervisor {
       depth: author.depth + 1,
       maxDepth: author.depth + 1,
       openMr: false,
+      autoMode: this.d.settings.agentSettings().autoMode,
       inputTokens: 0,
       outputTokens: 0,
       contextTokens: 0,

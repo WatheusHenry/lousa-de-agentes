@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ClaudeLoginState } from './claude.ts';
 import { Agent, AgentEvent, Approval, Policy, Question } from './agents.ts';
 import { Activity, CanvasEdge, CanvasNode, Note, NoteLink } from './canvas.ts';
 import { AgentContext, ContextKind } from './context.ts';
@@ -123,6 +124,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
     y: Coord,
   }),
   /** Dá contexto a um agente em branco antes de começar: repositório e issue. */
+  /** Liga ou desliga o modo automático de um agente (Shift+Tab no terminal dele). */
+  z.object({ type: z.literal('agent.mode'), agentId: Id, auto: z.boolean() }),
   z.object({
     type: z.literal('agent.update'),
     agentId: Id,
@@ -206,5 +209,6 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('context.updated'), context: AgentContext }),
   z.object({ type: z.literal('question.upsert'), question: Question }),
   z.object({ type: z.literal('merge.progress'), progress: MergeProgress }),
+  z.object({ type: z.literal('claude.login'), login: ClaudeLoginState }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;
