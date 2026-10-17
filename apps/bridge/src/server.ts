@@ -17,6 +17,7 @@ import {
   type Issue,
   type ServerMessage,
   type StateSnapshot,
+  WorkspaceInput,
   isLocalProject,
 } from '@agent-canvas/shared';
 import { AgentError, DEFAULT_LIMITS, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
@@ -88,6 +89,7 @@ export interface ServerDeps {
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const { config, db, session, settings } = deps;
   const store = new CanvasStore(db);
+  store.workspace = () => settings.activeWorkspace();
   // padrões das variáveis de ambiente; a tela de Automações → Agentes muda por cima
   settings.setAgentDefaults({
     ...DEFAULT_LIMITS,
@@ -124,6 +126,54 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     mrOfAgent: (id) => mrs.mrOfAgent(id),
   });
   approvals.auto = (agentId) => !!supervisor.get(agentId)?.autoMode;
+  settings.busyByWorkspace = () => {
+    const out = new Map<string, number>();
+    for (const a of supervisor.agents())
+      if (supervisor.busy(a.id)) {
+        const ws = store.agentWorkspace(a.id);
+        out.set(ws, (out.get(ws) ?? 0) + 1);
+      }
+    return out;
+  };
+  // o navegador só vê o workspace aberto; os agentes dos outros continuam trabalhando
+  hub.visible = (m) => {
+    const ws = settings.activeWorkspace();
+    const here = (w: string | null | undefined) => !w || w === ws;
+    const agentHere = (id: string) => store.agentWorkspace(id) === ws;
+    switch (m.type) {
+      case 'node.upsert':
+        return here(m.node.workspaceId);
+      case 'edge.upsert':
+        return here(store.nodeWorkspace(m.edge.fromNodeId));
+      case 'note.upsert':
+        return here(store.refWorkspace('note', m.note.id));
+      case 'noteLink.upsert':
+      case 'noteLink.remove':
+        return here(store.refWorkspace('note', m.link.noteId));
+      case 'activity':
+        return here(m.workspaceId);
+      case 'agent.upsert':
+        return agentHere(m.agent.id);
+      case 'agent.event':
+        return agentHere(m.event.agentId);
+      case 'agent.delta':
+        return agentHere(m.agentId);
+      case 'approval.upsert':
+        return agentHere(m.approval.agentId);
+      case 'question.upsert':
+        return agentHere(m.question.agentId);
+      case 'context.updated':
+        return agentHere(m.context.agentId);
+      case 'mr.upsert':
+        return here(
+          store.refWorkspace('mr', m.mr.ref) ?? (m.mr.agentId ? store.agentWorkspace(m.mr.agentId) : null),
+        );
+      case 'merge.progress':
+        return here(store.refWorkspace('issue', m.progress.issueRef));
+      default:
+        return true;
+    }
+  };
   supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
   const automations = new AutomationService({ hub, store, settings, mrs, supervisor, context });
@@ -225,26 +275,36 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const claudeLogin = new ClaudeLogin((login) => broadcast({ type: 'claude.login', login }), deps.claudeBin);
   const claudeUsage = deps.claudeUsage ?? new ClaudeUsageService();
 
-  const snapshot = (): StateSnapshot => ({
-    settings: settings.view(),
-    nodes: store.liveNodes(),
-    edges: store.liveEdges(),
-    notes: store.liveNotes(),
-    noteLinks: store.liveNoteLinks(),
-    issues: store.canvasIssues(),
-    activity: store.recentActivity(),
-    agents: supervisor.agents(),
-    agentEvents: supervisor.recentEvents(),
-    approvals: approvals.pending(),
-    policies: approvals.policies(),
-    mergeRequests: mrs.canvasMrs(),
-    questions: questions.pending(),
-    merges: mrs.merges(),
-    archived: store.archivedIssues().flatMap((a) => {
-      const i = store.cachedIssue(a.issueRef);
-      return i ? [{ ...a, iid: i.iid, title: i.title, projectPath: i.projectPath }] : [];
-    }),
-  });
+  /** Estado do workspace aberto (regras de permissão e configurações valem para todos). */
+  const snapshot = (): StateSnapshot => {
+    const ws = settings.activeWorkspace();
+    const agents = supervisor.agents().filter((a) => store.agentWorkspace(a.id) === ws);
+    const ids = new Set(agents.map((a) => a.id));
+    const nodes = store.liveNodes(ws);
+    const refs = (t: string) => new Set(nodes.filter((n) => n.type === t).map((n) => n.refId));
+    const mrRefs = refs('mr');
+    const issueRefs = refs('issue');
+    return {
+      settings: settings.view(),
+      nodes,
+      edges: store.liveEdges(ws),
+      notes: store.liveNotes(ws),
+      noteLinks: store.liveNoteLinks(ws),
+      issues: store.canvasIssues(ws),
+      activity: store.recentActivity(ws),
+      agents,
+      agentEvents: supervisor.recentEvents(agents),
+      approvals: approvals.pending().filter((a) => ids.has(a.agentId)),
+      policies: approvals.policies(),
+      mergeRequests: mrs.canvasMrs().filter((m) => mrRefs.has(m.ref)),
+      questions: questions.pending().filter((q) => ids.has(q.agentId)),
+      merges: mrs.merges().filter((m) => issueRefs.has(m.issueRef)),
+      archived: store.archivedIssues(ws).flatMap((a) => {
+        const i = store.cachedIssue(a.issueRef);
+        return i ? [{ ...a, iid: i.iid, title: i.title, projectPath: i.projectPath }] : [];
+      }),
+    };
+  };
 
   // ---------- HTTP ----------
 
@@ -283,6 +343,53 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return view;
   };
   const projectParam = (req: FastifyRequest) => Number((req.params as { projectId: string }).projectId);
+
+  // ---------- workspaces ----------
+
+  /** Trocar de workspace troca o canvas inteiro: todos os navegadores recebem o estado novo. */
+  const workspaceChanged = () => {
+    const state = snapshot();
+    broadcast([{ type: 'state.snapshot', state }]);
+    return state.settings;
+  };
+  const workspaceName = (body: unknown) => {
+    const parsed = WorkspaceInput.safeParse(body);
+    if (!parsed.success) throw new SettingsError('Dê ao workspace um nome de até 60 caracteres.');
+    return parsed.data.name;
+  };
+  const workspaceParam = (req: FastifyRequest) => (req.params as { id: string }).id;
+
+  app.get('/api/workspaces', async () => settings.workspaces());
+
+  app.post('/api/workspaces', async (req) => {
+    settings.createWorkspace(workspaceName(req.body));
+    return workspaceChanged();
+  });
+
+  app.put('/api/workspaces/active', async (req) => {
+    const id = (req.body as { id?: unknown })?.id;
+    if (typeof id !== 'string') throw new SettingsError('Informe o workspace.');
+    settings.switchWorkspace(id);
+    return workspaceChanged();
+  });
+
+  app.patch('/api/workspaces/:id', async (req) =>
+    settingsChanged(settings.renameWorkspace(workspaceParam(req), workspaceName(req.body))),
+  );
+
+  /** Apaga o workspace com o canvas dele; recusa se algum agente dele ainda trabalha. */
+  app.delete('/api/workspaces/:id', async (req) => {
+    const id = workspaceParam(req);
+    const busy = supervisor.agents().find((a) => store.agentWorkspace(a.id) === id && supervisor.busy(a.id));
+    if (busy)
+      throw new SettingsError(
+        `${busy.name} ainda está trabalhando neste workspace. Pare-o antes de apagar.`,
+        409,
+      );
+    settings.deleteWorkspace(id);
+    for (const agentId of store.removeWorkspace(id)) supervisor.onNodeRemoved(agentId);
+    return workspaceChanged();
+  });
 
   // ---------- seletor de pastas (o navegador não revela caminhos reais) ----------
 
@@ -345,7 +452,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     // só com repositórios locais não há issues para buscar
     if (!settings.hasGitLab()) return { issues: [], errors: [] };
     const client = settings.client();
-    const projects = settings.gitlabProjects();
+    const projects = settings.workspaceGitlabProjects();
     const results = await Promise.allSettled(projects.map((p) => client.listOpenIssues(p)));
     const issues: Issue[] = [];
     const errors: { project: string; error: string }[] = [];

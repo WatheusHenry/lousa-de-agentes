@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Canvas } from './canvas/Canvas.tsx';
 import { closeMenu, ContextMenu, isMenuOpen } from './canvas/ContextMenu.tsx';
 import { Toolbar } from './canvas/Toolbar.tsx';
+import { WorkspaceSwitcher } from './canvas/WorkspaceSwitcher.tsx';
 import { type Dir, fit, focusNode, neighbor } from './canvas/viewport.ts';
 import { IconSide } from './icons.tsx';
 import { Focus } from './panels/Focus.tsx';
@@ -24,16 +25,6 @@ const ARROWS: Record<string, Dir> = {
   ArrowDown: 'down',
 };
 
-/** Nome do espaço de trabalho no topo: o grupo em comum dos projetos, ou o primeiro projeto. */
-function workspaceName(paths: string[]): string {
-  if (!paths.length) return '';
-  const groups = new Set(paths.map((p) => p.split('/').slice(0, -1).join(' / ')));
-  if (groups.size === 1 && paths.length > 1) return `${[...groups][0]!} · ${paths.length} projetos`;
-  return paths.length > 1
-    ? `${paths[0]!.replace(/\//g, ' / ')} +${paths.length - 1}`
-    : paths[0]!.replace(/\//g, ' / ');
-}
-
 export function Workspace() {
   useBudgetWatch();
   const settings = useStore((s) => s.settings)!;
@@ -47,7 +38,7 @@ export function Workspace() {
     void refreshIssues();
     const t = setInterval(() => void refreshIssues(), ISSUES_EVERY_MS);
     return () => clearInterval(t);
-  }, [projectsKey, settings.mode, settings.baseUrl]);
+  }, [projectsKey, settings.mode, settings.baseUrl, settings.workspaceId]);
 
   // atalhos de teclado (sem animação, como no protótipo)
   useEffect(() => {
@@ -139,7 +130,7 @@ export function Workspace() {
   return (
     <ReactFlowProvider>
       <div className="app">
-        <TopBar workspace={workspaceName(settings.projects.map((p) => p.pathWithNamespace))} />
+        <TopBar />
         <div className={`main${sideHidden ? ' side-hidden' : ''}`} ref={main}>
           <Sidebar />
           <Canvas />
@@ -170,7 +161,7 @@ function instantSide(main: HTMLElement | null, change: () => void) {
   requestAnimationFrame(() => requestAnimationFrame(() => main?.classList.remove('instant')));
 }
 
-function TopBar({ workspace }: { workspace: string }) {
+function TopBar() {
   const sideHidden = useStore((s) => s.sideHidden);
   const sideOpen = useStore((s) => s.sideOpen);
   const setSideHidden = useStore((s) => s.setSideHidden);
@@ -211,7 +202,10 @@ function TopBar({ workspace }: { workspace: string }) {
           </svg>
         </span>
         <b>Agent Canvas</b>
-        <span className="ws">{workspace}</span>
+        <span className="brand-sep" aria-hidden="true">
+          /
+        </span>
+        <WorkspaceSwitcher />
       </div>
       <div className="spacer" />
       <div className="stats">

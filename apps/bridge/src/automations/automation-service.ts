@@ -44,8 +44,8 @@ export class AutomationService {
     return this.d.settings.automations();
   }
 
-  private log(text: string): void {
-    this.d.hub.broadcast(this.d.store.logActivity(text));
+  private log(text: string, ws?: string): void {
+    this.d.hub.broadcast(this.d.store.logActivity(text, ws));
   }
 
   // ---------- pipeline falhou → agente fix ----------
@@ -182,26 +182,28 @@ export class AutomationService {
         if (settings.agentReadySeen().includes(issue.ref)) continue;
         settings.markAgentReadySeen(issue.ref);
         if (sup.agents().some((a) => a.issueRef === issue.ref && a.depth === 0)) continue;
-        await this.startIssue(issue.ref, detectRepos(issue, projects)).catch((err: Error) =>
-          this.log(`Label ${AGENT_READY_LABEL} na issue #${issue.iid}: ${err.message}`),
+        // a issue entra no workspace em que o projeto foi escolhido
+        const ws = settings.workspaceOfProject(p.id) ?? settings.activeWorkspace();
+        await this.startIssue(issue.ref, detectRepos(issue, projects), ws).catch((err: Error) =>
+          this.log(`Label ${AGENT_READY_LABEL} na issue #${issue.iid}: ${err.message}`, ws),
         );
       }
     }
   }
 
-  private async startIssue(ref: string, repos: number[]): Promise<void> {
+  private async startIssue(ref: string, repos: number[], ws: string): Promise<void> {
     const { store, hub, supervisor: sup } = this.d;
     const issue = store.cachedIssue(ref)!;
     // abaixo de tudo o que já está no canvas, para não cobrir nada
-    const nodes = store.liveNodes();
+    const nodes = store.liveNodes(ws);
     const x = nodes.length ? Math.min(...nodes.map((n) => n.x)) : 0;
     const y = nodes.length ? Math.max(...nodes.map((n) => n.y)) + 480 : 0;
-    const placed = store.apply({ type: 'issue.place', nodeId: newId('n'), issueRef: ref, x, y });
+    const placed = store.placeIssue(newId('n'), ref, x, y, ws);
     hub.broadcast(placed);
     const issueNode = placed.find((m) => m.type === 'node.upsert');
     const ix = issueNode?.type === 'node.upsert' ? issueNode.node.x : x;
     const iy = issueNode?.type === 'node.upsert' ? issueNode.node.y : y;
-    this.log(`Issue #${issue.iid} ganhou a label ${AGENT_READY_LABEL}: agentes começando`);
+    this.log(`Issue #${issue.iid} ganhou a label ${AGENT_READY_LABEL}: agentes começando`, ws);
     await sup.handle({
       type: 'agent.create',
       agentId: newId('a'),
@@ -212,7 +214,7 @@ export class AutomationService {
       instruction: `Iniciado pela label ${AGENT_READY_LABEL}. Ao terminar, abra o MR.`,
       maxDepth: 1,
       openMr: true,
-      ...store.freeSpot('agent', { x: ix, y: iy + 230 }),
+      ...store.freeSpot('agent', { x: ix, y: iy + 230 }, ws),
     });
   }
 }

@@ -653,7 +653,11 @@ export const useStore = create<CanvasState>()((set, get) => ({
   commentIssue: (ref, body) => send({ type: 'issue.comment', issueRef: ref, body }),
 
   select: (id) =>
-    set((s) => ({ selected: id, multi: id && s.multi.includes(id) ? s.multi : [], panel: id ? null : s.panel })),
+    set((s) => ({
+      selected: id,
+      multi: id && s.multi.includes(id) ? s.multi : [],
+      panel: id ? null : s.panel,
+    })),
   setPanel: (p) => set({ panel: p, selected: null }),
   showSection: (id) => set((s) => ({ section: { id, seq: s.section.seq + 1 } })),
   setFilter: (f) => set({ filter: f }),
