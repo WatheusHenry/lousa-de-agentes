@@ -48,6 +48,8 @@ const empty: StateSnapshot = {
     agents: AGENTS,
     agentDefaults: AGENTS,
     trustedRepos: [],
+    workspaceId: 'default',
+    workspaces: [{ id: 'default', name: 'Principal', projects: 0, busy: 0 }],
     configured: true,
   },
   nodes: [],

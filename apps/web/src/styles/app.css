@@ -77,9 +77,248 @@ select {
   font-weight: 600;
   font-size: 15px;
 }
-.brand .ws {
+.brand-sep {
+  color: var(--faint);
+  font-size: 15px;
+  margin: 0 -4px;
+}
+
+/* ---------- seletor de workspaces (topo) ---------- */
+.wsw {
+  position: relative;
+}
+.wsw-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: min(46vw, 460px);
+  padding: 5px 8px 5px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.wsw-btn:hover,
+.wsw-btn[aria-expanded='true'] {
+  background: var(--hover);
+}
+.wsw-btn:active {
+  transform: scale(0.98);
+}
+.wsw-btn > svg {
+  align-self: center;
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.2s var(--ease-out);
+}
+.wsw-btn[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+.wsw-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wsw-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 13px;
+}
+.wsw-dot {
+  align-self: center;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.wsw-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 300px;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  background: var(--surface);
+  border-radius: var(--r-md);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--sh-float);
+  font-size: 13px;
+  transform-origin: top left;
+  animation: wsw-in 0.16s var(--ease-out);
+}
+@keyframes wsw-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-4px);
+  }
+}
+.wsw-title {
+  padding: 6px 8px 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.wsw-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-height: min(50vh, 360px);
+  overflow: auto;
+}
+.wsw-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+.wsw-item:hover,
+.wsw-item:focus-within {
+  background: var(--hover);
+}
+.wsw-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-radius: inherit;
+}
+.wsw-check {
+  flex: none;
+  width: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+.wsw-label {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.wsw-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.wsw-item.on .wsw-item-name {
+  font-weight: 600;
+}
+.wsw-label small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.wsw-busy {
+  color: var(--accent);
+}
+.wsw-acts {
+  display: flex;
+  gap: 2px;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.wsw-item:hover .wsw-acts,
+.wsw-item:focus-within .wsw-acts {
+  opacity: 1;
+}
+@media (hover: none) {
+  .wsw-acts {
+    opacity: 1;
+  }
+}
+.wsw-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  background: var(--bad-soft);
+}
+.wsw-confirm p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.wsw-form {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+}
+.wsw-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: var(--subtle);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.wsw-form input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.wsw-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 8px 8px 8px 10px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  background: transparent;
+  color: var(--accent);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.wsw-new:hover {
+  background: var(--accent-soft);
+}
+.wsw-hint {
+  margin: 0;
+  padding: 4px 8px 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+/* workspace novo, na tela de escolher projetos */
+.setup-ws {
+  position: absolute;
+  z-index: 21;
+  top: 12px;
+  left: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wsw-pop {
+    animation: none;
+  }
+  .wsw-btn > svg {
+    transition: none;
+  }
+}
+@media (max-width: 860px) {
+  .wsw-sub {
+    display: none;
+  }
 }
 .spacer {
   flex: 1;

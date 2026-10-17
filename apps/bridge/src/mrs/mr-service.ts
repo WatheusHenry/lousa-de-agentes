@@ -202,7 +202,9 @@ export class MrService {
     });
     const mr = toMr(row);
     this.placeNode(agentId, mr);
-    this.hub.broadcast(this.store.logActivity(`${a.name} abriu o MR !${mr.iid} em ${r.name}`));
+    this.hub.broadcast(
+      this.store.logActivity(`${a.name} abriu o MR !${mr.iid} em ${r.name}`, this.wsOf(mr.ref)),
+    );
     this.onOpened(mr);
     return { mr, created: true };
   }
@@ -268,7 +270,10 @@ export class MrService {
     const mr = toMr(row);
     this.placeNode(a.id, mr);
     this.hub.broadcast(
-      this.store.logActivity(`${a.name} entregou o branch ${a.branch} para revisão em ${r.name}`),
+      this.store.logActivity(
+        `${a.name} entregou o branch ${a.branch} para revisão em ${r.name}`,
+        this.wsOf(mr.ref),
+      ),
     );
     this.onOpened(mr);
     return { mr, created: true };
@@ -307,7 +312,9 @@ export class MrService {
     this.hub.broadcast({ type: 'mr.upsert', mr });
     if (merged) {
       this.onChanged(mr, cur);
-      this.hub.broadcast(this.store.logActivity(`${cur.sourceBranch} mergeado em ${cur.targetBranch}`));
+      this.hub.broadcast(
+        this.store.logActivity(`${cur.sourceBranch} mergeado em ${cur.targetBranch}`, this.wsOf(mr.ref)),
+      );
     }
     return mr;
   }
@@ -350,9 +357,14 @@ export class MrService {
     const where = kind === 'gitlab' ? 'GitLab' : kind === 'github' ? 'GitHub' : 'remoto';
     this.hub.broadcast([
       { type: 'mr.upsert', mr },
-      this.store.logActivity(`Branch ${cur.sourceBranch} enviado ao ${where} por você`),
+      this.store.logActivity(`Branch ${cur.sourceBranch} enviado ao ${where} por você`, this.wsOf(mr.ref)),
     ]);
     return mr;
+  }
+
+  /** Workspace do nó do MR (o aberto, se o MR não tiver nó). */
+  private wsOf(mrRef: string): string | undefined {
+    return this.store.refWorkspace('mr', mrRef) ?? undefined;
   }
 
   /** Cria o nó do MR ao lado do agente, com a aresta agente → MR. */
@@ -362,12 +374,15 @@ export class MrService {
       .from(node)
       .where(and(eq(node.type, 'agent'), eq(node.refId, agentId)))
       .get();
+    // o MR fica no workspace do agente que o abriu
+    const ws = agentNode?.workspaceId ?? this.store.agentWorkspace(agentId);
     const n = {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'mr' as const,
       refId: mr.ref,
-      ...this.store.freeSpot('mr', { x: (agentNode?.x ?? 0) + 460, y: (agentNode?.y ?? 0) + 40 }),
+      ...this.store.freeSpot('mr', { x: (agentNode?.x ?? 0) + 460, y: (agentNode?.y ?? 0) + 40 }, ws),
       createdAt: nowIso(),
+      workspaceId: ws,
     };
     this.db.insert(node).values(n).run();
     this.hub.broadcast([
@@ -408,10 +423,13 @@ export class MrService {
     this.hub.broadcast({ type: 'mr.upsert', mr });
     this.onChanged(mr, cur);
     if (fresh.state !== cur.state && fresh.state === 'merged')
-      this.hub.broadcast(this.store.logActivity(`MR !${mr.iid} mergeado`));
+      this.hub.broadcast(this.store.logActivity(`MR !${mr.iid} mergeado`, this.wsOf(mr.ref)));
     else if (fresh.pipelineStatus !== cur.pipelineStatus && PIPELINE_LABEL[fresh.pipelineStatus])
       this.hub.broadcast(
-        this.store.logActivity(`Pipeline do MR !${mr.iid} ${PIPELINE_LABEL[fresh.pipelineStatus]}`),
+        this.store.logActivity(
+          `Pipeline do MR !${mr.iid} ${PIPELINE_LABEL[fresh.pipelineStatus]}`,
+          this.wsOf(mr.ref),
+        ),
       );
     return mr;
   }
@@ -440,7 +458,7 @@ export class MrService {
     const mr = toMr(row);
     this.hub.broadcast([
       { type: 'mr.upsert', mr },
-      this.store.logActivity(`MR !${mr.iid} aprovado e mergeado por você`),
+      this.store.logActivity(`MR !${mr.iid} aprovado e mergeado por você`, this.wsOf(mr.ref)),
     ]);
     return mr;
   }
@@ -470,7 +488,10 @@ export class MrService {
     const mr = toMr(row);
     this.hub.broadcast([
       { type: 'mr.upsert', mr },
-      this.store.logActivity(`${cur.sourceBranch} mergeado em ${cur.targetBranch} por você (${r.name})`),
+      this.store.logActivity(
+        `${cur.sourceBranch} mergeado em ${cur.targetBranch} por você (${r.name})`,
+        this.wsOf(mr.ref),
+      ),
     ]);
     this.onChanged(mr, cur);
     return mr;
@@ -511,7 +532,12 @@ export class MrService {
     const seq = this.sequences.get(issueRef)!;
     const stop = (state: 'failed' | 'cancelled', message: string) => {
       this.progress(issueRef, { state, message });
-      this.hub.broadcast(this.store.logActivity(`Merge em sequência parado: ${message}`));
+      this.hub.broadcast(
+        this.store.logActivity(
+          `Merge em sequência parado: ${message}`,
+          this.store.refWorkspace('issue', issueRef) ?? undefined,
+        ),
+      );
     };
     for (let i = 0; i < refs.length; i++) {
       const ref = refs[i]!;
@@ -561,7 +587,12 @@ export class MrService {
       state: 'done',
       message: `${refs.length} MRs mergeados na ordem`,
     });
-    this.hub.broadcast(this.store.logActivity(`Merge em sequência concluído: ${refs.length} MRs`));
+    this.hub.broadcast(
+      this.store.logActivity(
+        `Merge em sequência concluído: ${refs.length} MRs`,
+        this.store.refWorkspace('issue', issueRef) ?? undefined,
+      ),
+    );
   }
 
   cancelMerge(issueRef: string): void {
@@ -604,7 +635,7 @@ export class MrService {
       .commentOnMergeRequest(cur.projectId, cur.iid, agentName ? agentNoteHeader(agentName) + body : body);
     this.hub.broadcast([
       { type: 'thread.changed', target: 'mr', ref },
-      this.store.logActivity(`${agentName ?? 'Você'} comentou no MR !${cur.iid}`),
+      this.store.logActivity(`${agentName ?? 'Você'} comentou no MR !${cur.iid}`, this.wsOf(ref)),
     ]);
   }
 
@@ -617,7 +648,10 @@ export class MrService {
       .commentOnIssue(projectId, iid, agentName ? agentNoteHeader(agentName) + body : body);
     this.hub.broadcast([
       { type: 'thread.changed', target: 'issue', ref: issueRef },
-      this.store.logActivity(`${agentName ?? 'Você'} comentou na issue #${iid}`),
+      this.store.logActivity(
+        `${agentName ?? 'Você'} comentou na issue #${iid}`,
+        this.store.refWorkspace('issue', issueRef) ?? undefined,
+      ),
     ]);
   }
 

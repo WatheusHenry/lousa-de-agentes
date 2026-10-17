@@ -289,7 +289,10 @@ describe('automações', () => {
     expect(toAuthor.text).toContain('não instrução do usuário do canvas');
     await until(() => agents().find((a) => a.id === 'a1' && a.status === 'done'), 'autor responder');
     await until(
-      () => activity().some((t) => t.includes(`no MR !${mr.iid} enviado a agente-1`)),
+      () =>
+        activity().some((t) =>
+          t.includes(`no MR !${mr.iid} enviado a ${agents().find((a) => a.id === 'a1')!.name}`),
+        ),
       'atividade do envio',
     );
 

@@ -15,6 +15,9 @@ import {
   type Approval,
   type ClientMessage,
   isLocalProject,
+  AGENT_NAME_MAX,
+  conciseName,
+  uniqueName,
 } from '@agent-canvas/shared';
 import type { ApprovalService } from '../approvals/approval-service.ts';
 import { DISALLOWED_TOOLS } from '../approvals/rules.ts';
@@ -248,9 +251,9 @@ export class Supervisor {
   }
 
   /** Últimos eventos de cada agente com nó no canvas. */
-  recentEvents(): AgentEvent[] {
+  recentEvents(agents = this.agents()): AgentEvent[] {
     const out: AgentEvent[] = [];
-    for (const a of this.agents()) out.push(...this.events(a.id, undefined, EVENTS_PER_AGENT).reverse());
+    for (const a of agents) out.push(...this.events(a.id, undefined, EVENTS_PER_AGENT).reverse());
     return out;
   }
 
@@ -299,6 +302,8 @@ export class Supervisor {
         return this.create(msg);
       case 'agent.update':
         return this.update(msg);
+      case 'agent.rename':
+        return void this.rename(msg.agentId, msg.name);
       case 'agent.mode':
         return void this.setAutoMode(msg.agentId, msg.auto);
       case 'agent.model':
@@ -330,7 +335,7 @@ export class Supervisor {
     const role: AgentRole = repos.length > 1 ? 'orchestrator' : 'main';
     const row: Row = {
       id: msg.agentId,
-      name: `agente-${count + 1}`,
+      name: this.autoName(issue ? { iid: issue.iid, text: issue.title } : { text: instruction }, count + 1),
       role,
       parentId: null,
       issueRef: msg.issueRef ?? null,
@@ -362,6 +367,9 @@ export class Supervisor {
       x: msg.x,
       y: msg.y,
       createdAt: nowIso(),
+      // agente de uma issue fica no workspace dela; os outros, no aberto
+      workspaceId:
+        (msg.issueRef && this.d.store.refWorkspace('issue', msg.issueRef)) || this.d.store.workspace(),
     };
     this.d.db.transaction((tx) => {
       tx.insert(agentT).values(row).run();
@@ -395,7 +403,10 @@ export class Supervisor {
     const a = this.save(agentId, { autoMode: on });
     if (on) this.d.approvals.releaseAuto(agentId);
     this.d.hub.broadcast(
-      this.d.store.logActivity(`${a.name} ${on ? 'no modo automático' : 'voltou a pedir permissão'}`),
+      this.d.store.logActivity(
+        `${a.name} ${on ? 'no modo automático' : 'voltou a pedir permissão'}`,
+        this.d.store.agentWorkspace(a.id),
+      ),
     );
     return a;
   }
@@ -409,9 +420,41 @@ export class Supervisor {
     this.d.hub.broadcast(
       this.d.store.logActivity(
         `${a.name} usa o modelo ${shown}${this.live.has(agentId) ? ' a partir do próximo turno' : ''}`,
+        this.d.store.agentWorkspace(a.id),
       ),
     );
     return a;
+  }
+
+  /** Nome curto e único: "#142 moeda checkout"; sem texto útil, `agente-N`. */
+  private autoName(src: { iid?: number; text?: string | null }, n: number, selfId?: string): string {
+    const short = conciseName(src.text ?? '');
+    const base = src.iid ? `#${src.iid}${short ? ` ${short}` : ''}` : short || `agente-${n}`;
+    return uniqueName(
+      base.slice(0, AGENT_NAME_MAX),
+      this.agents()
+        .filter((x) => x.id !== selfId)
+        .map((x) => x.name),
+    );
+  }
+
+  rename(agentId: string, raw: string): Agent {
+    const a = this.mustGet(agentId);
+    const typed = raw.trim().replace(/\s+/g, ' ');
+    const clash = this.agents().find((x) => x.id !== agentId && x.name.toLowerCase() === typed.toLowerCase());
+    if (clash) throw new AgentError(`Já existe um agente chamado "${typed}".`);
+    const issue = a.issueRef ? this.d.store.cachedIssue(a.issueRef) : null;
+    const name =
+      typed ||
+      this.autoName(
+        issue ? { iid: issue.iid, text: issue.title } : { text: a.instruction ?? a.title },
+        0,
+        agentId,
+      );
+    if (name === a.name) return a;
+    const saved = this.save(agentId, { name });
+    this.d.hub.broadcast(this.d.store.logActivity(`${a.name} agora se chama ${name}`));
+    return saved;
   }
 
   private update(msg: Extract<ClientMessage, { type: 'agent.update' }>): void {
@@ -463,7 +506,11 @@ export class Supervisor {
     }
     if (!a.sessionId) {
       // agente em branco: a primeira mensagem é a instrução
-      this.save(agentId, { instruction: text, ...(a.issueRef ? {} : { title: text.slice(0, 80) }) });
+      this.save(agentId, {
+        instruction: text,
+        ...(a.issueRef ? {} : { title: text.slice(0, 80) }),
+        ...(!a.issueRef && /^agente-\d+$/.test(a.name) ? { name: this.autoName({ text }, 0, agentId) } : {}),
+      });
       return this.launch(agentId, a.issueRef ? instructionForIssue(text) : text, false);
     }
     return this.launch(agentId, text, true);
@@ -515,7 +562,7 @@ export class Supervisor {
     }
     if (!['done', 'stopped', 'error', 'idle'].includes(a.status) || l || a.status === 'queued') {
       this.setStatus(agentId, 'stopped', reason);
-      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} parado`));
+      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} parado`, this.d.store.agentWorkspace(a.id)));
     }
   }
 
@@ -655,7 +702,10 @@ export class Supervisor {
           mkdirSync(ws, { recursive: true });
           a = this.save(agentId, { worktreePath: ws });
           this.d.hub.broadcast(
-            this.d.store.logActivity(`${a.name} coordenando ${repos.map((x) => x.name).join(', ')}`),
+            this.d.store.logActivity(
+              `${a.name} coordenando ${repos.map((x) => x.name).join(', ')}`,
+              this.d.store.agentWorkspace(a.id),
+            ),
           );
         } else {
           const issue = a.issueRef ? this.d.store.cachedIssue(a.issueRef) : null;
@@ -682,7 +732,12 @@ export class Supervisor {
             ...(localBase || r.local ? { localBase: true } : {}),
           });
           a = this.save(agentId, { worktreePath: wt.path, branch: wt.branch });
-          this.d.hub.broadcast(this.d.store.logActivity(`${a.name} trabalhando em ${r.name} · ${wt.branch}`));
+          this.d.hub.broadcast(
+            this.d.store.logActivity(
+              `${a.name} trabalhando em ${r.name} · ${wt.branch}`,
+              this.d.store.agentWorkspace(a.id),
+            ),
+          );
         }
       }
 
@@ -977,7 +1032,7 @@ export class Supervisor {
     if (l?.pausing) {
       closeInput(l);
       this.setStatus(agentId, 'paused');
-      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} pausado`));
+      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} pausado`, this.d.store.agentWorkspace(a.id)));
       return;
     }
     if (turn.isError) {
@@ -1049,7 +1104,10 @@ export class Supervisor {
     if (ap.status === 'pending') {
       this.setStatus(agentId, 'waiting');
       this.d.hub.broadcast(
-        this.d.store.logActivity(`${a.name} pediu permissão: ${ap.toolName}(${ap.summary})`),
+        this.d.store.logActivity(
+          `${a.name} pediu permissão: ${ap.toolName}(${ap.summary})`,
+          this.d.store.agentWorkspace(a.id),
+        ),
       );
     } else if (
       a.status === 'waiting' &&
@@ -1137,7 +1195,7 @@ export class Supervisor {
     const task = input.task.trim();
     const row: Row = {
       id,
-      name: `agente-${count + 1}`,
+      name: this.autoName({ text: task }, count + 1),
       role,
       parentId,
       issueRef: p.issueRef,
@@ -1170,15 +1228,22 @@ export class Supervisor {
       .from(node)
       .where(and(eq(node.type, 'agent'), eq(node.refId, parentId), isNull(node.removedAt)))
       .get();
+    // o filho fica no workspace do pai, mesmo que outro esteja aberto
+    const ws = pn?.workspaceId ?? this.d.store.agentWorkspace(parentId);
     const n = {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'agent' as const,
       refId: id,
-      ...this.d.store.freeSpot('agent', {
-        x: (pn?.x ?? 0) + (siblings % 3) * 436,
-        y: (pn?.y ?? 0) + 420 + Math.floor(siblings / 3) * 400,
-      }),
+      ...this.d.store.freeSpot(
+        'agent',
+        {
+          x: (pn?.x ?? 0) + (siblings % 3) * 436,
+          y: (pn?.y ?? 0) + 420 + Math.floor(siblings / 3) * 400,
+        },
+        ws,
+      ),
       createdAt: nowIso(),
+      workspaceId: ws,
     };
     const e = {
       id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
@@ -1240,7 +1305,10 @@ export class Supervisor {
     const id = `a_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const row: Row = {
       id,
-      name: `agente-${count + 1}`,
+      name: this.autoName(
+        { text: role === 'fix' ? `corrigir pipeline !${mr.iid}` : `revisar !${mr.iid}` },
+        count + 1,
+      ),
       role,
       parentId: author.id,
       issueRef: mr.issueRef ?? author.issueRef,
@@ -1272,12 +1340,14 @@ export class Supervisor {
       .where(and(eq(node.type, 'mr'), eq(node.refId, mr.ref), isNull(node.removedAt)))
       .get();
     const helpers = this.agents().filter((x) => x.mrRef === mr.ref).length;
+    const ws = mn?.workspaceId ?? this.d.store.agentWorkspace(author.id);
     const n = {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'agent' as const,
       refId: id,
-      ...this.d.store.freeSpot('agent', { x: (mn?.x ?? 0) + 310, y: (mn?.y ?? 0) - 40 + helpers * 420 }),
+      ...this.d.store.freeSpot('agent', { x: (mn?.x ?? 0) + 310, y: (mn?.y ?? 0) - 40 + helpers * 420 }, ws),
       createdAt: nowIso(),
+      workspaceId: ws,
     };
     const e = {
       id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
@@ -1298,6 +1368,7 @@ export class Supervisor {
         role === 'fix'
           ? `${row.name} criado para corrigir o pipeline do MR !${mr.iid}`
           : `${row.name} criado para revisar o MR !${mr.iid}`,
+        ws,
       ),
     ]);
     this.d.context.seed(id, [{ kind: role === 'fix' ? 'pipeline_log' : 'mr_diff', ref: mr.ref }]);
@@ -1586,7 +1657,12 @@ export class Supervisor {
     this.event(q.agentId, { kind: 'question', questionId: q.id, text: q.text, answer: q.answer });
     if (q.status === 'pending') {
       this.setStatus(q.agentId, 'waiting');
-      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} perguntou: ${q.text.slice(0, 80)}`));
+      this.d.hub.broadcast(
+        this.d.store.logActivity(
+          `${a.name} perguntou: ${q.text.slice(0, 80)}`,
+          this.d.store.agentWorkspace(a.id),
+        ),
+      );
     } else if (
       a.status === 'waiting' &&
       !this.d.approvals.hasPending(q.agentId) &&

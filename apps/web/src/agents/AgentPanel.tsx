@@ -20,6 +20,8 @@ import {
   statusTone,
 } from './agent-ui.ts';
 
+import { AgentName } from './AgentName.tsx';
+
 const EMPTY: never[] = [];
 
 /** Agente na árvore de equipe (painel da issue, painel do agente), com os filhos embaixo. */
@@ -158,7 +160,7 @@ export function AgentPanel({
         <>
           <div className="ag-head">
             <div className="ag-title">
-              <h3>{a.name}</h3>
+              <AgentName agent={a} as="h3" />
               <span className={`badge ${statusTone(a.status)}`}>
                 <span className="d" />
                 {statusLabel(a.status)}
