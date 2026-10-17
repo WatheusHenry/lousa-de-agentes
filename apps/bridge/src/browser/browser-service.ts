@@ -171,7 +171,7 @@ export class BrowserService {
     const chrome = await this.chrome?.catch(() => null);
     this.chrome = null;
     this.pages.clear();
-    chrome?.close();
+    await chrome?.close();
   }
 
   // ---------- usuário (cartão no canvas) ----------

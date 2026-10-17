@@ -177,8 +177,17 @@ export class Chrome {
     }
   }
 
-  close(): void {
+  /** Fecha o Chrome e espera o processo sair (no Windows, o perfil fica preso até lá). */
+  close(): Promise<void> {
     this.cdp.close();
-    this.proc.kill();
+    if (this.proc.exitCode !== null) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, 5_000);
+      this.proc.once('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      this.proc.kill();
+    });
   }
 }
