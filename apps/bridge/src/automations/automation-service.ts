@@ -11,7 +11,8 @@ import {
 import type { Supervisor } from '../agents/supervisor.ts';
 import type { CanvasStore } from '../canvas/canvas-store.ts';
 import type { Hub } from '../hub.ts';
-import { MrError, type MrService } from '../mrs/mr-service.ts';
+import { conflictNotice, type MergeConflicts } from '../git/worktree.ts';
+import { MrError, mrName, type MrService } from '../mrs/mr-service.ts';
 import type { SettingsService } from '../settings.ts';
 
 /** Agentes fix que a automação aciona no mesmo MR antes de deixar com o usuário. */
@@ -99,6 +100,39 @@ export class AutomationService {
       return fixer;
     }
     return sup.helper('fix', mr, notice);
+  }
+
+  // ---------- conflito de merge → agente autor ----------
+
+  /**
+   * O MR do agente passou a ter conflito com a base: o aviso vai para quem está no worktree
+   * (o fix, se estiver trabalhando; senão o autor, retomando a sessão dele).
+   */
+  async onMrConflict(mr: MergeRequest, conflicts: MergeConflicts): Promise<Agent | null> {
+    if (mr.state !== 'opened' || !mr.agentId || !this.on.fixConflicts) return null;
+    const sup = this.d.supervisor;
+    const author = sup.get(mr.agentId);
+    if (!author?.worktreePath) return null;
+    const fixer = sup
+      .agents()
+      .filter((a) => a.mrRef === mr.ref && a.role === 'fix')
+      .at(-1);
+    const target = fixer && sup.busy(fixer.id) ? fixer : author;
+    const where = isLocalProject(mr.projectId) ? `Sua ${mrName(mr)}` : `O seu MR !${mr.iid}`;
+    try {
+      await sup.message(target.id, conflictNotice(conflicts, `${where} deixou de entrar limpo na base.`), {
+        from: 'canvas',
+        shown: `Conflito de merge com ${conflicts.base}: ${conflicts.files.join(', ')}`,
+      });
+    } catch (err) {
+      this.log(`Conflito no ${mrName(mr)}: não consegui avisar ${target.name} (${(err as Error).message})`);
+      return null;
+    }
+    this.log(
+      `Conflito no ${mrName(mr)}: ${target.name} vai resolver`,
+      this.d.store.refWorkspace('mr', mr.ref) ?? undefined,
+    );
+    return target;
   }
 
   // ---------- MR aberto por agente → reviewer ----------
