@@ -464,9 +464,23 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       async spawn(agentId, input) {
         const child = await supervisor.spawn(agentId, input);
         const st = supervisor.get(child.id)!;
-        return `${child.name} criado para ${input.repo} (${st.status === 'queued' ? 'na fila, começa quando houver vaga' : 'trabalhando'}). Use wait_for_agents para esperar.`;
+        const what = child.role === 'explorer' ? 'para investigar' : 'para';
+        const branch = st.branch ? `, branch ${st.branch}` : '';
+        return (
+          `${child.name} criado ${what} ${input.repo ?? 'o seu repositório'} (${st.status === 'queued' ? 'na fila, começa quando houver vaga' : 'trabalhando'}${branch}). ` +
+          'Siga com o que não depende dele; espere com wait_for_agents (mode "any" para receber um de cada vez).'
+        );
       },
-      wait: (agentId, ids) => supervisor.waitFor(agentId, ids),
+      wait: (agentId, ids, mode) => supervisor.waitFor(agentId, ids, mode),
+      list: async (agentId) => supervisor.listChildren(agentId),
+      async message(agentId, child, text) {
+        const c = await supervisor.messageChild(agentId, child, text);
+        return `Mensagem entregue a ${c.name} (${c.status}). Espere a resposta com wait_for_agents.`;
+      },
+      async stop(agentId, child, reason) {
+        const c = supervisor.stopChild(agentId, child, reason);
+        return `${c.name} parado${c.branch ? `; o branch ${c.branch} ficou como estava` : ''}.`;
+      },
       async plan(agentId, items) {
         supervisor.reportPlan(agentId, items);
         return 'Plano publicado no canvas.';

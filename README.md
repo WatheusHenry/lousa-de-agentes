@@ -82,6 +82,7 @@ Modelo, limites e orçamento de contexto também mudam na tela, em **Automaçõe
 | `AGENT_CANVAS_SUMMARY_MODEL`     | `haiku`           | Modelo do botão Resumir                                     |
 | `AGENT_CANVAS_CONTEXT_BUDGET`    | `60000`           | Tokens recomendados no contexto de um agente                |
 | `AGENT_CANVAS_MAX_AGENTS`        | `4`               | Agentes rodando ao mesmo tempo                              |
+| `AGENT_CANVAS_MAX_CHILDREN`      | `4`               | Sub-agentes trabalhando ao mesmo tempo para um mesmo agente |
 | `AGENT_CANVAS_MAX_AGENT_MINUTES` | `60`              | Tempo máximo de um agente antes de ser pausado              |
 | `AGENT_CANVAS_TREE_TOKEN_BUDGET` | `5000000`         | Tokens de uma árvore de agentes                             |
 | `AGENT_CANVAS_CLAUDE_BIN`        | `claude`          | Caminho do executável do Claude Code                        |
@@ -159,8 +160,13 @@ Para regravar as saídas reais usadas nos testes do parser (por exemplo, depois 
 - **O orquestrador** não escreve código: trabalha numa pasta própria, lê os clones dos repositórios (`--add-dir`), publica o plano em checklist, cria os agentes, espera por eles, confere a consistência entre os MRs e comenta na issue o resumo e a ordem de merge. No fim, deixa a nota de passagem.
 - **Agentes filhos** herdam a issue, as notas ligadas aos agentes acima deles e o plano do pai (no `context.md`). Num repositório diferente do pai, o filho abre o próprio MR, que fecha a issue de outro projeto com a referência completa (`Closes grupo/projeto#iid`). No mesmo repositório, o filho é um **sub-agente**: trabalha num branch criado a partir do branch do pai, sem MR próprio, e o pai junta o branch dele com `git merge`.
 - **No canvas**: os filhos aparecem abaixo do pai, ligados por arestas tracejadas. O painel do agente mostra o **Plano** (cada passo com o agente responsável, marcado quando ele termina) e a **Equipe** (a árvore a partir da raiz). A janela mostra o plano, os agentes criados, a espera e as perguntas.
+- **Delegação autônoma**: dentro da profundidade liberada, cada agente decide sozinho se divide o trabalho (o prompt traz quando vale e quando não vale dividir). Ferramentas do canvas para isso:
+  - `spawn_agent`: `kind: "code"` (padrão) implementa num worktree próprio; `kind: "explore"` cria um **Explorador**, que só lê o worktree do pai (sem Edit/Write, sem branch nem MR) e responde, para mapear código sem gastar o contexto do pai. `repo` vazio usa o repositório do pai; `model` escolhe o modelo do filho (ex.: `haiku` para buscas).
+  - `wait_for_agents`: `mode: "all"` (padrão) espera todos; `mode: "any"` volta com o primeiro filho que terminar, para o pai juntar e mandar mais trabalho enquanto os outros seguem.
+  - `list_agents`: estado dos filhos e vagas, sem esperar. `message_agent`: correção ou próxima etapa para um filho, que continua na mesma sessão. `stop_agent`: para um filho (e os filhos dele).
+  - Se o pai terminar o turno sem esperar, o canvas o acorda com o resumo quando todos os filhos pararem. Parar um agente pelo canvas para também os filhos que ainda trabalham.
 - **Perguntas**: um agente pode perguntar algo com `ask_human`. A pergunta entra na seção **Ações**, com as opções sugeridas ou resposta livre, e o agente espera.
-- **Limites do supervisor**: até 4 agentes rodando ao mesmo tempo (`AGENT_CANVAS_MAX_AGENTS`), o resto fica **Na fila**; quem está coordenando (esperando os filhos) não conta. Cada agente roda até 60 min por vez (`AGENT_CANVAS_MAX_AGENT_MINUTES`) antes de ser pausado. Uma árvore de agentes para de criar filhos e de começar turnos depois de 5 milhões de tokens (`AGENT_CANVAS_TREE_TOKEN_BUDGET`).
+- **Limites do supervisor**: até 4 agentes rodando ao mesmo tempo (`AGENT_CANVAS_MAX_AGENTS`), o resto fica **Na fila**; quem está coordenando (esperando os filhos) não conta. Cada agente roda até 60 min por vez (`AGENT_CANVAS_MAX_AGENT_MINUTES`) antes de ser pausado. Cada agente tem no máximo 4 filhos trabalhando ao mesmo tempo (`AGENT_CANVAS_MAX_CHILDREN`, também em **Automações → Agentes**). Uma árvore de agentes para de criar filhos e de começar turnos depois de 5 milhões de tokens (`AGENT_CANVAS_TREE_TOKEN_BUDGET`).
 
 ![Orquestrador com dois agentes e dois MRs](docs/screenshots/fase-5/final.png)
 

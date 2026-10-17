@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { AgentStatus } from './canvas.ts';
 
-export const AgentRole = z.enum(['main', 'orchestrator', 'sub', 'reviewer', 'fix']);
+/**
+ * Papéis: `main` (agente da issue ou de um repositório), `orchestrator` (divide entre
+ * repositórios), `sub` (parte do trabalho no branch do pai), `explorer` (só lê e responde ao pai),
+ * `reviewer` e `fix` (ajudantes de um MR).
+ */
+export const AgentRole = z.enum(['main', 'orchestrator', 'sub', 'explorer', 'reviewer', 'fix']);
 export type AgentRole = z.infer<typeof AgentRole>;
 
 /** Um passo do plano publicado com report_plan. */
@@ -70,7 +75,8 @@ export const AgentEventBody = z.discriminatedUnion('kind', [
     isError: z.boolean(),
     truncated: z.boolean(),
   }),
-  z.object({ kind: z.literal('user_message'), text: z.string() }),
+  /** Mensagem ao agente: do usuário ou, com `from`, do agente pai (message_agent). */
+  z.object({ kind: z.literal('user_message'), text: z.string(), from: z.string().optional() }),
   z.object({
     kind: z.literal('permission'),
     approvalId: z.string(),

@@ -145,7 +145,7 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         lastUser = b.text;
         out.push(
           <div key={k} className="l user">
-            <small>Você</small>
+            <small>{b.from ?? 'Você'}</small>
             <Markdown compact>{b.text}</Markdown>
           </div>,
         );

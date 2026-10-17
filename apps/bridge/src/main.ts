@@ -35,6 +35,9 @@ const app = await buildServer({
     ...(Number(process.env.AGENT_CANVAS_MAX_AGENTS) > 0
       ? { maxRunning: Number(process.env.AGENT_CANVAS_MAX_AGENTS) }
       : {}),
+    ...(Number(process.env.AGENT_CANVAS_MAX_CHILDREN) > 0
+      ? { maxChildren: Number(process.env.AGENT_CANVAS_MAX_CHILDREN) }
+      : {}),
     ...(Number(process.env.AGENT_CANVAS_MAX_AGENT_MINUTES) > 0
       ? { maxAgentMinutes: Number(process.env.AGENT_CANVAS_MAX_AGENT_MINUTES) }
       : {}),
