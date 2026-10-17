@@ -127,6 +127,22 @@ describe('limites do supervisor', () => {
     );
   });
 
+  it('processo ocioso não ocupa vaga; acordado sem vaga, entra na fila e retoma depois', async () => {
+    // a1 termina o turno e fica ocioso; a2 fica trabalhando
+    const runner = new Runner((n) => (n === 2 ? null : 10));
+    await boot(runner, { maxRunning: 1 });
+    create('a1');
+    await until(() => agent('a1')?.status === 'done', 'a1 termina');
+    create('a2');
+    // a2 abre o processo mesmo com a1 ocioso ocupando o limite de 1
+    await until(() => runner.starts === 2, 'a2 começa com a1 ocioso');
+    expect(agent('a2')?.status).toBe('running');
+    send({ type: 'agent.message', agentId: 'a1', text: 'De novo.' });
+    await until(() => agent('a1')?.status === 'queued', 'a1 na fila');
+    send({ type: 'agent.stop', agentId: 'a2' });
+    await until(() => runner.starts === 3 && agent('a1')?.status === 'done', 'a1 retomado');
+  });
+
   it('orçamento da árvore: depois de passar dos tokens, o agente não começa outro turno', async () => {
     const runner = new Runner(() => 500);
     await boot(runner, { treeTokenBudget: 300 });

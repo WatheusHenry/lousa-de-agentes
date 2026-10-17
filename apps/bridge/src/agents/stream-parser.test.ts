@@ -121,3 +121,35 @@ describe('summarizeTool', () => {
     expect(summarizeTool('mcp__canvas__x', { foo: 'bar' })).toBe('bar');
   });
 });
+
+describe('streaming (--include-partial-messages)', () => {
+  it('pedaço de texto vira delta ao vivo; o resto do streaming é descartado', () => {
+    const delta = parseLine(
+      JSON.stringify({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Olá, ' } },
+        session_id: 's',
+      }),
+    );
+    expect(delta).toMatchObject({ events: [], delta: 'Olá, ', ephemeral: true });
+    for (const event of [
+      { type: 'message_start', message: {} },
+      { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"a' } },
+      { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'hmm' } },
+    ])
+      expect(parseLine(JSON.stringify({ type: 'stream_event', event }))).toEqual({
+        events: [],
+        ephemeral: true,
+      });
+    // de sub-agentes internos do Claude Code, nada aparece
+    expect(
+      parseLine(
+        JSON.stringify({
+          type: 'stream_event',
+          parent_tool_use_id: 'toolu_1',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } },
+        }),
+      ).delta,
+    ).toBeUndefined();
+  });
+});

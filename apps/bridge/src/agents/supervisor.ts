@@ -72,9 +72,20 @@ interface Live {
   inputClosed: boolean;
   /** Mensagem que chegou enquanto o processo terminava; vai na retomada logo depois. */
   afterExit: string | null;
-  /** Tempo máximo do agente (limite do supervisor). */
+  /** Tempo máximo de um turno (limite do supervisor). */
   timer: ReturnType<typeof setTimeout> | null;
+  /**
+   * Turno terminado e processo aberto esperando a próxima mensagem (como o CLI): a mensagem
+   * seguinte entra direto, sem reabrir o claude. Fecha sozinho depois de um tempo parado.
+   */
+  idle: boolean;
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  /** Já veio o init deste processo: os seguintes (um por turno) não viram linha nova. */
+  inited: boolean;
 }
+
+/** Quanto um processo ocioso fica aberto esperando a próxima mensagem. */
+export const IDLE_MS = 10 * 60_000;
 
 /** Limites globais do supervisor (seção 8 do plano). */
 export interface SupervisorLimits {
@@ -126,6 +137,13 @@ export class Supervisor {
   private mcpTokens = new Map<string, string>(); // token → agentId
   /** Mudanças de contexto de agentes parados, avisadas na próxima mensagem. */
   private contextNotices = new Map<string, string[]>();
+  /** Último context.md entregue a cada agente (para mandar só o que mudou depois). */
+  private sentContext = new Map<string, string>();
+  /** Texto ao vivo (streaming) acumulado por agente, enviado ao canvas em lotes. */
+  private deltas = new Map<string, string>();
+  private deltaTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Tempo que um processo ocioso fica aberto (os testes encurtam). */
+  idleMs = IDLE_MS;
   private queue: Queued[] = [];
   /** wait_for_agents em andamento: quem espera, quais filhos e como responder. */
   private waiters: { callerId: string; ids: string[]; done: (cancelled: string | null) => void }[] = [];
@@ -401,6 +419,7 @@ export class Supervisor {
       l.afterExit = l.afterExit ? `${l.afterExit}\n\n${text}` : text;
       return;
     }
+    if (l && !l.stopping && l.idle) return this.wake(agentId, l, text);
     if (l && !l.stopping) {
       l.pausing = false;
       l.turnOpen = true;
@@ -419,6 +438,8 @@ export class Supervisor {
   pause(agentId: string): void {
     const l = this.live.get(agentId);
     if (!l) return;
+    // ocioso: não há turno para pausar; só fecha o processo
+    if (l.idle) return this.closeIdle(agentId);
     l.pausing = true;
     this.d.approvals.cancelForAgent(agentId, 'O usuário pausou o agente.');
     this.d.questions.cancelForAgent(agentId);
@@ -449,6 +470,11 @@ export class Supervisor {
     this.queue = this.queue.filter((q) => q.agentId !== agentId);
     const a = this.get(agentId);
     if (!a) return;
+    if (l?.idle) {
+      // processo ocioso: fecha sem mudar o status (o turno já tinha terminado)
+      this.closeIdle(agentId);
+      return;
+    }
     if (l) {
       l.stopping = true;
       l.proc.kill();
@@ -473,8 +499,10 @@ export class Supervisor {
     for (const l of this.live.values()) {
       l.stopping = true;
       if (l.timer) clearTimeout(l.timer);
+      if (l.idleTimer) clearTimeout(l.idleTimer);
       l.proc.kill();
     }
+    if (this.deltaTimer) clearTimeout(this.deltaTimer);
   }
 
   // ---------- execução ----------
@@ -492,7 +520,7 @@ export class Supervisor {
   /** Processos rodando que contam no limite (coordenando, esperando os filhos, não conta). */
   private runningCount(): number {
     let n = 0;
-    for (const id of this.live.keys()) if (this.get(id)?.status !== 'coordinating') n++;
+    for (const [id, l] of this.live) if (!l.idle && this.get(id)?.status !== 'coordinating') n++;
     for (const id of this.starting) if (!this.live.has(id)) n++;
     return n;
   }
@@ -615,14 +643,18 @@ export class Supervisor {
         }
       }
 
-      await this.refreshContext(a);
-      const notices = this.contextNotices.get(agentId);
-      if (notices?.length && resume) {
-        text = `${text}\n\n(O contexto mudou desde o último turno: ${notices.join('; ')}. Releia .agent-canvas/context.md.)`;
-      }
-      this.contextNotices.delete(agentId);
+      const content = await this.refreshContext(a);
       const sessionId = a.sessionId ?? randomUUID();
       const started = resume && this.hasInit(agentId);
+      const notices = this.contextNotices.get(agentId);
+      this.contextNotices.delete(agentId);
+      if (!started) {
+        // o contexto vai na própria mensagem: o agente não gasta um turno lendo o arquivo
+        text = withContext(text, content);
+        this.sentContext.set(agentId, content);
+      } else if (notices?.length) {
+        text = `${text}\n\n${this.contextUpdate(agentId, notices, content)}`;
+      }
       if (!a.sessionId) a = this.save(agentId, { sessionId });
 
       const proc = this.d.runner.start(
@@ -643,16 +675,6 @@ export class Supervisor {
           onExit: (info) => this.onExit(agentId, info),
         },
       );
-      const timer = setTimeout(() => {
-        const cur = this.get(agentId);
-        if (!this.live.has(agentId) || cur?.status === 'coordinating') return;
-        this.event(agentId, {
-          kind: 'error',
-          message: `Passou do tempo máximo de ${this.limits.maxAgentMinutes} min (Automações → Agentes). Pausado; retome para continuar.`,
-        });
-        this.pause(agentId);
-      }, this.limits.maxAgentMinutes * 60_000);
-      timer.unref?.();
       this.live.set(agentId, {
         proc,
         turnOpen: true,
@@ -660,12 +682,16 @@ export class Supervisor {
         stopping: false,
         inputClosed: false,
         afterExit: null,
-        timer,
+        timer: null,
+        idle: false,
+        idleTimer: null,
+        inited: false,
       });
+      this.armTurnTimer(agentId);
       this.starting.delete(agentId);
       this.save(agentId, { error: null });
       this.setStatus(agentId, 'running');
-      proc.send(started ? text : `${text}\n\nLeia .agent-canvas/context.md antes de começar.`);
+      proc.send(text);
     } catch (err) {
       this.starting.delete(agentId);
       queueMicrotask(() => this.drainQueue());
@@ -679,8 +705,109 @@ export class Supervisor {
   }
 
   /** Regrava o context.md com os itens de contexto do agente (seção 7 do plano). */
-  private async refreshContext(a: Agent): Promise<void> {
-    writeContext(a.worktreePath!, await this.d.context.render(a.id));
+  private async refreshContext(a: Agent): Promise<string> {
+    const content = await this.d.context.render(a.id);
+    writeContext(a.worktreePath!, content);
+    return content;
+  }
+
+  /** Aviso de contexto novo, com só as seções que mudaram desde a última entrega. */
+  private contextUpdate(agentId: string, labels: string[], content: string): string {
+    const prev = this.sentContext.get(agentId);
+    this.sentContext.set(agentId, content);
+    const delta = prev !== undefined ? contextDelta(prev, content) : null;
+    return delta
+      ? `O contexto foi atualizado (${labels.join('; ')}). O que mudou:\n\n<contexto-atualizado>\n${delta}\n</contexto-atualizado>`
+      : `O contexto foi atualizado: ${labels.join('; ')}. A versão completa está em .agent-canvas/context.md; leia se precisar.`;
+  }
+
+  /** Tempo máximo de um turno: conta só enquanto o agente trabalha, não parado esperando. */
+  private armTurnTimer(agentId: string): void {
+    const l = this.live.get(agentId);
+    if (!l) return;
+    if (l.timer) clearTimeout(l.timer);
+    l.timer = setTimeout(() => {
+      const cur = this.get(agentId);
+      if (!this.live.has(agentId) || cur?.status === 'coordinating' || this.live.get(agentId)?.idle) return;
+      this.event(agentId, {
+        kind: 'error',
+        message: `Passou do tempo máximo de ${this.limits.maxAgentMinutes} min (Automações → Agentes). Pausado; retome para continuar.`,
+      });
+      this.pause(agentId);
+    }, this.limits.maxAgentMinutes * 60_000);
+    l.timer.unref?.();
+  }
+
+  /** Mensagem para um agente ocioso: entra no mesmo processo, sem reabrir o claude. */
+  private async wake(agentId: string, l: Live, text: string): Promise<void> {
+    const a = this.mustGet(agentId);
+    // os mesmos limites de quando o processo abre: orçamento da árvore
+    if (this.treeTokens(agentId) > this.limits.treeTokenBudget) {
+      const message = `A árvore deste agente passou do orçamento de ${Math.round(this.limits.treeTokenBudget / 1000)}k tokens. Aumente em Automações → Agentes para continuar.`;
+      this.closeIdle(agentId);
+      this.event(agentId, { kind: 'error', message });
+      this.save(agentId, { error: message });
+      this.setStatus(agentId, 'error');
+      throw new AgentError(message);
+    }
+    // outro agente trabalhando no mesmo worktree (o fix no MR deste): espera ele terminar
+    const sharing = a.worktreePath
+      ? [...this.live.keys()].find(
+          (id) => id !== agentId && this.busy(id) && this.get(id)?.worktreePath === a.worktreePath,
+        )
+      : undefined;
+    if (sharing)
+      throw new AgentError(
+        `${this.get(sharing)!.name} está trabalhando no mesmo worktree. Espere ele terminar.`,
+      );
+    // sem vaga: fecha o processo e entra na fila, como uma retomada
+    if (this.runningCount() >= this.limits.maxRunning) {
+      this.closeIdle(agentId);
+      this.queue.push({ agentId, text, resume: true });
+      this.setStatus(agentId, 'queued', `na fila: ${this.limits.maxRunning} agentes já estão rodando`);
+      return;
+    }
+    l.idle = false;
+    if (l.idleTimer) clearTimeout(l.idleTimer);
+    l.idleTimer = null;
+    l.pausing = false;
+    l.turnOpen = true;
+    const notices = this.contextNotices.get(agentId);
+    this.contextNotices.delete(agentId);
+    if (notices?.length && a.worktreePath) {
+      const content = await this.refreshContext(a);
+      text = `${text}\n\n${this.contextUpdate(agentId, notices, content)}`;
+    }
+    this.armTurnTimer(agentId);
+    this.save(agentId, { error: null });
+    this.setStatus(agentId, 'running');
+    l.proc.send(text);
+  }
+
+  /** Fecha o processo ocioso (a próxima mensagem retoma a sessão com --resume). */
+  private closeIdle(agentId: string): void {
+    const l = this.live.get(agentId);
+    if (!l?.idle) return;
+    if (l.idleTimer) clearTimeout(l.idleTimer);
+    l.idleTimer = null;
+    closeInput(l);
+  }
+
+  /** Muitos ociosos abertos ao mesmo tempo gastam memória: fecha os mais antigos. */
+  private trimIdle(): void {
+    const idle = [...this.live].filter(([, l]) => l.idle && !l.inputClosed).map(([id]) => id);
+    for (const id of idle.slice(0, Math.max(0, idle.length - this.limits.maxRunning))) this.closeIdle(id);
+  }
+
+  /** Texto ao vivo do streaming: junta os pedaços e manda ao canvas a cada ~50 ms. */
+  private pushDelta(agentId: string, text: string): void {
+    this.deltas.set(agentId, (this.deltas.get(agentId) ?? '') + text);
+    this.deltaTimer ??= setTimeout(() => {
+      this.deltaTimer = null;
+      const batch = [...this.deltas];
+      this.deltas.clear();
+      for (const [id, t] of batch) this.d.hub.broadcast({ type: 'agent.delta', agentId: id, text: t });
+    }, 50);
   }
 
   /**
@@ -695,10 +822,11 @@ export class Supervisor {
     await this.refreshContext(a);
     // nada mudou no que o agente lê (ex.: a nota de passagem dele mesmo): não interrompe
     if (readFileSync(file, 'utf8') === before) return;
-    const notice = `O contexto foi atualizado: ${labels.join('; ')}. Releia .agent-canvas/context.md.`;
     const l = this.live.get(agentId);
     let notified = false;
-    if (l && !l.stopping && !l.pausing) {
+    // ocioso: não acorda o agente (gastaria um turno); o aviso vai com a próxima mensagem
+    if (l && !l.stopping && !l.pausing && !l.idle) {
+      const notice = this.contextUpdate(agentId, labels, readFileSync(file, 'utf8'));
       if (l.inputClosed) l.afterExit = l.afterExit ? `${l.afterExit}\n\n${notice}` : notice;
       else {
         l.turnOpen = true;
@@ -742,6 +870,18 @@ export class Supervisor {
   private onLine(agentId: string, line: string): void {
     if (this.closed) return;
     const p = parseLine(line);
+    if (p.ephemeral) {
+      if (p.delta) this.pushDelta(agentId, p.delta);
+      return;
+    }
+    // a mensagem completa (ou o fim do turno) chegou: os pedaços ao vivo pendentes ficam velhos
+    if (p.events.length || p.turn) this.deltas.delete(agentId);
+    const live = this.live.get(agentId);
+    if (p.events[0]?.kind === 'init') {
+      // processo aberto entre turnos: só o primeiro init é "início"; o resto não é retomada
+      if (live?.inited) p.events = p.events.slice(1);
+      else if (live) live.inited = true;
+    }
     const set: Partial<Row> = {};
     if (p.contextTokens) set.contextTokens = p.contextTokens;
     if (p.turn) {
@@ -790,10 +930,17 @@ export class Supervisor {
       this.setStatus(agentId, 'error');
       return;
     }
-    // o processo termina; a próxima mensagem retoma a sessão. Se uma mensagem chegou no
-    // instante do result, o claude ainda a processa antes de sair e onLine reabre o turno.
-    if (l) closeInput(l);
+    // o processo fica aberto esperando a próxima mensagem (como o CLI); fecha se ficar parado
+    if (l && !l.inputClosed) {
+      l.idle = true;
+      if (l.timer) clearTimeout(l.timer);
+      l.timer = null;
+      l.idleTimer = setTimeout(() => this.closeIdle(agentId), this.idleMs);
+      l.idleTimer.unref?.();
+      this.trimIdle();
+    }
     this.setStatus(agentId, 'done');
+    queueMicrotask(() => this.drainQueue());
     this.d.hub.broadcast(this.d.store.logActivity(`${a.name} concluiu o turno`));
   }
 
@@ -805,6 +952,7 @@ export class Supervisor {
     const l = this.live.get(agentId);
     this.live.delete(agentId);
     if (l?.timer) clearTimeout(l.timer);
+    if (l?.idleTimer) clearTimeout(l.idleTimer);
     this.d.approvals.cancelForAgent(agentId, 'O processo do agente terminou.');
     this.d.questions.cancelForAgent(agentId);
     this.cancelWait(agentId, 'O processo terminou durante a espera.');
@@ -1083,7 +1231,7 @@ export class Supervisor {
    */
   busy(agentId: string): boolean {
     const l = this.live.get(agentId);
-    if (l && !l.stopping && (!l.inputClosed || l.afterExit)) return true;
+    if (l && !l.stopping && !l.idle && (!l.inputClosed || l.afterExit)) return true;
     return this.queue.some((q) => q.agentId === agentId);
   }
 
@@ -1349,5 +1497,29 @@ function closeInput(l: Live): void {
 }
 
 function instructionForIssue(extra: string): string {
-  return `Resolva a issue descrita em .agent-canvas/context.md. Instruções do usuário: ${extra}`;
+  return `Resolva a issue descrita no contexto abaixo. Instruções do usuário: ${extra}`;
+}
+
+/** Primeira mensagem: o contexto do canvas vai junto, sem o agente precisar ler o arquivo. */
+function withContext(text: string, content: string): string {
+  return `${text}\n\n<contexto-do-canvas>\n${content.trim()}\n</contexto-do-canvas>\n\n(Este contexto também fica em .agent-canvas/context.md. Não precisa ler o arquivo agora.)`;
+}
+
+/** Limite do aviso de contexto: mais que isso, o agente lê o arquivo se precisar. */
+const MAX_CONTEXT_DELTA = 12_000;
+
+/**
+ * Seções (títulos "## ") novas ou alteradas entre duas versões do context.md. Nulo quando não
+ * dá para resumir (nada mudou nas seções ou o trecho ficaria grande demais).
+ */
+export function contextDelta(prev: string, next: string): string | null {
+  const sections = (s: string) => {
+    const m = new Map<string, string>();
+    for (const part of s.split(/^(?=## )/m)) m.set(part.split('\n', 1)[0]!.trim(), part.trim());
+    return m;
+  };
+  const before = sections(prev);
+  const changed = [...sections(next)].filter(([k, v]) => before.get(k) !== v).map(([, v]) => v);
+  const out = changed.join('\n\n');
+  return out && out.length <= MAX_CONTEXT_DELTA ? out : null;
 }

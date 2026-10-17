@@ -1,15 +1,115 @@
-import { memo, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Markdown } from '../components/Markdown.tsx';
 import { needsClaudeLogin, type Agent, type AgentEvent } from '@agent-canvas/shared';
 import { ClaudeLoginBox } from './ClaudeLoginBox.tsx';
 import { useStore } from '../state/store.ts';
 import { fmtUsd } from './agent-ui.ts';
+import { groupLabel, segments, splitShell, type ReadKind } from './terminal.ts';
 
 const firstLines = (s: string, n = 3) => {
   const lines = s.split('\n').filter((l) => l.trim());
   const head = lines.slice(0, n).join('\n');
   return lines.length > n ? `${head}\n… +${lines.length - n} linhas` : head;
 };
+
+/** Markdown das respostas, memorizado: o parse não se repete a cada evento novo. */
+const Md = memo(function Md({ text }: { text: string }) {
+  return <Markdown compact>{text}</Markdown>;
+});
+
+/** Comando do Bash: encadeado e longo, cada etapa numa linha (como o CLI quebra). */
+function ToolCall({ b }: { b: Extract<AgentEvent['body'], { kind: 'tool_use' }> }) {
+  const full = b.name === 'Bash' ? String((b.input as { command?: unknown })?.command ?? b.summary) : '';
+  const parts = full ? splitShell(full.split('\n<<')[0]!) : [];
+  if (b.name === 'Bash' && parts.length > 1 && full.length > 60)
+    return (
+      <div className="l tool">
+        <span className="g">●</span> <b>Bash</b>
+        <div className="cmd-parts">
+          {parts.map((p, i) => (
+            <div key={i}>
+              {p.sep && <span className="sep">{p.sep} </span>}
+              {p.part.length > 160 ? `${p.part.slice(0, 159)}…` : p.part}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  return (
+    <div className="l tool">
+      <span className="g">●</span> <b>{b.name.replace(/^mcp__canvas__/, '')}</b>({b.summary})
+    </div>
+  );
+}
+
+/** Saída de ferramenta: 3 linhas; o resto abre com um clique. */
+function ToolOutput({ b }: { b: Extract<AgentEvent['body'], { kind: 'tool_result' }> }) {
+  const [open, setOpen] = useState(false);
+  if (b.content.startsWith("The user doesn't want to proceed with this tool use"))
+    return <div className="l out">⎿ interrompido</div>;
+  const lines = b.content.split('\n').filter((l) => l.trim());
+  if (!lines.length) return <div className={`l out${b.isError ? ' err' : ''}`}>⎿ (sem saída)</div>;
+  const more = lines.length - 3;
+  return (
+    <div className={`l out out-row${b.isError ? ' err' : ''}`}>
+      <span className="out-g">⎿</span>
+      <span className={`out-txt${open ? ' full' : ''}`}>
+        {(open ? lines.slice(0, 400) : lines.slice(0, 3)).join('\n')}
+        {more > 0 && (
+          <button className="out-more nodrag" onClick={() => setOpen(!open)}>
+            {open ? 'recolher' : `+${more} linha${more === 1 ? '' : 's'}`}
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** Leituras seguidas (Read, buscas, ls, cat…) numa linha só, que abre para mostrar cada uma. */
+function ReadGroup({ events, kinds }: { events: AgentEvent[]; kinds: ReadKind[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="l tool read-group nodrag" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="g">●</span> {groupLabel(kinds)}
+        <span className="caret">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div className="read-items">
+          {events.map((e) =>
+            e.body.kind === 'tool_use' ? (
+              <ToolCall key={e.id} b={e.body} />
+            ) : e.body.kind === 'tool_result' ? (
+              <ToolOutput key={e.id} b={e.body} />
+            ) : null,
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Texto que o agente está escrevendo agora (streaming), com cursor; some quando a mensagem fecha. */
+function LiveText({ agentId }: { agentId: string }) {
+  const text = useStore((s) => s.liveText[agentId]);
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    // segue o texto se o terminal já estava no fim
+    let el = ref.current?.parentElement;
+    while (el && !/(auto|scroll)/.test(getComputedStyle(el).overflowY)) el = el.parentElement;
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) el.scrollTop = el.scrollHeight;
+  }, [text]);
+  if (!text) return null;
+  return (
+    <div className="l txt md-line live" ref={ref}>
+      <span className="g">●</span>
+      <span className="live-t">
+        {text}
+        <span className="cursor" aria-hidden="true" />
+      </span>
+    </div>
+  );
+}
 
 /**
  * Terminal estruturado do agente, como no protótipo: cada evento vira uma linha (texto,
@@ -23,7 +123,12 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
   let lastUser: string | null = null;
   // a caixa de login só aparece no último resultado (os antigos já foram resolvidos)
   const lastResult = events.findLast((e) => e.body.kind === 'result')?.id;
-  for (const e of events) {
+  for (const seg of segments(events)) {
+    if (seg.type === 'reads') {
+      out.push(<ReadGroup key={`g${seg.events[0]!.id}`} events={seg.events} kinds={seg.kinds} />);
+      continue;
+    }
+    const e = seg.e;
     const b = e.body;
     const k = e.id;
     switch (b.kind) {
@@ -49,7 +154,7 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         out.push(
           <div key={k} className="l txt md-line">
             <span className="g">●</span>
-            <Markdown compact>{b.text}</Markdown>
+            <Md text={b.text} />
           </div>,
         );
         break;
@@ -101,21 +206,10 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         );
         break;
       case 'tool_use':
-        out.push(
-          <div key={k} className="l tool">
-            <span className="g">●</span> <b>{b.name}</b>({b.summary})
-          </div>,
-        );
+        out.push(<ToolCall key={k} b={b} />);
         break;
       case 'tool_result':
-        out.push(
-          <div key={k} className={`l out${b.isError ? ' err' : ''}`}>
-            ⎿{' '}
-            {b.content.startsWith("The user doesn't want to proceed with this tool use")
-              ? 'interrompido'
-              : firstLines(b.content) || '(sem saída)'}
-          </div>,
-        );
+        out.push(<ToolOutput key={k} b={b} />);
         break;
       case 'permission': {
         const pending = b.status === 'pending' && approvals[b.approvalId];
@@ -223,6 +317,7 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
         break;
     }
   }
+  out.push(<LiveText key="live" agentId={agent.id} />);
   return <>{out}</>;
 }
 

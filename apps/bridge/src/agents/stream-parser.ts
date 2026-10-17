@@ -94,6 +94,10 @@ export interface ParsedLine {
     text?: string | null;
   };
   controlResponse?: { requestId?: string; ok: boolean };
+  /** Pedaço de texto ainda sendo escrito (--include-partial-messages): só para exibir ao vivo. */
+  delta?: string;
+  /** Linha que não vale guardar nem mostrar (os outros eventos parciais do streaming). */
+  ephemeral?: boolean;
 }
 
 const MAX_RESULT = 4000;
@@ -106,6 +110,23 @@ export function parseLine(line: string): ParsedLine {
     return { events: [] };
   }
   const type = (json as { type?: unknown })?.type;
+
+  if (type === 'stream_event') {
+    // eventos parciais: só o texto interessa; a mensagem completa chega depois como "assistant"
+    const s = json as {
+      parent_tool_use_id?: string | null;
+      event?: { type?: string; delta?: { type?: string; text?: string } };
+    };
+    const d = s.event?.delta;
+    if (
+      !s.parent_tool_use_id &&
+      s.event?.type === 'content_block_delta' &&
+      d?.type === 'text_delta' &&
+      d.text
+    )
+      return { events: [], delta: d.text, ephemeral: true };
+    return { events: [], ephemeral: true };
+  }
 
   if (type === 'system') {
     const init = Init.safeParse(json);

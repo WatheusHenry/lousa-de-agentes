@@ -213,6 +213,9 @@ Dá para usar o canvas só com repositórios da sua máquina, sem token nem issu
 
 - **Login do Claude Code expirado**: se o `claude` desta máquina perder o login, o terminal do agente mostra **Entrar de novo no Claude**. O bridge roda `claude auth login`, que abre a página de login no navegador. Se a página mostrar um código, cole no campo da caixa. Depois, **Reenviar a última mensagem** retoma o agente de onde parou.
 
+- **Terminal dos agentes, mais rápido**: o `claude` de cada agente fica aberto entre uma mensagem e outra, como no CLI. A próxima mensagem entra direto, sem reabrir o processo e sem retomar a sessão, o que poupa uns 2 s por mensagem. Depois de 10 minutos parado, o processo fecha sozinho, e a mensagem seguinte retoma a conversa. Processos parados não contam no limite de agentes ao mesmo tempo. O contexto do canvas vai junto da primeira mensagem, e depois só o que mudou, então o agente não abre mais cada turno com `cat .agent-canvas/context.md; git status; ls`. As ferramentas do canvas já carregam no início (sem `ToolSearch`), e o texto aparece enquanto o agente escreve.
+- **Exibição**: comandos encadeados aparecem uma etapa por linha. A saída mostra 3 linhas e o resto abre em **+N linhas**. Leituras seguidas (Read, buscas, `cat`, `ls`, `git status`…) viram uma linha só, como "Leu 3 arquivos · 2 buscas", que abre com um clique.
+
 ## Robustez (Fase 7)
 
 - **Reinício do bridge**: canvas, notas, histórico dos agentes, MRs, regras e pedidos de permissão ficam no SQLite. Se o bridge cair (crash, `kill -9`, `tsx watch` recarregando) ou for desligado, quem estava trabalhando volta sozinho quando ele sobe de novo: o bridge retoma cada sessão com `--resume` e avisa o agente que houve um reinício. Com `AGENT_CANVAS_AUTO_RESUME=0`, eles ficam **Pausados** para você retomar.
