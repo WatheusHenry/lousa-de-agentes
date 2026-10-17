@@ -1,14 +1,16 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useStore as useFlow, type NodeProps } from '@xyflow/react';
 import { memo, useState } from 'react';
+import type { Agent, AgentEvent } from '@agent-canvas/shared';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
-import { isBlank, reposText, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
-
-const NO_PROJECTS: never[] = [];
+import { fmtK, fmtUsd, isBlank, reposText, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
 import { IconExpand } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
 import type { FlowNode } from '../canvas/flow.ts';
 
 const EMPTY: never[] = [];
+const NO_PROJECTS: never[] = [];
+/** Abaixo deste zoom o terminal fica ilegível: a janela mostra um resumo em letra grande. */
+const FAR = 0.75;
 
 /** Janela de terminal do agente no canvas. */
 function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
@@ -20,6 +22,7 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
   const message = useStore((s) => s.messageAgent);
   const [text, setText] = useState('');
   const { ref, onScroll } = useStickToBottom<HTMLDivElement>(events.length);
+  const far = useFlow((s) => s.transform[2] < FAR);
   if (!agent) return null;
   const blank = isBlank(agent);
   const sub = blank ? 'sem instrução ainda' : reposText(agent, projects);
@@ -49,41 +52,69 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
           <IconExpand />
         </button>
       </div>
-      <div className="tbody nodrag nowheel" ref={ref} onScroll={onScroll}>
-        {blank && events.length === 0 ? (
-          <div className="empty-term">
-            <b>Agente em branco</b>
-            <ul>
-              <li>Arraste um repositório ou uma issue da barra lateral para cima desta janela.</li>
-              <li>Escreva a primeira instrução abaixo. O agente começa por ela.</li>
-            </ul>
+      {far ? (
+        <AgentSummary agent={agent} events={events} />
+      ) : (
+        <>
+          <div className="tbody nodrag nowheel" ref={ref} onScroll={onScroll}>
+            {blank && events.length === 0 ? (
+              <div className="empty-term">
+                <b>Agente em branco</b>
+                <ul>
+                  <li>Arraste um repositório ou uma issue da barra lateral para cima desta janela.</li>
+                  <li>Escreva a primeira instrução abaixo. O agente começa por ela.</li>
+                </ul>
+              </div>
+            ) : (
+              <AgentLines agent={agent} events={events} />
+            )}
           </div>
-        ) : (
-          <AgentLines agent={agent} events={events} />
-        )}
-      </div>
-      <form
-        className="composer nodrag"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!text.trim()) return;
-          message(agent.id, text.trim());
-          setText('');
-        }}
-      >
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={blank ? `Primeira instrução para ${agent.name}` : `Mensagem para ${agent.name}`}
-          aria-label={`Mensagem para ${agent.name}`}
-          autoComplete="off"
-        />
-        <button className="send" aria-label="Enviar" disabled={!text.trim()}>
-          ↑
-        </button>
-      </form>
+          <form
+            className="composer nodrag"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!text.trim()) return;
+              message(agent.id, text.trim());
+              setText('');
+            }}
+          >
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={blank ? `Primeira instrução para ${agent.name}` : `Mensagem para ${agent.name}`}
+              aria-label={`Mensagem para ${agent.name}`}
+              autoComplete="off"
+            />
+            <button className="send" aria-label="Enviar" disabled={!text.trim()}>
+              ↑
+            </button>
+          </form>
+        </>
+      )}
       <Handle type="target" position={Position.Top} className="hidden-handle" />
       <Handle type="source" position={Position.Bottom} className="hidden-handle" />
+    </div>
+  );
+}
+
+/** Resumo para zoom afastado: tarefa, o que está fazendo (ou como terminou) e o gasto. */
+function AgentSummary({ agent: a, events }: { agent: Agent; events: AgentEvent[] }) {
+  let now = '';
+  for (let i = events.length - 1; i >= 0 && !now; i--) {
+    const b = events[i]!.body;
+    if (b.kind === 'tool_use') now = `${b.name.replace(/^mcp__canvas__/, '')}(${b.summary})`;
+    else if (b.kind === 'result') now = (b.text ?? '').split('\n').find((l) => l.trim()) ?? 'Turno concluído';
+    else if (b.kind === 'permission' && b.status === 'pending') now = `Pede permissão: ${b.summary}`;
+    else if (b.kind === 'question' && b.answer === null) now = `Pergunta: ${b.text}`;
+    else if (b.kind === 'error') now = b.message;
+  }
+  return (
+    <div className="wsum">
+      <div className="wsum-t">{a.title}</div>
+      {now && <div className="wsum-now">{now}</div>}
+      <div className="wsum-n">
+        {fmtK(a.inputTokens + a.outputTokens)} tokens · {fmtUsd(a.costUsd)}
+      </div>
     </div>
   );
 }

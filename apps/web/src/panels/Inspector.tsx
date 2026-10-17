@@ -27,7 +27,9 @@ export function Inspector() {
     useStore.getState().select(null);
     useStore.getState().setPanel(null);
   };
-  const open = !!(node || panel);
+  // no modo foco o painel some (o foco já mostra o item inteiro) e volta ao fechar
+  const focused = useStore((s) => !!s.focusId);
+  const open = !!(node || panel) && !focused;
 
   let kicker: ReactNode = null;
   let body: ReactNode = null;
@@ -150,7 +152,9 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
         <a className="btn" href={i.webUrl} target="_blank" rel="noreferrer noopener">
           Abrir no GitLab
         </a>
-        <button className="btn plain danger" onClick={() => s.removeNode(nodeId)}>
+      </div>
+      <div className="foot-danger">
+        <button className="btn plain danger sm" onClick={() => s.removeNode(nodeId)}>
           Remover do canvas
         </button>
       </div>
@@ -336,7 +340,9 @@ function MrPanel(nodeId: string): [ReactNode, ReactNode] {
         <a className="btn" href={m.webUrl} target="_blank" rel="noreferrer noopener">
           Abrir no GitLab
         </a>
-        <button className="btn plain danger" onClick={() => s.removeNode(nodeId)}>
+      </div>
+      <div className="foot-danger">
+        <button className="btn plain danger sm" onClick={() => s.removeNode(nodeId)}>
           Remover do canvas
         </button>
       </div>
@@ -434,8 +440,8 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
           edita a nota, os agentes ativos leem de novo.
         </p>
       </div>
-      <div className="row2">
-        <button className="btn plain danger" onClick={() => s.removeNode(nodeId)}>
+      <div className="foot-danger">
+        <button className="btn plain danger sm" onClick={() => s.removeNode(nodeId)}>
           Excluir nota
         </button>
       </div>

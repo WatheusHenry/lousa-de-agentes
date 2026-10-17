@@ -10,7 +10,8 @@ import { Sidebar } from './panels/Sidebar.tsx';
 import { Toast } from './panels/Toast.tsx';
 import { newAgentAt } from './actions.ts';
 import { refreshIssues } from './state/issues.ts';
-import { hasPendingUndo, liveAgents, liveMrs, useStore } from './state/store.ts';
+import { activeFixer, hasPendingUndo, liveAgents, liveMrs, useStore } from './state/store.ts';
+import { mrFailed, mrReady } from './mrs/mr-ui.tsx';
 
 const ISSUES_EVERY_MS = 60_000;
 
@@ -18,7 +19,7 @@ const ISSUES_EVERY_MS = 60_000;
 function workspaceName(paths: string[]): string {
   if (!paths.length) return '';
   const groups = new Set(paths.map((p) => p.split('/').slice(0, -1).join(' / ')));
-  if (groups.size === 1 && paths.length > 1) return [...groups][0]!;
+  if (groups.size === 1 && paths.length > 1) return `${[...groups][0]!} · ${paths.length} projetos`;
   return paths.length > 1
     ? `${paths[0]!.replace(/\//g, ' / ')} +${paths.length - 1}`
     : paths[0]!.replace(/\//g, ' / ');
@@ -113,6 +114,15 @@ function TopBar({ workspace }: { workspace: string }) {
   );
   const waiting = useStore((s) => liveAgents(s).filter((a) => a.status === 'waiting').length);
   const mrCount = useStore((s) => liveMrs(s).filter((m) => m.state === 'opened').length);
+  const mrReadyCount = useStore((s) => liveMrs(s).filter(mrReady).length);
+  const mrFailedCount = useStore(
+    (s) => liveMrs(s).filter((m) => mrFailed(m) && !activeFixer(s, m.ref)).length,
+  );
+  const goActions = () => {
+    useStore.getState().setTab('actions');
+    if (innerWidth <= 860) setSideOpen(true);
+    else if (sideHidden) setSideHidden(false);
+  };
   // aviso na aba do navegador quando um agente espera você (com o canvas em segundo plano)
   useEffect(() => {
     document.title = waiting ? `(${waiting}) Aguardando você · Agent Canvas` : 'Agent Canvas';
@@ -139,27 +149,37 @@ function TopBar({ workspace }: { workspace: string }) {
       </div>
       <div className="spacer" />
       <div className="stats">
-        <span className={`badge info${active ? ' live' : ''}`}>
-          <span className="d" />
-          {active} ativo{active === 1 ? '' : 's'}
-        </span>
+        {active > 0 ? (
+          <span className="badge info live">
+            <span className="d" />
+            {active} trabalhando
+          </span>
+        ) : (
+          <span className="badge quiet">Nenhum agente trabalhando</span>
+        )}
         {waiting > 0 && (
-          <button
-            className="badge warn badge-btn"
-            title="Ver ações pendentes"
-            onClick={() => {
-              useStore.getState().setTab('actions');
-              if (innerWidth <= 860) setSideOpen(true);
-              else if (sideHidden) setSideHidden(false);
-            }}
-          >
+          <button className="badge warn badge-btn" title="Ver ações pendentes" onClick={goActions}>
             <span className="d" />
             {waiting} aguardando você
           </button>
         )}
-        <span className="badge mrb">
-          {mrCount} MR{mrCount === 1 ? '' : 's'}
-        </span>
+        {mrFailedCount > 0 && (
+          <button className="badge bad badge-btn" title="Ver pipelines com falha" onClick={goActions}>
+            <span className="d" />
+            {mrFailedCount} pipeline{mrFailedCount > 1 ? 's' : ''} com falha
+          </button>
+        )}
+        {mrReadyCount > 0 ? (
+          <button className="badge ok badge-btn" title="Ver MRs prontos para merge" onClick={goActions}>
+            {mrReadyCount} MR{mrReadyCount > 1 ? 's' : ''} pronto{mrReadyCount > 1 ? 's' : ''} para merge
+          </button>
+        ) : (
+          mrCount > 0 && (
+            <span className="badge mrb">
+              {mrCount} MR{mrCount === 1 ? '' : 's'} aberto{mrCount === 1 ? '' : 's'}
+            </span>
+          )
+        )}
       </div>
       <button className="btn primary" onClick={() => newAgentAt()}>
         + Novo agente

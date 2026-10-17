@@ -27,7 +27,6 @@ export function Focus() {
   const focusId = useStore((s) => s.focusId);
   const node = useStore((s) => (s.focusId ? s.nodes[s.focusId] : undefined));
   const sideHidden = useStore((s) => s.sideHidden);
-  const inspOpen = useStore((s) => !!(s.selected || s.panel));
   const sheet = useRef<HTMLDivElement>(null);
   const bg = useRef<HTMLDivElement>(null);
   // o último item aberto continua desenhado durante a animação de saída
@@ -79,7 +78,8 @@ export function Focus() {
   const wide = innerWidth > 860;
   const style = {
     left: wide && !sideHidden ? 320 : wide ? 12 : 8,
-    right: wide && inspOpen ? 396 : wide ? 12 : 8,
+    // o painel da direita some no foco: o documento usa a largura toda
+    right: wide ? 12 : 8,
     top: 60,
     bottom: wide ? 12 : 76,
   };

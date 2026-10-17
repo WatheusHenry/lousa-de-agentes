@@ -183,6 +183,17 @@ const readIssueProjects = (): number[] => {
   }
 };
 
+/** "Como funciona" abre sozinho só na primeira visita; depois fica no botão da toolbar. */
+const firstVisit = () => {
+  try {
+    const first = !localStorage.getItem('ac-help-seen');
+    localStorage.setItem('ac-help-seen', '1');
+    return first;
+  } catch {
+    return true;
+  }
+};
+
 const readSideHidden = () => {
   try {
     return localStorage.getItem('ac-side-hidden') === '1';
@@ -212,7 +223,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   issuesLoading: false,
   issuesError: null,
   selected: null,
-  panel: 'help',
+  panel: firstVisit() ? 'help' : null,
   tab: 'issues',
   filter: 'all',
   query: '',

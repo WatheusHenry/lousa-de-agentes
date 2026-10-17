@@ -15,6 +15,7 @@ import { MrNode } from '../nodes/MrNode.tsx';
 import { NoteNode } from '../nodes/NoteNode.tsx';
 import { AgentNode } from '../nodes/AgentNode.tsx';
 import { useStore } from '../state/store.ts';
+import { IconIssue } from '../icons.tsx';
 import { openContextMenu } from './ContextMenu.tsx';
 import { EdgeMarkers, FloatingEdge } from './FloatingEdge.tsx';
 import { toFlowEdge, toFlowNode, type FlowNode } from './flow.ts';
@@ -226,6 +227,36 @@ export function Canvas() {
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={2} color="#d6d6db" bgColor="#f2f2f4" />
       </ReactFlow>
+      {nodes.length === 0 && <EmptyCanvas />}
+    </div>
+  );
+}
+
+/** Canvas sem nada: por onde começar, no lugar do espaço vazio. */
+function EmptyCanvas() {
+  const st = useStore.getState();
+  return (
+    <div className="canvas-empty">
+      <div className="ce-card">
+        <span className="ico issue">
+          <IconIssue />
+        </span>
+        <b>Comece por uma issue</b>
+        <p>
+          Arraste uma issue da barra lateral para cá, ou use o + ao lado dela. Depois é só clicar em Iniciar.
+        </p>
+        <div className="act-btns">
+          <button className="btn sm primary" onClick={() => st.setTab('issues')}>
+            Ver issues
+          </button>
+          <button className="btn sm" onClick={() => newAgentAt()}>
+            + Agente em branco
+          </button>
+          <button className="btn sm plain" onClick={() => st.setPanel('help')}>
+            Como funciona
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { memo } from 'react';
-import { detectRepos } from '@agent-canvas/shared';
+import { detectRepos, type AgentStatus } from '@agent-canvas/shared';
 import { startFromCard } from '../actions.ts';
 import { IconExpand, IconIssue } from '../icons.tsx';
-import { isRedLabel, repoName } from '../lib/format.ts';
+import { checklist, isRedLabel, repoName } from '../lib/format.ts';
 import { useStore } from '../state/store.ts';
 import type { FlowNode } from '../canvas/flow.ts';
 
@@ -17,11 +17,18 @@ function IssueNodeView({ id, data }: NodeProps<FlowNode>) {
     const i = s.issues[data.refId];
     return !!i && detectRepos(i, s.settings?.projects ?? []).length > 1;
   });
-  const agentCount = useStore(
-    (s) =>
-      Object.values(s.nodes).filter((n) => n.type === 'agent' && s.agents[n.refId]?.issueRef === data.refId)
-        .length,
+  // status dos agentes da issue no canvas, em texto (seletor estável para o zustand)
+  const statusKey = useStore((s) =>
+    Object.values(s.nodes)
+      .filter((n) => n.type === 'agent' && s.agents[n.refId]?.issueRef === data.refId)
+      .map((n) => s.agents[n.refId]!.status)
+      .join(','),
   );
+  const mrCount = useStore(
+    (s) =>
+      Object.values(s.mergeRequests).filter((m) => m.issueRef === data.refId && m.state !== 'closed').length,
+  );
+  const statuses = statusKey ? (statusKey.split(',') as AgentStatus[]) : [];
 
   if (!issue)
     return (
@@ -38,6 +45,7 @@ function IssueNodeView({ id, data }: NodeProps<FlowNode>) {
       </div>
     );
 
+  const crit = checklist(issue.description);
   return (
     <div className={`card ncard${fresh ? ' enter' : ''}`} data-drag>
       <div className="nhead">
@@ -63,10 +71,25 @@ function IssueNodeView({ id, data }: NodeProps<FlowNode>) {
       <div className="ntitle">{issue.title}</div>
       <div className="tags">
         <span className="badge repo">{repoName(issue)}</span>
+        {crit.length > 0 && (
+          <span className="badge crit" title="Critérios de aceite marcados na issue">
+            {crit.filter((c) => c.done).length}/{crit.length} critérios
+          </span>
+        )}
       </div>
+      {statuses.length > 0 && (
+        <div className="ag-prog" title="Agentes desta issue no canvas">
+          <span className="dots">
+            {statuses.slice(0, 8).map((st, k) => (
+              <span key={k} className={`sd ${st}`} />
+            ))}
+          </span>
+          <span>{progressText(statuses, mrCount)}</span>
+        </div>
+      )}
       <div className="nfoot">
         <span className="nmeta">
-          {agentCount ? `${agentCount} agente${agentCount > 1 ? 's' : ''}` : 'Sem agentes'} ·{' '}
+          {statuses.length ? `${statuses.length} agente${statuses.length > 1 ? 's' : ''}` : 'Sem agentes'} ·{' '}
           {issue.commentCount} coment.
           {noteCount ? ` · ${noteCount} nota${noteCount > 1 ? 's' : ''}` : ''}
         </span>
@@ -86,6 +109,21 @@ function IssueNodeView({ id, data }: NodeProps<FlowNode>) {
       <Handle type="source" position={Position.Bottom} className="hidden-handle" />
     </div>
   );
+}
+
+/** "2 trabalhando · 1 aguardando você · 1 MR": o que importa primeiro. */
+function progressText(statuses: AgentStatus[], mrs: number): string {
+  const n = (f: (s: AgentStatus) => boolean) => statuses.filter(f).length;
+  const parts = [
+    [n((s) => s === 'waiting'), 'aguardando você', 'aguardando você'],
+    [n((s) => s === 'error'), 'com erro', 'com erro'],
+    [n((s) => s === 'running' || s === 'coordinating'), 'trabalhando', 'trabalhando'],
+    [n((s) => s === 'queued'), 'na fila', 'na fila'],
+    [n((s) => s === 'done'), 'concluído', 'concluídos'],
+  ] as const;
+  const out = parts.filter(([c]) => c > 0).map(([c, one, many]) => `${c} ${c > 1 ? many : one}`);
+  if (mrs) out.push(`${mrs} MR${mrs > 1 ? 's' : ''}`);
+  return out.join(' · ') || 'parados';
 }
 
 export const IssueNode = memo(IssueNodeView);
