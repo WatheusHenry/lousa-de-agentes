@@ -215,6 +215,7 @@ export function Canvas() {
         nodesConnectable
         elementsSelectable={false}
         deleteKeyCode={null}
+        disableKeyboardA11y
         selectionKeyCode={null}
         multiSelectionKeyCode={null}
         zoomOnDoubleClick={false}
@@ -225,7 +226,13 @@ export function Canvas() {
         maxZoom={1.6}
         defaultViewport={{ x: 40, y: 30, zoom: 1 }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={2} color="#d6d6db" bgColor="#f2f2f4" />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={22}
+          size={2}
+          color="var(--dot)"
+          bgColor="var(--bg)"
+        />
       </ReactFlow>
       {nodes.length === 0 && <EmptyCanvas />}
     </div>

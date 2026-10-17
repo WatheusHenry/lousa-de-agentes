@@ -51,7 +51,7 @@ export function EdgeMarkers() {
       <path
         d="M1,1 L9,5 L1,9"
         fill="none"
-        stroke={color}
+        style={{ stroke: color }}
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -61,10 +61,10 @@ export function EdgeMarkers() {
   return (
     <svg style={{ position: 'absolute', width: 0, height: 0 }} aria-hidden="true">
       <defs>
-        {m('arr', '#c3c3c9')}
-        {m('arrA', '#0a6cf0')}
-        {m('arrM', '#c9b6f3')}
-        {m('arrN', '#e9c46a')}
+        {m('arr', 'var(--edge)')}
+        {m('arrA', 'var(--accent)')}
+        {m('arrM', 'var(--mr-edge)')}
+        {m('arrN', 'var(--note-line)')}
       </defs>
     </svg>
   );

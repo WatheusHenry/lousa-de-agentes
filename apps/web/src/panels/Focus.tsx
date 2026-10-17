@@ -5,7 +5,7 @@ import { api, ApiError } from '../api/http.ts';
 import { noteFor, startFromCard } from '../actions.ts';
 import { AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { nodeScreenRect, reducedMotion } from '../canvas/viewport.ts';
-import { IconAgent, IconIssue, IconMr, IconNote } from '../icons.tsx';
+import { IconAgent, IconIssue, IconMr, IconNote, IconSearch } from '../icons.tsx';
 import {
   checklist,
   descriptionWithoutChecklist,
@@ -480,48 +480,266 @@ function numbered(lines: string[]) {
   });
 }
 
+/** Trecho com as ocorrências da busca marcadas (sem diferenciar maiúsculas). */
+function marked(text: string, q: string): ReactNode {
+  if (!q) return text;
+  const low = text.toLowerCase();
+  const out: ReactNode[] = [];
+  let from = 0;
+  for (let i = low.indexOf(q); i >= 0; i = low.indexOf(q, i + q.length)) {
+    out.push(text.slice(from, i), <mark key={i}>{text.slice(i, i + q.length)}</mark>);
+    from = i + q.length;
+  }
+  out.push(text.slice(from));
+  return out;
+}
+
+const fileName = (f: MrDiffFile) => (f.renamedFile ? `${f.oldPath} → ${f.newPath}` : f.newPath);
+
+/**
+ * Diff do MR: lista dos arquivos para pular direto a um deles, arquivos recolhíveis e busca
+ * no texto das mudanças (Enter vai à próxima ocorrência, Shift + Enter à anterior).
+ */
+function DiffView({
+  files,
+  mr,
+  agentName,
+}: {
+  files: MrDiffFile[];
+  mr: MergeRequest;
+  agentName: string | null;
+}) {
+  const parsed = useMemo(() => files.map((f) => numbered(f.diff.replace(/\n$/, '').split('\n'))), [files]);
+  const [query, setQuery] = useState('');
+  const [cur, setCur] = useState(0);
+  const [closed, setClosed] = useState<Set<number>>(() => new Set());
+  const box = useRef<HTMLDivElement>(null);
+  const q = query.trim().toLowerCase();
+  // ocorrências: [arquivo, linha]; a linha do cabeçalho do hunk não conta
+  const hits = useMemo(() => {
+    const out: [number, number][] = [];
+    if (!q) return out;
+    parsed.forEach((lines, fi) =>
+      lines.forEach((x, li) => {
+        if (x.kind !== 'hunk' && x.l.slice(1).toLowerCase().includes(q)) out.push([fi, li]);
+      }),
+    );
+    return out;
+  }, [parsed, q]);
+  const at = hits.length ? Math.min(cur, hits.length - 1) : -1;
+  const current = at >= 0 ? hits[at]! : null;
+
+  useEffect(() => {
+    if (!current) return;
+    // ocorrência num arquivo recolhido: abre o arquivo antes de rolar até ela
+    if (closed.has(current[0])) {
+      setClosed((c) => new Set([...c].filter((i) => i !== current[0])));
+      return;
+    }
+    box.current
+      ?.querySelector(`[data-at="${current[0]}-${current[1]}"]`)
+      ?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }, [current?.[0], current?.[1], closed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const step = (d: number) => hits.length && setCur((at + d + hits.length) % hits.length);
+  const toggle = (i: number) =>
+    setClosed((c) => {
+      const n = new Set(c);
+      if (n.has(i)) n.delete(i);
+      else n.add(i);
+      return n;
+    });
+  const goFile = (i: number) => {
+    if (closed.has(i)) toggle(i);
+    requestAnimationFrame(() =>
+      box.current
+        ?.querySelector(`[data-file="${i}"]`)
+        ?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' }),
+    );
+  };
+  const perFile = (fi: number) => hits.filter((h) => h[0] === fi).length;
+
+  return (
+    <div className="dv" ref={box}>
+      <div className="dv-bar">
+        <div className="dv-search">
+          <IconSearch size={13} />
+          <input
+            value={query}
+            placeholder="Buscar nas mudanças"
+            aria-label="Buscar nas mudanças"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setCur(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                step(e.shiftKey ? -1 : 1);
+              } else if (e.key === 'Escape' && query) {
+                e.stopPropagation();
+                setQuery('');
+              }
+            }}
+          />
+          {q && (
+            <span className="dv-count" aria-live="polite">
+              {hits.length ? `${at + 1} de ${hits.length}` : 'nada'}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn plain icon xs"
+            aria-label="Ocorrência anterior"
+            disabled={!hits.length}
+            onClick={() => step(-1)}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="btn plain icon xs"
+            aria-label="Próxima ocorrência"
+            disabled={!hits.length}
+            onClick={() => step(1)}
+          >
+            ↓
+          </button>
+        </div>
+        {files.length > 1 && (
+          <button
+            type="button"
+            className="btn sm plain"
+            onClick={() => setClosed(closed.size ? new Set() : new Set(files.map((_, i) => i)))}
+          >
+            {closed.size ? 'Abrir todos' : 'Recolher todos'}
+          </button>
+        )}
+      </div>
+      {files.length > 1 && (
+        <ol className="dv-files" aria-label="Arquivos do MR">
+          {files.map((f, i) => {
+            const lines = parsed[i]!;
+            const n = perFile(i);
+            return (
+              <li key={i}>
+                <button
+                  type="button"
+                  className={q && !n ? 'dim' : ''}
+                  onClick={() => goFile(i)}
+                  title={fileName(f)}
+                >
+                  <span className="dv-fn">{fileName(f)}</span>
+                  {q ? (
+                    <small>{n}</small>
+                  ) : (
+                    <DiffStat
+                      add={lines.filter((x) => x.kind === 'add').length}
+                      del={lines.filter((x) => x.kind === 'del').length}
+                    />
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      <div className="dv-list">
+        {files.map((f, i) => (
+          <DiffFile
+            key={`${f.oldPath}:${f.newPath}`}
+            index={i}
+            f={f}
+            lines={parsed[i]!}
+            mr={mr}
+            agentName={agentName}
+            q={q}
+            current={current && current[0] === i ? current[1] : null}
+            open={!closed.has(i)}
+            onToggle={() => toggle(i)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Linhas de um diff unificado, com as classes do protótipo. Clicar numa linha abre um
  * comentário ali mesmo, que vai para o agente autor (e, se marcado, para o MR no GitLab).
  */
-function DiffFile({ f, mr, agentName }: { f: MrDiffFile; mr: MergeRequest; agentName: string | null }) {
-  const lines = numbered(f.diff.replace(/\n$/, '').split('\n'));
+function DiffFile({
+  index,
+  f,
+  lines,
+  mr,
+  agentName,
+  q,
+  current,
+  open,
+  onToggle,
+}: {
+  index: number;
+  f: MrDiffFile;
+  lines: ReturnType<typeof numbered>;
+  mr: MergeRequest;
+  agentName: string | null;
+  q: string;
+  current: number | null;
+  open: boolean;
+  onToggle(): void;
+}) {
   const add = lines.filter((x) => x.kind === 'add').length;
   const del = lines.filter((x) => x.kind === 'del').length;
-  const name = f.renamedFile ? `${f.oldPath} → ${f.newPath}` : f.newPath;
   const [at, setAt] = useState<number | null>(null);
   return (
-    <div className="diff">
-      <div className="diff-h">
-        <span>
-          {name}
+    <div className={`diff${open ? '' : ' shut'}`} data-file={index}>
+      <button type="button" className="diff-h" aria-expanded={open} onClick={onToggle}>
+        <span className="diff-caret" aria-hidden="true">
+          ▾
+        </span>
+        <span className="diff-name">
+          {fileName(f)}
           {f.newFile ? ' (novo)' : f.deletedFile ? ' (removido)' : ''}
         </span>
         <DiffStat add={add} del={del} />
-      </div>
-      <div className="diff-b">
-        {lines.map((x, i) => (
-          <div key={i}>
-            <div
-              className={`dl ${x.kind}${x.n !== null ? ' can' : ''}${at === i ? ' on' : ''}`}
-              title={x.n !== null ? 'Clique para comentar nesta linha' : undefined}
-              onClick={() => x.n !== null && setAt(at === i ? null : i)}
-            >
-              <span className="dn">{x.n ?? ''}</span>
-              {x.l || ' '}
-            </div>
-            {at === i && (
-              <LineComment
-                mr={mr}
-                agentName={agentName}
-                where={`${f.newPath}${x.kind === 'del' ? ' (linha removida)' : ''}:${x.n}`}
-                code={x.l}
-                onDone={() => setAt(null)}
-              />
-            )}
-          </div>
-        ))}
-      </div>
+      </button>
+      {open && (
+        <div className="diff-b">
+          {lines.map((x, i) => {
+            const hit = !!q && x.kind !== 'hunk' && x.l.slice(1).toLowerCase().includes(q);
+            return (
+              <div key={i}>
+                <div
+                  className={`dl ${x.kind}${x.n !== null ? ' can' : ''}${at === i ? ' on' : ''}${hit ? ' hit' : ''}${current === i ? ' cur' : ''}`}
+                  data-at={hit ? `${index}-${i}` : undefined}
+                  title={x.n !== null ? 'Clique para comentar nesta linha' : undefined}
+                  onClick={() => x.n !== null && setAt(at === i ? null : i)}
+                >
+                  <span className="dn">{x.n ?? ''}</span>
+                  {hit ? (
+                    <>
+                      {x.l[0]}
+                      {marked(x.l.slice(1), q)}
+                    </>
+                  ) : (
+                    x.l || ' '
+                  )}
+                </div>
+                {at === i && (
+                  <LineComment
+                    mr={mr}
+                    agentName={agentName}
+                    where={`${f.newPath}${x.kind === 'del' ? ' (linha removida)' : ''}:${x.n}`}
+                    code={x.l}
+                    onDone={() => setAt(null)}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -691,11 +909,7 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
                 Sem mudanças para mostrar.
               </p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {files.map((f) => (
-                  <DiffFile key={`${f.oldPath}:${f.newPath}`} f={f} mr={mr} agentName={agent?.name ?? null} />
-                ))}
-              </div>
+              <DiffView files={files} mr={mr} agentName={agent?.name ?? null} />
             )}
           </section>
           <section>

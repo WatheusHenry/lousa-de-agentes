@@ -15,9 +15,11 @@ import {
   IconNote,
   IconPlus,
   IconSearch,
+  IconTheme,
 } from '../icons.tsx';
 import { firstLine } from '../lib/format.ts';
 import { useStore } from '../state/store.ts';
+import { effectiveTheme, toggleTheme } from '../theme.ts';
 
 interface Item {
   id: string;
@@ -124,6 +126,12 @@ export function Palette() {
         <IconGear key="g" />,
         'Token, instância, pasta dos repositórios',
         () => st.setSettingsOpen(true),
+      ],
+      [
+        effectiveTheme() === 'dark' ? 'Tema claro' : 'Tema escuro',
+        <IconTheme key="t" />,
+        'Troca o tema (escolha fixa em Automações e agentes)',
+        toggleTheme,
       ],
       ['Como funciona', <IconHelp key="h" />, 'Guia rápido e atalhos', () => st.setPanel('help')],
     ];

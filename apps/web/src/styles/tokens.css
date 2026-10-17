@@ -1,4 +1,5 @@
-/* Tokens de design copiados do protótipo (docs/prototype/agent-canvas.html). Tema claro, único por decisão. */
+/* Tokens de design copiados do protótipo (docs/prototype/agent-canvas.html). Tema claro por padrão; o escuro
+   vale com o sistema escuro (sem escolha manual) ou com data-theme="dark" no <html>. */
 :root {
   color-scheme: light;
   --bg: #f2f2f4;
@@ -7,22 +8,28 @@
   --subtle: #f7f7f8;
   --hover: #f0f0f2;
   --fg: #1d1d1f;
+  --fg2: #3a3a3c;
+  /* texto sobre fundo --fg (botão de enviar, chip ativo) */
+  --on-fg: #ffffff;
   --muted: #6e6e73;
   --faint: #a1a1a6;
   --line: #e6e6e9;
   --line-strong: #d2d2d7;
   --accent: #0a6cf0;
   --accent-soft: #e9f1fe;
+  --accent-ink: #123a7a;
   --issue: #e2560b;
   --issue-soft: #fff0e5;
   --mr: #7a4ce0;
   --mr-soft: #f1ecfd;
+  --mr-edge: #c9b6f3;
   --repo: #0e7a6b;
   --repo-soft: #e2f4f0;
   --ok: #0c7a43;
   --ok-soft: #dbf6e6;
   --warn: #8a5a00;
   --warn-soft: #fff3c4;
+  --warn-ink: #5c3d00;
   --bad: #c4291c;
   --bad-soft: #fde7e5;
   --edge: #c3c3c9;
@@ -30,6 +37,9 @@
   --note-soft: #fff3c8;
   --note-bg: #fffcf2;
   --note-line: #e9c46a;
+  /* fundos translúcidos: barras flutuantes e véu atrás de diálogos */
+  --glass: rgba(255, 255, 255, 0.9);
+  --veil: rgba(242, 242, 244, 0.35);
   --r-xs: 6px;
   --r-sm: 9px;
   --r-md: 12px;
@@ -46,6 +56,126 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* tema escuro: pela preferência do sistema, a menos que o usuário tenha escolhido o claro */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #111113;
+    --dot: #2b2b30;
+    --surface: #1c1c1f;
+    --subtle: #19191c;
+    --hover: #27272b;
+    --fg: #ececf0;
+    --fg2: #c9c9ce;
+    --on-fg: #111113;
+    --muted: #9b9ba2;
+    --faint: #6c6c73;
+    --line: #2d2d32;
+    --line-strong: #3c3c42;
+    --accent: #4b93ff;
+    --accent-soft: #15273f;
+    --accent-ink: #b0cdff;
+    --issue: #ff8d50;
+    --issue-soft: #3a2316;
+    --mr: #ad8eff;
+    --mr-soft: #271d3e;
+    --mr-edge: #6d58a8;
+    --repo: #45c4b0;
+    --repo-soft: #11302b;
+    --ok: #45d083;
+    --ok-soft: #123020;
+    --warn: #f0b545;
+    --warn-soft: #372a0d;
+    --warn-ink: #f4d48e;
+    --bad: #ff6f62;
+    --bad-soft: #3b1815;
+    --edge: #4b4b53;
+    --note: #e8b84e;
+    --note-soft: #3a2f11;
+    --note-bg: #1f1c13;
+    --note-line: #8c7232;
+    --glass: rgba(28, 28, 31, 0.9);
+    --veil: rgba(0, 0, 0, 0.42);
+    --sh-card:
+      0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+    --sh-float:
+      0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 48px -16px rgba(0, 0, 0, 0.7);
+  }
+  :root:not([data-theme='light']) .btn.primary {
+    background: #ececf0;
+    background-image: none;
+    color: #111113;
+    box-shadow: none;
+  }
+  :root:not([data-theme='light']) .btn.primary:hover {
+    background-color: #ffffff;
+  }
+  :root:not([data-theme='light']) .toast {
+    background: #2c2c31;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 12px 32px -10px rgba(0, 0, 0, 0.7);
+  }
+}
+/* tema escuro escolhido à mão */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #111113;
+  --dot: #2b2b30;
+  --surface: #1c1c1f;
+  --subtle: #19191c;
+  --hover: #27272b;
+  --fg: #ececf0;
+  --fg2: #c9c9ce;
+  --on-fg: #111113;
+  --muted: #9b9ba2;
+  --faint: #6c6c73;
+  --line: #2d2d32;
+  --line-strong: #3c3c42;
+  --accent: #4b93ff;
+  --accent-soft: #15273f;
+  --accent-ink: #b0cdff;
+  --issue: #ff8d50;
+  --issue-soft: #3a2316;
+  --mr: #ad8eff;
+  --mr-soft: #271d3e;
+  --mr-edge: #6d58a8;
+  --repo: #45c4b0;
+  --repo-soft: #11302b;
+  --ok: #45d083;
+  --ok-soft: #123020;
+  --warn: #f0b545;
+  --warn-soft: #372a0d;
+  --warn-ink: #f4d48e;
+  --bad: #ff6f62;
+  --bad-soft: #3b1815;
+  --edge: #4b4b53;
+  --note: #e8b84e;
+  --note-soft: #3a2f11;
+  --note-bg: #1f1c13;
+  --note-line: #8c7232;
+  --glass: rgba(28, 28, 31, 0.9);
+  --veil: rgba(0, 0, 0, 0.42);
+  --sh-card:
+    0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  --sh-float:
+    0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 48px -16px rgba(0, 0, 0, 0.7);
+}
+:root[data-theme='dark'] .btn.primary {
+  background: #ececf0;
+  background-image: none;
+  color: #111113;
+  box-shadow: none;
+}
+:root[data-theme='dark'] .btn.primary:hover {
+  background-color: #ffffff;
+}
+:root[data-theme='dark'] .toast {
+  background: #2c2c31;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 12px 32px -10px rgba(0, 0, 0, 0.7);
 }
 @supports (corner-shape: squircle) {
   :root {

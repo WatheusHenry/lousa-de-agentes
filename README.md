@@ -191,6 +191,13 @@ O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado
 - **Arquivar**: no painel da issue ou no botão direito, tira do canvas a issue com os agentes dela, os MRs e as notas que só servem a ela. Não arquiva com agente trabalhando. Nada é apagado: a seção **Arquivadas** da aba Issues tem **Restaurar**, e arrastar a issue de novo do backlog também traz tudo de volta.
 - **Paleta Ctrl/⌘ + K** (ou **Buscar** na toolbar): acha qualquer agente, issue, nota ou MR, traz issues do backlog e roda as ações mais usadas pelo teclado.
 
+## Revisar, acompanhar gastos e teclado
+
+- **Diff do MR** (modo foco): clique numa linha para comentar. O comentário vai direto ao agente autor e, se marcado, também para o MR no GitLab. **Buscar nas mudanças** marca as ocorrências (Enter vai à próxima, Shift + Enter à anterior); com vários arquivos, a lista no topo pula para cada um, e cada arquivo pode ser recolhido.
+- **Gastos dos agentes** (aba **Atividade**): hoje, 7 dias e total, por issue ou por projeto, e um gráfico dos últimos 30 dias. O gasto de cada agente conta no dia em que ele começou. Em **Avisar acima de US$ … por dia**, o canvas avisa uma vez por dia quando o gasto passa do limite (só avisa, não para os agentes; o limite fica neste navegador).
+- **Atalhos no canvas** (fora de campos de texto): **N** novo agente, **Shift + N** nova nota, **setas** vão ao item vizinho, **Enter** abre o item selecionado em foco, **A** aba Ações, **F** enquadra tudo, **?** abre a ajuda com a lista completa.
+- **Tema escuro**: segue o sistema por padrão; em Automações → Aparência dá para fixar Claro ou Escuro (ou trocar pela paleta).
+
 ## Robustez (Fase 7)
 
 - **Reinício do bridge**: canvas, notas, histórico dos agentes, MRs, regras e pedidos de permissão ficam no SQLite. Se o bridge cair (crash, `kill -9`, `tsx watch` recarregando) ou for desligado, quem estava trabalhando volta sozinho quando ele sobe de novo: o bridge retoma cada sessão com `--resume` e avisa o agente que houve um reinício. Com `AGENT_CANVAS_AUTO_RESUME=0`, eles ficam **Pausados** para você retomar.

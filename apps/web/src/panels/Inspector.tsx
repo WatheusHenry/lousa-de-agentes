@@ -651,12 +651,38 @@ function Help() {
         ))}
       </ul>
       <p className="desc" style={{ color: 'var(--muted)', fontSize: 12.5 }}>
-        Atalhos: Ctrl/⌘ + B mostra ou esconde a barra lateral, Delete remove o item selecionado, Ctrl/⌘ + Z
-        desfaz, Ctrl/⌘ + scroll dá zoom.
+        Ctrl/⌘ + scroll dá zoom no canvas.
       </p>
+      <h4 className="help-h">Atalhos de teclado</h4>
+      <dl className="keys">
+        {KEYS.map(([k, what]) => (
+          <div key={what}>
+            <dt>
+              {k.split(' ').map((x) => (
+                <kbd key={x}>{x}</kbd>
+              ))}
+            </dt>
+            <dd>{what}</dd>
+          </div>
+        ))}
+      </dl>
     </>
   );
 }
+
+const KEYS: [string, string][] = [
+  ['Ctrl/⌘ K', 'Buscar e executar'],
+  ['N', 'Novo agente'],
+  ['Shift N', 'Nova nota'],
+  ['← ↑ → ↓', 'Ir ao item vizinho'],
+  ['Enter', 'Abrir o item em foco'],
+  ['A', 'Aba Ações'],
+  ['F', 'Enquadrar tudo'],
+  ['Delete', 'Remover o item'],
+  ['Ctrl/⌘ Z', 'Desfazer'],
+  ['Ctrl/⌘ B', 'Barra lateral'],
+  ['?', 'Esta ajuda'],
+];
 
 const AUTOS: { key: keyof AutomationsT; when: string; then: string; desc: string }[] = [
   {

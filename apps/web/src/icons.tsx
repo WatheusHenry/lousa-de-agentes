@@ -286,3 +286,18 @@ export const IconDoc = ({ size = 14 }: P) => (
     <path d="M9 1.75V5.25h3.5M6 8.25h4.25M6 10.75h4.25" />
   </svg>
 );
+export const IconTheme = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" fill="currentColor" />
+  </svg>
+);

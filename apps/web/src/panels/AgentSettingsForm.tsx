@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentSettings, AgentSettingsInput } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { Select } from '../components/Select.tsx';
 import { disableNotify, enableNotify, notifySupported, notifyWanted } from '../notify.ts';
 import { useStore } from '../state/store.ts';
+import { onThemeChange, setThemePref, themePref, type ThemePref } from '../theme.ts';
 
 const MODELS = ['opus', 'sonnet', 'haiku'];
+const THEMES: [ThemePref, string][] = [
+  ['system', 'Do sistema'],
+  ['light', 'Claro'],
+  ['dark', 'Escuro'],
+];
 /** Campos numéricos: chave, rótulo, unidade e o fator entre o valor guardado e o mostrado. */
 const FIELDS: { key: Exclude<keyof AgentSettings, 'model'>; label: string; unit: string; k: number }[] = [
   { key: 'maxRunning', label: 'Agentes ao mesmo tempo', unit: 'agentes', k: 1 },
@@ -32,6 +38,8 @@ export function AgentSettingsForm() {
     () => notifyWanted() && notifySupported() && Notification.permission === 'granted',
   );
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  const [theme, setTheme] = useState(themePref);
+  useEffect(() => onThemeChange(setTheme), []);
 
   const patch: AgentSettingsInput = {};
   for (const f of FIELDS) {
@@ -78,6 +86,16 @@ export function AgentSettingsForm() {
   const custom = cur.model && !MODELS.includes(cur.model) ? [cur.model] : [];
   return (
     <>
+      <div className="grp">
+        <h4>Aparência</h4>
+        <div className="chips" role="group" aria-label="Tema">
+          {THEMES.map(([v, label]) => (
+            <button key={v} className="chip" aria-pressed={theme === v} onClick={() => setThemePref(v)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grp">
         <h4>Avisos</h4>
         <div className="rules">

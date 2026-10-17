@@ -152,3 +152,39 @@ export function nodeScreenRect(id: string): DOMRect | null {
 }
 
 export const canvasElement = () => el;
+
+export type Dir = 'left' | 'right' | 'up' | 'down';
+
+/**
+ * O nó mais perto na direção pedida, a partir do centro de `from` (ou do centro da tela, sem
+ * seleção). Conta a distância no eixo da direção e pune o desvio lateral, para a seta seguir a
+ * linha ou a coluna antes de pular para o lado.
+ */
+export function neighbor(from: string | null, dir: Dir): string | null {
+  if (!rf) return null;
+  const ids = rf.getNodes().map((n) => n.id);
+  const center = (id: string) => {
+    const r = sizeOf(id);
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+  };
+  const o = from && ids.includes(from) ? center(from) : viewCenter();
+  let best: string | null = null;
+  let bestScore = Infinity;
+  for (const id of ids) {
+    if (id === from) continue;
+    const c = center(id);
+    const dx = c.x - o.x;
+    const dy = c.y - o.y;
+    const along = dir === 'left' ? -dx : dir === 'right' ? dx : dir === 'up' ? -dy : dy;
+    const side = dir === 'left' || dir === 'right' ? Math.abs(dy) : Math.abs(dx);
+    if (along <= 1) continue;
+    const score = along + side * 2;
+    if (score < bestScore) {
+      bestScore = score;
+      best = id;
+    }
+  }
+  // sem seleção, a primeira seta só pega o nó mais perto do centro
+  if (!from && !best && ids.length) return ids[0]!;
+  return best;
+}

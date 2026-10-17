@@ -3,18 +3,26 @@ import { useEffect, useRef } from 'react';
 import { Canvas } from './canvas/Canvas.tsx';
 import { closeMenu, ContextMenu, isMenuOpen } from './canvas/ContextMenu.tsx';
 import { Toolbar } from './canvas/Toolbar.tsx';
+import { type Dir, fit, focusNode, neighbor } from './canvas/viewport.ts';
 import { IconSide } from './icons.tsx';
 import { Focus } from './panels/Focus.tsx';
 import { Inspector } from './panels/Inspector.tsx';
 import { Palette } from './panels/Palette.tsx';
 import { Sidebar } from './panels/Sidebar.tsx';
 import { Toast } from './panels/Toast.tsx';
-import { newAgentAt } from './actions.ts';
+import { newAgentAt, newNoteAt } from './actions.ts';
+import { useBudgetWatch } from './costs.ts';
 import { refreshIssues } from './state/issues.ts';
 import { activeFixer, hasPendingUndo, liveAgents, liveMrs, useStore } from './state/store.ts';
 import { mrFailed, mrReady } from './mrs/mr-ui.tsx';
 
 const ISSUES_EVERY_MS = 60_000;
+const ARROWS: Record<string, Dir> = {
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+};
 
 /** Nome do espaço de trabalho no topo: o grupo em comum dos projetos, ou o primeiro projeto. */
 function workspaceName(paths: string[]): string {
@@ -27,6 +35,7 @@ function workspaceName(paths: string[]): string {
 }
 
 export function Workspace() {
+  useBudgetWatch();
   const settings = useStore((s) => s.settings)!;
   const sideHidden = useStore((s) => s.sideHidden);
   const connection = useStore((s) => s.connection);
@@ -71,6 +80,47 @@ export function Workspace() {
       if ((e.key === 'Delete' || e.key === 'Backspace') && st.selected && !typing && !st.focusId) {
         e.preventDefault();
         st.removeNode(st.selected);
+        return;
+      }
+      // teclas soltas só valem no canvas: sem modificador, sem digitar, sem foco, paleta ou diálogo
+      const free =
+        !mod &&
+        !e.altKey &&
+        !typing &&
+        !st.focusId &&
+        !st.paletteOpen &&
+        !st.settingsOpen &&
+        !document.querySelector('.fpick-bg, .setup.modal');
+      if (!free) return;
+      const onControl = !!t.closest?.('button,a,[role=option],[role=tab],[role=listbox]');
+      const dir = ARROWS[e.key];
+      if (dir && !onControl) {
+        e.preventDefault();
+        const id = neighbor(st.selected, dir);
+        if (id) focusNode(id);
+        return;
+      }
+      if (e.key === 'Enter' && st.selected && !onControl) {
+        e.preventDefault();
+        st.openFocus(st.selected);
+        return;
+      }
+      const k = e.key.length === 1 ? e.key.toLowerCase() : '';
+      if (k === 'n') {
+        e.preventDefault();
+        if (e.shiftKey) newNoteAt();
+        else newAgentAt();
+      } else if (k === 'a') {
+        e.preventDefault();
+        st.setTab('actions');
+        if (innerWidth <= 860) st.setSideOpen(true);
+        else if (st.sideHidden) st.setSideHidden(false);
+      } else if (k === 'f') {
+        e.preventDefault();
+        fit(true);
+      } else if (e.key === '?') {
+        e.preventDefault();
+        st.setPanel(st.panel === 'help' ? null : 'help');
       }
     };
     addEventListener('keydown', key);
