@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { AgentSettings, AgentSettingsInput } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
+import { MODELS } from '../agents/ModelPicker.tsx';
 import { Select } from '../components/Select.tsx';
 import { disableNotify, enableNotify, notifySupported, notifyWanted } from '../notify.ts';
 import { useStore } from '../state/store.ts';
 import { onThemeChange, setThemePref, themePref, type ThemePref } from '../theme.ts';
 
-const MODELS = ['opus', 'sonnet', 'haiku'];
 const THEMES: [ThemePref, string][] = [
   ['system', 'Do sistema'],
   ['light', 'Claro'],

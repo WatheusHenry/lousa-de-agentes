@@ -3,6 +3,7 @@ import { detectRepos, type Automations as AutomationsT, type Issue } from '@agen
 import { api, ApiError } from '../api/http.ts';
 import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
+import { modelOptions } from '../agents/ModelPicker.tsx';
 import { AgentSettingsForm } from './AgentSettingsForm.tsx';
 import { Markdown } from '../components/Markdown.tsx';
 import { Select } from '../components/Select.tsx';
@@ -172,6 +173,8 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
   const [repos, setRepos] = useState<number[]>(detected);
   const [depth, setDepth] = useState(repos.length > 1 ? 1 : 0);
   const [openMr, setOpenMr] = useState(true);
+  const [model, setModel] = useState('');
+  const fallbackModel = useStore((s) => s.settings?.agents.model ?? null);
   const [extra, setExtra] = useState('');
   const toggle = (id: number) => {
     const next = repos.includes(id) ? repos.filter((r) => r !== id) : [...repos, id];
@@ -188,6 +191,7 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
     orch ? `${names.length} repositórios` : (names[0] ?? 'repositório da issue'),
     depth === 0 ? 'sem sub-agentes' : `sub-agentes até ${depth} nível${depth > 1 ? 's' : ''}`,
     openMr ? 'abre MR ao final' : 'sem MR',
+    ...(model ? [model] : []),
   ].join(' · ');
   return (
     <>
@@ -233,6 +237,16 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
             ao final
           </label>
         </div>
+        <div className="row2">
+          <Select
+            className="auto"
+            label="Modelo"
+            value={model}
+            onChange={setModel}
+            options={modelOptions(fallbackModel, null)}
+          />
+          <span className="lab">Sub-agentes usam o mesmo modelo. Dá para trocar depois, no terminal.</span>
+        </div>
       </div>
       <div className="grp">
         <h4>Instruções extras</h4>
@@ -250,7 +264,9 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
         <span className="lab">{summary}</span>
         <button
           className={`btn${hasAgents ? '' : ' primary'}`}
-          onClick={() => startIssueAgent(nodeId, extra, { repos, maxDepth: depth, openMr })}
+          onClick={() =>
+            startIssueAgent(nodeId, extra, { repos, maxDepth: depth, openMr, model: model || null })
+          }
         >
           {hasAgents ? 'Iniciar de novo: ' : 'Iniciar '}
           {orch ? `orquestrador (${repos.length} repositórios)` : 'agente'}

@@ -28,6 +28,7 @@ import {
 } from '../mrs/mr-ui.tsx';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
 import { AutoModeToggle, autoModeKey } from '../agents/AutoModeToggle.tsx';
+import { ModelPicker } from '../agents/ModelPicker.tsx';
 import { isBlank, reposText, roleLabel, statusLabel, statusTone, SUGGESTIONS } from '../agents/agent-ui.ts';
 
 const NO_PROJECTS: never[] = [];
@@ -1194,7 +1195,10 @@ function AgentDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           </button>
         </form>
         <div className="f-hint f-hint-row">
-          <AutoModeToggle agent={agent} full />
+          <span className="f-hint-chips">
+            <AutoModeToggle agent={agent} full />
+            <ModelPicker agent={agent} />
+          </span>
           <span>Enter envia · Shift + Enter quebra linha · Esc fecha</span>
         </div>
       </div>

@@ -330,6 +330,45 @@ describe('supervisor', () => {
     expect(existsSync(agentState('a3')!.worktreePath!)).toBe(true);
   });
 
+  it('modelo por agente: escolhido na criação, trocado no terminal, nulo volta ao padrão', async () => {
+    runner.turn = async (opts, h) => {
+      h.onLine(init(opts.sessionId));
+      h.onLine(result(opts.sessionId));
+    };
+    await b.app.inject({
+      method: 'PUT',
+      url: '/api/settings/agents',
+      headers: b.headers,
+      payload: { model: 'opus' },
+    });
+    send({
+      type: 'agent.create',
+      agentId: 'a4',
+      nodeId: 'n-a4',
+      repos: [101],
+      instruction: 'Faça algo',
+      model: 'haiku',
+      x: 0,
+      y: 0,
+    });
+    await until(() => agentState('a4')?.status === 'done', 'primeiro turno');
+    expect(agentState('a4')!.model).toBe('haiku');
+    expect(runner.starts[0]!.model).toBe('haiku');
+
+    send({ type: 'agent.model', agentId: 'a4', model: 'sonnet' });
+    await until(() => agentState('a4')?.model === 'sonnet', 'modelo trocado');
+    send({ type: 'agent.message', agentId: 'a4', text: 'De novo' });
+    await until(() => runner.starts.length === 2, 'segundo processo');
+    expect(runner.starts[1]).toMatchObject({ resume: true, model: 'sonnet' });
+    await until(() => agentState('a4')?.status === 'done' && runner.sent.length === 2, 'segundo turno');
+
+    send({ type: 'agent.model', agentId: 'a4', model: null });
+    await until(() => agentState('a4')?.model === null, 'modelo padrão');
+    send({ type: 'agent.message', agentId: 'a4', text: 'Mais uma' });
+    await until(() => runner.starts.length === 3, 'terceiro processo');
+    expect(runner.starts[2]!.model).toBe('opus');
+  });
+
   it('MCP recusa token desconhecido', async () => {
     const res = await fetch(`http://127.0.0.1:${TEST_PORT}/mcp`, {
       method: 'POST',

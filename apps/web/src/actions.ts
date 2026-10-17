@@ -67,7 +67,7 @@ export function newAgentAt(at?: { x: number; y: number }, opts: { repos?: number
 export function startIssueAgent(
   issueNodeId: string,
   extra?: string,
-  opts: { repos?: number[]; maxDepth?: number; openMr?: boolean } = {},
+  opts: { repos?: number[]; maxDepth?: number; openMr?: boolean; model?: string | null } = {},
 ) {
   const st = useStore.getState();
   const n = st.nodes[issueNodeId];
@@ -81,6 +81,7 @@ export function startIssueAgent(
     ...(opts.repos?.length ? { repos: opts.repos } : {}),
     ...(opts.maxDepth !== undefined ? { maxDepth: opts.maxDepth } : {}),
     ...(opts.openMr !== undefined ? { openMr: opts.openMr } : {}),
+    ...(opts.model ? { model: opts.model } : {}),
   });
   revealWhenReady(nodeId);
   return nodeId;

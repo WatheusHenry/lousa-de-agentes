@@ -4720,3 +4720,43 @@ button.diff-h:hover {
   justify-content: space-between;
   gap: 10px;
 }
+/* modelo do agente no terminal: chip com a lista abrindo para cima */
+.model-chip {
+  flex-shrink: 0;
+}
+.model-chip .sel-btn {
+  gap: 4px;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hover);
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.model-chip .sel-btn:hover {
+  color: var(--fg);
+}
+.model-chip .sel-btn > span:first-child {
+  max-width: 120px;
+}
+.model-chip .sel-caret {
+  font-size: 9px;
+}
+.model-chip .sel-list {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  min-width: 200px;
+}
+.f-hint-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
