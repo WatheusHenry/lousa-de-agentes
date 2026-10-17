@@ -127,6 +127,7 @@ export interface CanvasState {
   messageAgent(agentId: string, text: string): void;
   /** Modo automático do agente (sem pedir permissão a cada passo). */
   setAgentMode(agentId: string, auto: boolean): void;
+  renameAgent(agentId: string, to: { name?: string; title?: string }): void;
   pauseAgent(agentId: string): void;
   resumeAgent(agentId: string): void;
   stopAgent(agentId: string): void;
@@ -551,6 +552,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
     });
     send({ type: 'agent.mode', agentId, auto });
   },
+  renameAgent: (agentId, to) => send({ type: 'agent.rename', agentId, ...to }),
   pauseAgent: (agentId) => send({ type: 'agent.pause', agentId }),
   resumeAgent: (agentId) => send({ type: 'agent.resume', agentId }),
   stopAgent: (agentId) => send({ type: 'agent.stop', agentId }),

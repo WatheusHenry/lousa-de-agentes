@@ -123,9 +123,16 @@ export const ClientMessage = z.discriminatedUnion('type', [
     x: Coord,
     y: Coord,
   }),
-  /** Dá contexto a um agente em branco antes de começar: repositório e issue. */
   /** Liga ou desliga o modo automático de um agente (Shift+Tab no terminal dele). */
   z.object({ type: z.literal('agent.mode'), agentId: Id, auto: z.boolean() }),
+  /** Muda o nome ou o título (para que serve) de um agente, a qualquer momento. */
+  z.object({
+    type: z.literal('agent.rename'),
+    agentId: Id,
+    name: z.string().trim().min(1).max(40).optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+  }),
+  /** Dá contexto a um agente em branco antes de começar: repositório e issue. */
   z.object({
     type: z.literal('agent.update'),
     agentId: Id,

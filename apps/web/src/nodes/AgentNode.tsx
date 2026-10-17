@@ -3,6 +3,7 @@ import { memo, useState } from 'react';
 import type { Agent, AgentEvent } from '@agent-canvas/shared';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
 import { AutoModeToggle, autoModeKey } from '../agents/AutoModeToggle.tsx';
+import { EditableText } from '../agents/EditableText.tsx';
 import { fmtK, fmtUsd, isBlank, reposText, roleLabel, statusLabel, statusTone } from '../agents/agent-ui.ts';
 import { IconExpand } from '../icons.tsx';
 import { useStore } from '../state/store.ts';
@@ -21,6 +22,7 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
   const projects = useStore((s) => s.settings?.projects ?? NO_PROJECTS);
   const openFocus = useStore((s) => s.openFocus);
   const message = useStore((s) => s.messageAgent);
+  const rename = useStore((s) => s.renameAgent);
   const [text, setText] = useState('');
   const { ref, onScroll } = useStickToBottom<HTMLDivElement>(events.length);
   const far = useFlow((s) => s.transform[2] < FAR);
@@ -36,9 +38,15 @@ function AgentNodeView({ id, data }: NodeProps<FlowNode>) {
           <i />
           <i />
         </span>
-        <span className="wname">{agent.name}</span>
-        <span className="wsub">
-          {roleLabel(agent)} · {sub}
+        <EditableText
+          className="wname"
+          value={agent.name}
+          label="Renomear agente"
+          stop
+          onSave={(name) => rename(agent.id, { name })}
+        />
+        <span className="wsub" title={blank ? undefined : agent.title}>
+          {roleLabel(agent)} · {blank ? sub : `${agent.title} · ${sub}`}
         </span>
         <span className={`badge st ${statusTone(agent.status)}`}>
           <span className="d" />

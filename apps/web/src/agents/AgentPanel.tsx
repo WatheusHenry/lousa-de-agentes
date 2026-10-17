@@ -5,6 +5,7 @@ import { askOpenMr } from '../actions.ts';
 import { Select } from '../components/Select.tsx';
 import { ContextSection } from '../context/ContextSection.tsx';
 import { AgentTimeline } from './Timeline.tsx';
+import { EditableText } from './EditableText.tsx';
 import { isLocalMr, MrBadge, mrNum } from '../mrs/mr-ui.tsx';
 import { agentNodeOf, issueNodeOf, mrNodeOf, mrOfAgent, useStore } from '../state/store.ts';
 import {
@@ -155,14 +156,25 @@ export function AgentPanel({
         <>
           <div className="ag-head">
             <div className="ag-title">
-              <h3>{a.name}</h3>
+              <EditableText
+                as="h3"
+                value={a.name}
+                label="Renomear agente"
+                onSave={(name) => st.renameAgent(a.id, { name })}
+              />
               <span className={`badge ${statusTone(a.status)}`}>
                 <span className="d" />
                 {statusLabel(a.status)}
               </span>
             </div>
             <p className="ag-sub">
-              {roleLabel(a)} · {issue ? `Issue #${issue.iid} · ${issue.title}` : a.title}
+              {roleLabel(a)} · {issue && `Issue #${issue.iid} · ${issue.title} · `}
+              <EditableText
+                value={a.title}
+                max={200}
+                label="Mudar o título do agente"
+                onSave={(title) => st.renameAgent(a.id, { title })}
+              />
             </p>
           </div>
           <div className="ag-actions">

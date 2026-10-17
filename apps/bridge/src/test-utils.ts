@@ -9,6 +9,7 @@ import { CliRunner } from './agents/cli-runner.ts';
 import type { AgentRunner } from './agents/runner.ts';
 import { buildServer } from './server.ts';
 import type { Summarizer } from './context/summarize.ts';
+import type { Namer } from './agents/namer.ts';
 import type { SupervisorLimits } from './agents/supervisor.ts';
 import { Session } from './session.ts';
 import { SettingsService } from './settings.ts';
@@ -22,6 +23,7 @@ export async function makeBridge(
   port = TEST_PORT,
   opts: {
     summarizer?: Summarizer;
+    namer?: Namer;
     contextDebounceMs?: number;
     limits?: Partial<SupervisorLimits>;
     /** Pasta de dados e banco em arquivo, para simular um reinício do bridge (a pasta fica). */
@@ -45,6 +47,7 @@ export async function makeBridge(
     contextDebounceMs: opts.contextDebounceMs ?? 0,
     ...(opts.limits ? { limits: opts.limits } : {}),
     ...(opts.autoResume !== undefined ? { autoResume: opts.autoResume } : {}),
+    ...(opts.namer ? { namer: opts.namer } : {}),
     // os testes de permissão esperam pedidos pendentes: agentes novos começam pedindo
     autoMode: opts.autoMode ?? false,
     summarizer: opts.summarizer ?? {

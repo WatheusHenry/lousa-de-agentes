@@ -18,8 +18,61 @@ export const SUMMARY_PROMPT =
 
 /**
  * Um `claude -p` curto, com modelo pequeno e sem ferramentas, numa pasta temporária vazia
- * (não lê o projeto nem grava sessão).
+ * (não lê o projeto nem grava sessão). Devolve o texto da resposta.
  */
+export function claudePrint(opts: {
+  model: string;
+  system: string;
+  input: string;
+  timeoutMs: number;
+  /** O que aparece no erro, ex.: "resumir". */
+  what: string;
+}): Promise<string> {
+  const cwd = mkdtempSync(join(tmpdir(), 'agent-canvas-print-'));
+  const args = [
+    '-p',
+    '--model',
+    opts.model,
+    '--tools',
+    '',
+    '--no-session-persistence',
+    '--output-format',
+    'json',
+    '--system-prompt',
+    opts.system,
+  ];
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(process.env.AGENT_CANVAS_CLAUDE_BIN || 'claude', args, {
+      cwd,
+      env: cleanClaudeEnv(process.env),
+      stdio: 'pipe',
+    });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => child.kill('SIGTERM'), opts.timeoutMs);
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      rmSync(cwd, { recursive: true, force: true });
+      reject(new Error(`Não consegui rodar o claude para ${opts.what}: ${e.message}`));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      rmSync(cwd, { recursive: true, force: true });
+      try {
+        const res = JSON.parse(out) as { result?: string; is_error?: boolean };
+        if (code === 0 && !res.is_error && res.result?.trim()) return resolve(res.result.trim());
+      } catch {
+        /* cai no erro abaixo */
+      }
+      const why = err.trim() ? `: ${err.trim().split('\n').at(-1)}` : '.';
+      reject(new Error(`O claude não conseguiu ${opts.what}${why}`));
+    });
+    child.stdin.end(opts.input);
+  });
+}
+
 export class CliSummarizer implements Summarizer {
   constructor(
     private readonly model = 'haiku',
@@ -27,47 +80,12 @@ export class CliSummarizer implements Summarizer {
   ) {}
 
   summarize({ label, text }: { label: string; text: string }): Promise<string> {
-    const cwd = mkdtempSync(join(tmpdir(), 'agent-canvas-summary-'));
-    const args = [
-      '-p',
-      '--model',
-      this.model,
-      '--tools',
-      '',
-      '--no-session-persistence',
-      '--output-format',
-      'json',
-      '--system-prompt',
-      SUMMARY_PROMPT,
-    ];
-    return new Promise<string>((resolve, reject) => {
-      const child = spawn(process.env.AGENT_CANVAS_CLAUDE_BIN || 'claude', args, {
-        cwd,
-        env: cleanClaudeEnv(process.env),
-        stdio: 'pipe',
-      });
-      let out = '';
-      let err = '';
-      const timer = setTimeout(() => child.kill('SIGTERM'), this.timeoutMs);
-      child.stdout.on('data', (d) => (out += d));
-      child.stderr.on('data', (d) => (err += d));
-      child.on('error', (e) => {
-        clearTimeout(timer);
-        rmSync(cwd, { recursive: true, force: true });
-        reject(new Error(`Não consegui rodar o claude para resumir: ${e.message}`));
-      });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        rmSync(cwd, { recursive: true, force: true });
-        try {
-          const res = JSON.parse(out) as { result?: string; is_error?: boolean };
-          if (code === 0 && !res.is_error && res.result?.trim()) return resolve(res.result.trim());
-        } catch {
-          /* cai no erro abaixo */
-        }
-        reject(new Error(`O resumo falhou${err.trim() ? `: ${err.trim().split('\n').at(-1)}` : '.'}`));
-      });
-      child.stdin.end(`Resuma o item de contexto "${label}".\n\n<material>\n${text}\n</material>\n`);
+    return claudePrint({
+      model: this.model,
+      system: SUMMARY_PROMPT,
+      input: `Resuma o item de contexto "${label}".\n\n<material>\n${text}\n</material>\n`,
+      timeoutMs: this.timeoutMs,
+      what: 'resumir',
     });
   }
 }

@@ -22,6 +22,7 @@ import type { CanvasStore } from '../canvas/canvas-store.ts';
 import { writeContext } from '../context/builder.ts';
 import type { Db } from '../db/index.ts';
 import { agent as agentT, agentEvent, edge, node, repo as repoT } from '../db/schema.ts';
+import { type Namer, quickTitle } from './namer.ts';
 import { turnErrorMessage } from './turn-error.ts';
 import { createWorktree, localDiff, slugify } from '../git/worktree.ts';
 import type { Hub } from '../hub.ts';
@@ -111,6 +112,10 @@ export interface SupervisorDeps {
   questions: QuestionService;
   /** MR do agente, para o resumo do wait_for_agents. */
   mrOfAgent?: (agentId: string) => MergeRequest | null;
+  /** Dá nome e título ao agente a partir da tarefa (sem ele, fica o título rápido e `agente-N`). */
+  namer?: Namer;
+  /** Quanto o primeiro turno espera o nome antes de criar o branch (ms). */
+  namingWaitMs?: number;
 }
 
 /** Fila de agentes esperando vaga para rodar. */
@@ -134,6 +139,11 @@ export class Supervisor {
   private starting = new Set<string>();
   /** Agentes que trabalhavam quando o bridge parou (crash ou desligamento): `recover()` decide. */
   private interrupted: string[] = [];
+  /** Nomes sendo gerados pelo namer: o primeiro turno espera um pouco para o branch sair com o nome. */
+  private naming = new Map<string, Promise<void>>();
+  /** Nome e título que o usuário escolheu: o namer não escreve por cima. */
+  private userNamed = new Set<string>();
+  private userTitled = new Set<string>();
 
   constructor(private readonly d: SupervisorDeps) {
     d.approvals.onChange = (agentId, a) => this.onApproval(agentId, a);
@@ -258,6 +268,8 @@ export class Supervisor {
         return this.update(msg);
       case 'agent.mode':
         return void this.setAutoMode(msg.agentId, msg.auto);
+      case 'agent.rename':
+        return void this.rename(msg.agentId, { name: msg.name, title: msg.title });
       case 'agent.message':
         return this.message(msg.agentId, msg.text);
       case 'agent.pause':
@@ -290,7 +302,7 @@ export class Supervisor {
       issueRef: msg.issueRef ?? null,
       repos,
       instruction,
-      title: issue ? issue.title : instruction ? instruction.slice(0, 80) : 'Agente em branco',
+      title: issue ? issue.title : instruction ? quickTitle(instruction) : 'Agente em branco',
       branch: null,
       worktreePath: null,
       sessionId: null,
@@ -330,10 +342,77 @@ export class Supervisor {
         `${row.name} criado${role === 'orchestrator' ? ' como orquestrador' : ''}${issue ? ` para a issue #${issue.iid}` : ''}`,
       ),
     );
+    if (issue)
+      this.autoName(row.id, instruction ? `${issue.title}\n\n${instruction}` : issue.title, {
+        name: true,
+        title: false,
+      });
+    else if (instruction) this.autoName(row.id, instruction, { name: true, title: true });
     if (instruction) {
       this.event(row.id, { kind: 'user_message', text: instruction });
       await this.launch(row.id, issue ? instructionForIssue(instruction) : instruction, false);
     }
+  }
+
+  /** O usuário deu outro nome ou título ao agente. Vale na hora e o namer não escreve por cima. */
+  rename(agentId: string, to: { name?: string | undefined; title?: string | undefined }): Agent {
+    const a = this.mustGet(agentId);
+    const name = to.name?.trim().replace(/\s+/g, ' ');
+    const title = to.title?.trim().replace(/\s+/g, ' ');
+    const set: Partial<Row> = {};
+    if (name && name !== a.name) {
+      const taken = this.agents().some(
+        (x) => x.id !== agentId && x.name.toLowerCase() === name.toLowerCase(),
+      );
+      if (taken) throw new AgentError(`Já existe um agente chamado ${name}.`);
+      set.name = name;
+    }
+    if (title && title !== a.title) set.title = title;
+    if (!Object.keys(set).length) return a;
+    if (set.name) this.userNamed.add(agentId);
+    if (set.title) this.userTitled.add(agentId);
+    const b = this.save(agentId, set);
+    if (set.name) this.d.hub.broadcast(this.d.store.logActivity(`${a.name} agora se chama ${b.name}`));
+    return b;
+  }
+
+  /**
+   * Pede ao namer um nome curto e um título que digam para que o agente foi criado. Roda em
+   * paralelo; o primeiro turno espera um pouco por ele (o branch sai com o nome). Não escreve
+   * por cima do que o usuário renomeou; `set` diz o que pode mudar (o título de issue fica).
+   */
+  private autoName(agentId: string, task: string, set: { name: boolean; title: boolean }): void {
+    const namer = this.d.namer;
+    if (!namer || !task.trim()) return;
+    const p = namer
+      .name(task)
+      .then((n) => {
+        const a = this.get(agentId);
+        if (!a) return;
+        const next: Partial<Row> = {};
+        const taken = this.agents().some(
+          (x) => x.id !== agentId && x.name.toLowerCase() === n.name.toLowerCase(),
+        );
+        if (set.name && !taken && !this.userNamed.has(agentId)) next.name = n.name;
+        if (set.title && !this.userTitled.has(agentId)) next.title = n.title;
+        if (Object.keys(next).length) this.save(agentId, next);
+      })
+      .catch(() => {
+        /* sem nome do modelo: fica o título rápido e agente-N */
+      })
+      .finally(() => {
+        if (this.naming.get(agentId) === p) this.naming.delete(agentId);
+      });
+    this.naming.set(agentId, p);
+  }
+
+  /** Espera o nome em geração, até `namingWaitMs`. */
+  private async awaitNaming(agentId: string): Promise<void> {
+    const p = this.naming.get(agentId);
+    if (!p) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([p, new Promise<void>((r) => (timer = setTimeout(r, this.d.namingWaitMs ?? 15_000)))]);
+    clearTimeout(timer);
   }
 
   /** Liga/desliga o modo automático; ao ligar, libera o que o agente estava esperando. */
@@ -387,7 +466,12 @@ export class Supervisor {
     }
     if (!a.sessionId) {
       // agente em branco: a primeira mensagem é a instrução
-      this.save(agentId, { instruction: text, ...(a.issueRef ? {} : { title: text.slice(0, 80) }) });
+      const keepTitle = !!a.issueRef || this.userTitled.has(agentId);
+      this.save(agentId, { instruction: text, ...(keepTitle ? {} : { title: quickTitle(text) }) });
+      this.autoName(agentId, a.issueRef ? `${a.title}\n\n${text}` : text, {
+        name: true,
+        title: !a.issueRef,
+      });
       return this.launch(agentId, a.issueRef ? instructionForIssue(text) : text, false);
     }
     return this.launch(agentId, text, true);
@@ -564,6 +648,11 @@ export class Supervisor {
             this.d.store.logActivity(`${a.name} coordenando ${repos.map((x) => x.name).join(', ')}`),
           );
         } else {
+          if (!a.issueRef && this.naming.has(agentId)) {
+            // sem issue, o branch sai do título: espera o nome que o namer está gerando (com limite)
+            await this.awaitNaming(agentId);
+            a = this.mustGet(agentId);
+          }
           const issue = a.issueRef ? this.d.store.cachedIssue(a.issueRef) : null;
           const parent = a.parentId ? this.get(a.parentId) : null;
           // sub-agente no mesmo repositório do pai: branch a partir do branch do pai
@@ -887,7 +976,7 @@ export class Supervisor {
       issueRef: p.issueRef,
       repos: [project.id],
       instruction: task,
-      title: task.split('\n')[0]!.slice(0, 80),
+      title: quickTitle(task),
       branch: null,
       worktreePath: null,
       sessionId: null,
@@ -957,6 +1046,8 @@ export class Supervisor {
     }
     this.event(parentId, { kind: 'spawn', childId: id, childName: row.name, repo: project.name, task });
     this.event(id, { kind: 'user_message', text: task });
+    // o pai conhece o filho por agente-N (wait_for_agents aceita o nome): só o título muda
+    this.autoName(id, task, { name: false, title: true });
     void this.launch(id, task, false).catch(() => {});
     return toAgent(row);
   }

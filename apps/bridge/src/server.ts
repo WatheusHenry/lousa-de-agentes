@@ -37,6 +37,7 @@ import { registerMcp } from './mcp/canvas-server.ts';
 import { MrError, MrService } from './mrs/mr-service.ts';
 import { ContextError, ContextService } from './context/context-service.ts';
 import { CliSummarizer, type Summarizer } from './context/summarize.ts';
+import type { Namer } from './agents/namer.ts';
 import type { Session } from './session.ts';
 import { SettingsError, type SettingsService } from './settings.ts';
 
@@ -69,6 +70,8 @@ export interface ServerDeps {
   claudeBin?: string;
   /** Resumidor de itens pesados (o padrão roda `claude -p` com um modelo pequeno). */
   summarizer?: Summarizer;
+  /** Dá nome e título aos agentes novos (sem ele: título tirado da instrução e `agente-N`). */
+  namer?: Namer;
   contextBudget?: number;
   /** Agentes novos no modo automático (padrão: sim). */
   autoMode?: boolean;
@@ -117,6 +120,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     context,
     questions,
     mrOfAgent: (id) => mrs.mrOfAgent(id),
+    ...(deps.namer ? { namer: deps.namer } : {}),
   });
   approvals.auto = (agentId) => !!supervisor.get(agentId)?.autoMode;
   supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);

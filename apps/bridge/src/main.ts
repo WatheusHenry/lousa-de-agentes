@@ -6,6 +6,7 @@ import { openDb } from './db/index.ts';
 import { GitbeakerClient } from './gitlab/gitbeaker-client.ts';
 import { SecretStore } from './secrets.ts';
 import { CliRunner } from './agents/cli-runner.ts';
+import { CliNamer } from './agents/namer.ts';
 import { buildServer } from './server.ts';
 import { CliSummarizer } from './context/summarize.ts';
 import { Session } from './session.ts';
@@ -43,6 +44,7 @@ const app = await buildServer({
       : {}),
   },
   summarizer: new CliSummarizer(process.env.AGENT_CANVAS_SUMMARY_MODEL || 'haiku'),
+  namer: new CliNamer(process.env.AGENT_CANVAS_SUMMARY_MODEL || 'haiku'),
   ...(Number(process.env.AGENT_CANVAS_CONTEXT_BUDGET) > 0
     ? { contextBudget: Number(process.env.AGENT_CANVAS_CONTEXT_BUDGET) }
     : {}),

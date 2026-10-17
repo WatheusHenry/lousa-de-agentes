@@ -11,6 +11,7 @@ import { makeBridge } from '../test-utils.ts';
 
 const TEST_PORT = 4998;
 import type { AgentProcess, AgentRunner, RunnerHandlers, RunnerStartOptions } from './runner.ts';
+import type { Namer } from './namer.ts';
 
 const fixture = (name: string) =>
   readFileSync(new URL(`./__fixtures__/${name}.jsonl`, import.meta.url), 'utf8')
@@ -118,9 +119,15 @@ describe('supervisor', () => {
     throw new Error(`esperando ${what}; mensagens: ${msgs.map((m) => m.type).join(', ')}`);
   }
 
+  /** Namer falso; por padrão falha, e o agente fica com o título rápido e agente-N. */
+  let nameTask: Namer['name'];
+
   beforeEach(async () => {
     runner = new FakeRunner();
-    b = await makeBridge(undefined, runner, TEST_PORT);
+    nameTask = async () => {
+      throw new Error('namer não configurado neste teste');
+    };
+    b = await makeBridge(undefined, runner, TEST_PORT, { namer: { name: (t) => nameTask(t) } });
     reposDir = mkdtempSync(join(tmpdir(), 'ac-repos-'));
     const repo = join(reposDir, 'payments-api');
     mkdirSync(repo);
@@ -328,6 +335,61 @@ describe('supervisor', () => {
     await until(() => agentState('a3')?.status === 'done', 'concluído');
     expect(agentState('a3')).toMatchObject({ instruction: 'Atualize o README', title: 'Atualize o README' });
     expect(existsSync(agentState('a3')!.worktreePath!)).toBe(true);
+  });
+
+  it('o namer dá nome e título antes do branch; o usuário renomeia e o namer não escreve por cima', async () => {
+    runner.turn = async (opts, h) => {
+      h.onLine(init(opts.sessionId));
+      h.onLine(result(opts.sessionId));
+    };
+    const tasks: string[] = [];
+    nameTask = async (t) => {
+      tasks.push(t);
+      return { name: 'Renomear agentes', title: 'Permitir renomear agentes' };
+    };
+    send({
+      type: 'agent.create',
+      agentId: 'a4',
+      nodeId: 'n-a4',
+      repos: [101],
+      instruction: 'Quero que seja possível alterar o nome do agente, e melhore o nome automático',
+      x: 0,
+      y: 0,
+    });
+    // na hora: título rápido, sem os rodeios do pedido
+    await until(() => agentState('a4'), 'agente criado');
+    expect(msgs.find((m) => m.type === 'agent.upsert' && m.agent.id === 'a4')).toMatchObject({
+      agent: { name: 'agente-1', title: 'Alterar o nome do agente' },
+    });
+    await until(() => agentState('a4')?.status === 'done', 'concluído');
+    expect(tasks).toHaveLength(1);
+    expect(agentState('a4')).toMatchObject({
+      name: 'Renomear agentes',
+      title: 'Permitir renomear agentes',
+      branch: expect.stringMatching(/^agent\/permitir-renomear-agentes-/),
+    });
+
+    send({ type: 'agent.rename', agentId: 'a4', name: '  Meu   agente ', title: 'Outra coisa' });
+    await until(() => agentState('a4')?.name === 'Meu agente', 'renomeado');
+    expect(agentState('a4')!.title).toBe('Outra coisa');
+
+    // nome repetido é recusado
+    send({ type: 'agent.create', agentId: 'a5', nodeId: 'n-a5', repos: [], x: 0, y: 0 });
+    await until(() => agentState('a5'), 'segundo agente');
+    send({ type: 'agent.rename', agentId: 'a5', name: 'meu agente' });
+    await until(() => msgs.find((m) => m.type === 'error'), 'erro de nome repetido');
+    expect(msgs.find((m) => m.type === 'error')).toMatchObject({
+      message: expect.stringMatching(/Já existe/),
+    });
+
+    // renomeado antes da primeira instrução: o namer não troca o nome escolhido, só o título
+    send({ type: 'agent.rename', agentId: 'a5', name: 'Docs' });
+    await until(() => agentState('a5')?.name === 'Docs', 'renomeado antes de começar');
+    send({ type: 'agent.update', agentId: 'a5', repos: [101] });
+    await until(() => agentState('a5')?.repos.length === 1, 'repositório escolhido');
+    send({ type: 'agent.message', agentId: 'a5', text: 'Atualize o README' });
+    await until(() => agentState('a5')?.status === 'done', 'segundo concluído');
+    expect(agentState('a5')).toMatchObject({ name: 'Docs', title: 'Permitir renomear agentes' });
   });
 
   it('MCP recusa token desconhecido', async () => {

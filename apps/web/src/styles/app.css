@@ -666,6 +666,28 @@ svg.edges {
   font-weight: 600;
   font-size: 13px;
 }
+.editable {
+  cursor: text;
+}
+.editable:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+input.editable-in {
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+  width: 100%;
+  padding: 0 4px;
+  border: 1px solid var(--accent, currentColor);
+  border-radius: 4px;
+  background: transparent;
+  outline: none;
+}
+.wbar input.wname.editable-in {
+  width: 140px;
+  flex: none;
+}
 .wsub {
   font-size: 12px;
   color: var(--muted);
