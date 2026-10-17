@@ -243,4 +243,82 @@ describe('modo local (sem GitLab)', () => {
     expect(res.json<SettingsView>().projects).toEqual([]);
     expect(readFileSync(join(repo, 'README.md'), 'utf8')).toBe('# meu app\n');
   });
+
+  it('conflito com a base: open_merge_request recusa e o poller avisa o agente para resolver', async () => {
+    const h = b.headers;
+    await b.app.inject({
+      method: 'POST',
+      url: '/api/settings/gitlab',
+      headers: h,
+      payload: { mode: 'local' },
+    });
+    await b.app.inject({ method: 'POST', url: '/api/repos/local', headers: h, payload: { path: repo } });
+
+    const opened: { text: string; isError: boolean }[] = [];
+    const prompts: string[] = [];
+    let turns = 0;
+    runner.turn = async (opts, hd) => {
+      turns++;
+      hd.onLine(init(opts.sessionId));
+      if (turns === 1) {
+        writeFileSync(join(opts.cwd, 'README.md'), '# meu app\n\nDo agente.\n');
+        gitIn(opts.cwd, 'commit', '-qam', 'README do agente');
+        // a base mudou a mesma linha antes do envio
+        writeFileSync(join(repo, 'README.md'), '# meu app\n\nDa base.\n');
+        gitIn(repo, 'commit', '-qam', 'README da base');
+        opened.push(await callTool(opts, 'open_merge_request', { title: 'README' }));
+        // resolve como pedido: traz a base, junta as duas versões e envia de novo
+        try {
+          gitIn(opts.cwd, 'merge', '-q', 'main');
+        } catch {
+          /* conflito esperado */
+        }
+        writeFileSync(join(opts.cwd, 'README.md'), '# meu app\n\nDa base.\nDo agente.\n');
+        gitIn(opts.cwd, 'commit', '-qam', 'Merge da main');
+        opened.push(await callTool(opts, 'open_merge_request', { title: 'README' }));
+      }
+      hd.onLine(result(opts.sessionId));
+    };
+    const origStart = runner.start.bind(runner);
+    runner.start = (opts, hd) => {
+      const p = origStart(opts, hd);
+      return {
+        ...p,
+        send: (text: string) => {
+          prompts.push(text);
+          p.send(text);
+        },
+      };
+    };
+    send({
+      type: 'agent.create',
+      agentId: 'a1',
+      nodeId: 'n-a1',
+      repos: [-1],
+      instruction: 'Atualize o README.',
+      openMr: true,
+      x: 0,
+      y: 0,
+    });
+    await until(() => opened.length === 2, 'as duas chamadas de open_merge_request');
+    expect(opened[0]).toMatchObject({ isError: true });
+    expect(opened[0]!.text).toMatch(/conflito de merge com `main`[\s\S]*README\.md[\s\S]*git merge main/);
+    expect(opened[1]).toMatchObject({ isError: false });
+    const mr = await until(() => lastMr(), 'revisão local');
+
+    // a base anda de novo no mesmo arquivo: o poller encontra o conflito e acorda o agente
+    writeFileSync(join(repo, 'README.md'), '# meu app\n\nOutra da base.\n');
+    gitIn(repo, 'commit', '-qam', 'README de novo');
+    await b.app.poller.tick('mrs');
+    await until(() => turns >= 2, 'agente acordado pelo conflito');
+    expect(prompts.at(-1)).toMatch(/deixou de entrar limpo na base[\s\S]*README\.md/);
+    await until(
+      () => msgs.some((m) => m.type === 'activity' && /tem conflito com main/.test(m.text)),
+      'atividade do conflito',
+    );
+    // a rodada seguinte não avisa de novo
+    await b.app.poller.tick('mrs');
+    expect(turns).toBe(2);
+    expect(mr.state).toBe('opened');
+  });
 });

@@ -80,6 +80,8 @@ export type RepoPathInput = z.infer<typeof RepoPathInput>;
 export const Automations = z.object({
   /** Pipeline de MR de agente falhou → agente fix com o log do job no contexto. */
   fixPipeline: z.boolean(),
+  /** MR de agente passou a ter conflito com a base → o agente autor resolve no próprio branch. */
+  fixConflicts: z.boolean(),
   /** Comentário de revisão no MR → vai para a sessão do agente autor. */
   reviewComments: z.boolean(),
   /** MR aberto por agente → agente reviewer comenta no MR. */
@@ -92,6 +94,7 @@ export const Automations = z.object({
 export type Automations = z.infer<typeof Automations>;
 export const DEFAULT_AUTOMATIONS: Automations = {
   fixPipeline: true,
+  fixConflicts: true,
   reviewComments: true,
   reviewer: false,
   handoff: true,

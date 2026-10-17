@@ -51,6 +51,9 @@ const SAFE_PREFIXES = [
   'git blame',
   'git branch --show-current',
   'git stash',
+  // resolver conflito com a base: trazer a base para o próprio branch
+  'git fetch',
+  'git merge',
   // testes, lint e build
   'npm test',
   'npm run',

@@ -16,7 +16,15 @@ import type { CanvasStore } from '../canvas/canvas-store.ts';
 import type { Db } from '../db/index.ts';
 import { agent as agentT, edge, mergeRequestCache as mrT, node, repo as repoT } from '../db/schema.ts';
 import { diffBranches, isMerged, mergeLocal, originUrl, publishBranch, remoteKind } from '../git/local.ts';
-import { commitsSince, GitError, localDiff, pushBranch } from '../git/worktree.ts';
+import {
+  commitsSince,
+  conflictNotice,
+  GitError,
+  localDiff,
+  mergeConflicts,
+  pushBranch,
+  type MergeConflicts,
+} from '../git/worktree.ts';
 import type { GitLabMr } from '../gitlab/client.ts';
 import type { Hub } from '../hub.ts';
 import type { SettingsService } from '../settings.ts';
@@ -67,6 +75,13 @@ export class MrService {
   onChanged: (mr: MergeRequest, prev: MergeRequest) => void = () => {};
   /** Avisado quando um agente abre um MR novo (automação do revisor). */
   onOpened: (mr: MergeRequest) => void = () => {};
+  /** Avisado quando um MR de agente passa a ter conflito com a base (automação de conflitos). */
+  onConflict: (mr: MergeRequest, conflicts: MergeConflicts) => void = () => {};
+  /** Intervalo mínimo entre conferências de conflito do mesmo MR (os testes zeram). */
+  conflictCheckMs = 2 * 60_000;
+  private conflictCheckedAt = new Map<string, number>();
+  /** Arquivos em conflito já avisados, por MR. */
+  private conflictSeen = new Map<string, string>();
   /** Sequências de merge por issue (a mais recente de cada uma). */
   private sequences = new Map<string, MergeProgress & { cancel: boolean }>();
   /** Intervalo entre leituras do pipeline e tempo máximo de espera por MR (os testes encurtam). */
@@ -134,6 +149,9 @@ export class MrService {
       throw new MrError('Não há commits novos no branch. Faça commit das mudanças antes de abrir o MR.');
 
     const demo = this.settings.view().mode === 'demo';
+    // com conflito, o MR não entraria: o agente resolve antes de enviar
+    const conflicts = await mergeConflicts(a.worktreePath, target, { fetch: !demo });
+    if (conflicts?.files.length) throw new MrError(conflictNotice(conflicts, 'Nada foi enviado ainda.'));
     if (!demo) {
       try {
         await pushBranch(a.worktreePath, a.branch);
@@ -162,6 +180,7 @@ export class MrService {
           .get();
     if (a.mrRef && !existing) throw new MrError('O MR desta tarefa não está mais aberto.');
     if (existing) {
+      this.conflictSeen.delete(mrRef(existing.projectId, existing.iid));
       await this.refresh(mrRef(existing.projectId, existing.iid), true);
       return { mr: this.get(mrRef(existing.projectId, existing.iid))!, created: false };
     }
@@ -222,6 +241,9 @@ export class MrService {
     const target = r.defaultBranch ?? 'main';
     if (!(await commitsSince(a.worktreePath!, target)).length)
       throw new MrError('Não há commits novos no branch. Faça commit das mudanças antes de entregar.');
+    const conflicts = await mergeConflicts(a.worktreePath!, target, { local: true });
+    if (conflicts?.files.length)
+      throw new MrError(conflictNotice(conflicts, 'O branch ainda não foi entregue.'));
     const files = await localDiff(a.worktreePath!, target);
     const existing = this.db
       .select()
@@ -230,6 +252,7 @@ export class MrService {
       .get();
     const now = nowIso();
     if (existing) {
+      this.conflictSeen.delete(mrRef(existing.projectId, existing.iid));
       const row = this.db
         .update(mrT)
         .set({ ...diffStat(files), updatedAt: now, fetchedAt: now })
@@ -311,6 +334,7 @@ export class MrService {
     const mr = toMr(row);
     this.hub.broadcast({ type: 'mr.upsert', mr });
     if (merged) {
+      this.recheckConflicts();
       this.onChanged(mr, cur);
       this.hub.broadcast(
         this.store.logActivity(`${cur.sourceBranch} mergeado em ${cur.targetBranch}`, this.wsOf(mr.ref)),
@@ -422,9 +446,10 @@ export class MrService {
     const mr = toMr(row);
     this.hub.broadcast({ type: 'mr.upsert', mr });
     this.onChanged(mr, cur);
-    if (fresh.state !== cur.state && fresh.state === 'merged')
+    if (fresh.state !== cur.state && fresh.state === 'merged') {
+      this.recheckConflicts();
       this.hub.broadcast(this.store.logActivity(`MR !${mr.iid} mergeado`, this.wsOf(mr.ref)));
-    else if (fresh.pipelineStatus !== cur.pipelineStatus && PIPELINE_LABEL[fresh.pipelineStatus])
+    } else if (fresh.pipelineStatus !== cur.pipelineStatus && PIPELINE_LABEL[fresh.pipelineStatus])
       this.hub.broadcast(
         this.store.logActivity(
           `Pipeline do MR !${mr.iid} ${PIPELINE_LABEL[fresh.pipelineStatus]}`,
@@ -439,8 +464,47 @@ export class MrService {
     for (const mr of this.canvasMrs()) {
       if (mr.state !== 'opened') continue;
       // revisão local: só confere se o merge já foi feito (pelo terminal, por exemplo)
-      await this.refresh(mr.ref).catch(() => {});
+      const fresh = await this.refresh(mr.ref).catch(() => mr);
+      if (fresh?.state === 'opened') await this.checkConflicts(fresh).catch(() => {});
     }
+  }
+
+  /**
+   * MR de agente que passou a ter conflito com a base (outro MR entrou antes): avisa uma vez
+   * por conjunto de arquivos; volta a avisar se o conflito sumir e aparecer de novo.
+   */
+  private async checkConflicts(mr: MergeRequest): Promise<void> {
+    if (!mr.agentId) return;
+    const last = this.conflictCheckedAt.get(mr.ref) ?? 0;
+    if (Date.now() - last < this.conflictCheckMs) return;
+    this.conflictCheckedAt.set(mr.ref, Date.now());
+    const a = this.db.select().from(agentT).where(eq(agentT.id, mr.agentId)).get();
+    if (!a?.worktreePath) return;
+    const local = isLocalProject(mr.projectId);
+    const c = await mergeConflicts(a.worktreePath, mr.targetBranch, {
+      local,
+      fetch: !local && this.settings.view().mode !== 'demo',
+    });
+    if (!c) return;
+    const key = c.files.join('\n');
+    if (!c.files.length) {
+      this.conflictSeen.delete(mr.ref);
+      return;
+    }
+    if (this.conflictSeen.get(mr.ref) === key) return;
+    this.conflictSeen.set(mr.ref, key);
+    this.hub.broadcast(
+      this.store.logActivity(
+        `${mrName(mr)} tem conflito com ${c.base} (${c.files.length} arquivo${c.files.length > 1 ? 's' : ''})`,
+        this.wsOf(mr.ref),
+      ),
+    );
+    this.onConflict(mr, c);
+  }
+
+  /** Uma revisão entrou na base: as outras abertas são conferidas na próxima rodada. */
+  private recheckConflicts(): void {
+    this.conflictCheckedAt.clear();
   }
 
   /** Merge pela caixa de Ações. Agentes não têm como chamar isto. */
@@ -460,6 +524,7 @@ export class MrService {
       { type: 'mr.upsert', mr },
       this.store.logActivity(`MR !${mr.iid} aprovado e mergeado por você`, this.wsOf(mr.ref)),
     ]);
+    this.recheckConflicts();
     return mr;
   }
 
@@ -493,6 +558,7 @@ export class MrService {
         this.wsOf(mr.ref),
       ),
     ]);
+    this.recheckConflicts();
     this.onChanged(mr, cur);
     return mr;
   }
