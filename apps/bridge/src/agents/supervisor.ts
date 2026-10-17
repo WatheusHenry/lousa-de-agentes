@@ -276,6 +276,8 @@ export class Supervisor {
         return this.update(msg);
       case 'agent.mode':
         return void this.setAutoMode(msg.agentId, msg.auto);
+      case 'agent.model':
+        return void this.setModel(msg.agentId, msg.model);
       case 'agent.message':
         return this.message(msg.agentId, msg.text);
       case 'agent.pause':
@@ -318,6 +320,7 @@ export class Supervisor {
       maxDepth: msg.maxDepth,
       openMr: msg.openMr,
       autoMode: this.d.settings.agentSettings().autoMode,
+      model: msg.model ?? null,
       inputTokens: 0,
       outputTokens: 0,
       contextTokens: 0,
@@ -354,6 +357,12 @@ export class Supervisor {
     }
   }
 
+  /** Modelo do turno: o escolhido no agente, senão o das configurações, senão o do Claude Code. */
+  private modelOf(a: Agent): { model?: string } {
+    const model = a.model ?? this.d.settings.agentSettings().model;
+    return model ? { model } : {};
+  }
+
   /** Liga/desliga o modo automático; ao ligar, libera o que o agente estava esperando. */
   setAutoMode(agentId: string, on: boolean): Agent {
     this.mustGet(agentId);
@@ -361,6 +370,20 @@ export class Supervisor {
     if (on) this.d.approvals.releaseAuto(agentId);
     this.d.hub.broadcast(
       this.d.store.logActivity(`${a.name} ${on ? 'no modo automático' : 'voltou a pedir permissão'}`),
+    );
+    return a;
+  }
+
+  /** Troca o modelo do agente; o processo em curso segue no atual, o próximo turno usa o novo. */
+  setModel(agentId: string, model: string | null): Agent {
+    const before = this.mustGet(agentId);
+    if (before.model === model) return before;
+    const a = this.save(agentId, { model });
+    const shown = model ?? `padrão (${this.d.settings.agentSettings().model ?? 'do Claude Code'})`;
+    this.d.hub.broadcast(
+      this.d.store.logActivity(
+        `${a.name} usa o modelo ${shown}${this.live.has(agentId) ? ' a partir do próximo turno' : ''}`,
+      ),
     );
     return a;
   }
@@ -645,7 +668,7 @@ export class Supervisor {
           allowedTools: [...CANVAS_TOOLS, ...this.d.approvals.allowedTools(repoId)],
           disallowedTools: DISALLOWED_TOOLS,
           ...(a.role === 'orchestrator' ? { addDirs: repos.map((x) => x.localPath) } : {}),
-          ...(this.d.settings.agentSettings().model ? { model: this.d.settings.agentSettings().model! } : {}),
+          ...this.modelOf(a),
         },
         {
           onLine: (line) => this.onLine(agentId, line),
@@ -1045,8 +1068,9 @@ export class Supervisor {
       maxDepth: p.maxDepth,
       // sub-agente no mesmo repositório entrega pelo branch; o pai abre o MR
       openMr: role === 'sub' ? false : p.openMr,
-      // filhos herdam o modo do pai
+      // filhos herdam o modo e o modelo do pai
       autoMode: p.autoMode,
+      model: p.model,
       inputTokens: 0,
       outputTokens: 0,
       contextTokens: 0,
@@ -1143,6 +1167,7 @@ export class Supervisor {
       maxDepth: author.depth + 1,
       openMr: false,
       autoMode: this.d.settings.agentSettings().autoMode,
+      model: author.model,
       inputTokens: 0,
       outputTokens: 0,
       contextTokens: 0,

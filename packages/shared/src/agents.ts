@@ -36,6 +36,8 @@ export const Agent = z.object({
   openMr: z.boolean(),
   /** Modo automático: o que as travas de segurança não negam passa sem pedir permissão. */
   autoMode: z.boolean(),
+  /** Modelo deste agente (`opus`, `sonnet`, `haiku` ou um id); nulo = o de Automações → Agentes. */
+  model: z.string().nullable(),
   inputTokens: z.number(),
   outputTokens: z.number(),
   /** Tamanho do contexto no último turno (entrada + cache). */

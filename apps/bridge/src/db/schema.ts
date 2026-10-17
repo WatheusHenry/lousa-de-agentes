@@ -112,6 +112,8 @@ export const agent = sqliteTable('agent', {
   openMr: integer('open_mr', { mode: 'boolean' }).notNull().default(false),
   /** Os agentes de antes do modo automático continuam pedindo permissão. */
   autoMode: integer('auto_mode', { mode: 'boolean' }).notNull().default(false),
+  /** Modelo escolhido no terminal do agente; nulo = o padrão das configurações. */
+  model: text('model'),
   inputTokens: integer('input_tokens').notNull().default(0),
   outputTokens: integer('output_tokens').notNull().default(0),
   contextTokens: integer('context_tokens').notNull().default(0),

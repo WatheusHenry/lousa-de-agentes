@@ -124,11 +124,14 @@ export interface CanvasState {
     fromNodeId?: string;
     maxDepth?: number;
     openMr?: boolean;
+    model?: string | null;
   }): { agentId: string; nodeId: string };
   updateAgent(agentId: string, patch: { repos?: number[]; issueRef?: string | null }): void;
   messageAgent(agentId: string, text: string): void;
   /** Modo automático do agente (sem pedir permissão a cada passo). */
   setAgentMode(agentId: string, auto: boolean): void;
+  /** Modelo do agente (`null` = o padrão das configurações); vale a partir do próximo turno. */
+  setAgentModel(agentId: string, model: string | null): void;
   pauseAgent(agentId: string): void;
   resumeAgent(agentId: string): void;
   stopAgent(agentId: string): void;
@@ -535,7 +538,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
     f();
   },
 
-  createAgent({ at, issueRef, repos, instruction, fromNodeId, maxDepth, openMr }) {
+  createAgent({ at, issueRef, repos, instruction, fromNodeId, maxDepth, openMr, model }) {
     const agentId = newId('a');
     const nodeId = newId('n');
     send({
@@ -548,6 +551,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
       ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
       maxDepth: maxDepth ?? 1,
       openMr: openMr ?? true,
+      ...(model ? { model } : {}),
       x: at.x,
       y: at.y,
     });
@@ -563,6 +567,13 @@ export const useStore = create<CanvasState>()((set, get) => ({
       return a ? { agents: { ...s.agents, [agentId]: { ...a, autoMode: auto } } } : {};
     });
     send({ type: 'agent.mode', agentId, auto });
+  },
+  setAgentModel: (agentId, model) => {
+    set((s) => {
+      const a = s.agents[agentId];
+      return a ? { agents: { ...s.agents, [agentId]: { ...a, model } } } : {};
+    });
+    send({ type: 'agent.model', agentId, model });
   },
   pauseAgent: (agentId) => send({ type: 'agent.pause', agentId }),
   resumeAgent: (agentId) => send({ type: 'agent.resume', agentId }),

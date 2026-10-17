@@ -4720,96 +4720,43 @@ button.diff-h:hover {
   justify-content: space-between;
   gap: 10px;
 }
-/* terminal do agente: comando em etapas, saída recolhível, leituras agrupadas, texto ao vivo */
-.cmd-parts {
-  margin: 2px 0 0 16px;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--fg2);
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.cmd-parts .sep {
-  color: var(--faint);
-}
-.out-more {
-  margin-left: 6px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 5px;
-  background: var(--hover);
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.out-more:hover {
-  color: var(--fg);
-}
-.out-row {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-}
-.out-g {
+/* modelo do agente no terminal: chip com a lista abrindo para cima */
+.model-chip {
   flex-shrink: 0;
 }
-.out-txt {
-  min-width: 0;
-  white-space: pre-wrap;
-}
-.out-txt.full {
-  display: block;
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre;
-}
-.out-txt.full .out-more {
-  display: block;
-  margin: 4px 0 0;
-}
-button.read-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
+.model-chip .sel-btn {
+  gap: 4px;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 2px 8px;
   border: 0;
-  background: transparent;
-  text-align: left;
+  border-radius: 999px;
+  background: var(--hover);
+  box-shadow: none;
   color: var(--muted);
-  cursor: pointer;
-  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
 }
-button.read-group:hover {
+.model-chip .sel-btn:hover {
   color: var(--fg);
 }
-.read-group .caret {
-  font-size: 10px;
+.model-chip .sel-btn > span:first-child {
+  max-width: 120px;
 }
-.read-items {
-  margin-left: 14px;
-  padding-left: 8px;
-  border-left: 1px solid var(--line);
+.model-chip .sel-caret {
+  font-size: 9px;
 }
-.l.live .live-t {
-  white-space: pre-wrap;
+.model-chip .sel-list {
+  top: auto;
+  bottom: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  min-width: 200px;
 }
-.l.live .cursor {
-  display: inline-block;
-  width: 7px;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: -2px;
-  background: var(--accent);
-  animation: blink 1s steps(1) infinite;
-}
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .l.live .cursor {
-    animation: none;
-  }
+.f-hint-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

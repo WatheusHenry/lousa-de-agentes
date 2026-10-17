@@ -120,12 +120,20 @@ export const ClientMessage = z.discriminatedUnion('type', [
     instruction: z.string().max(20_000).optional(),
     maxDepth: z.number().int().min(0).max(3).default(1),
     openMr: z.boolean().default(false),
+    /** Modelo do agente; ausente ou nulo = o de Automações → Agentes. */
+    model: z.string().trim().min(1).max(100).nullable().optional(),
     x: Coord,
     y: Coord,
   }),
   /** Dá contexto a um agente em branco antes de começar: repositório e issue. */
   /** Liga ou desliga o modo automático de um agente (Shift+Tab no terminal dele). */
   z.object({ type: z.literal('agent.mode'), agentId: Id, auto: z.boolean() }),
+  /** Troca o modelo de um agente; vale a partir do próximo turno. `null` volta ao padrão. */
+  z.object({
+    type: z.literal('agent.model'),
+    agentId: Id,
+    model: z.string().trim().min(1).max(100).nullable(),
+  }),
   z.object({
     type: z.literal('agent.update'),
     agentId: Id,

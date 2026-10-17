@@ -64,6 +64,13 @@
       "when": 1792250763492,
       "tag": "0008_gifted_maximus",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792252381696,
+      "tag": "0009_sparkling_the_hood",
+      "breakpoints": true
     }
   ]
 }
