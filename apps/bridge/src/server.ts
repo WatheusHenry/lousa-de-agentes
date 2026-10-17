@@ -198,6 +198,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     automations.onMrChanged(mr, prev);
   };
   mrs.onOpened = (mr) => automations.onMrOpened(mr);
+  mrs.onConflict = (mr, conflicts) => void automations.onMrConflict(mr, conflicts);
   const cleanup = new WorktreeCleanup({
     db,
     hub,

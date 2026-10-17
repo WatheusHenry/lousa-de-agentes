@@ -727,6 +727,12 @@ const AUTOS: { key: keyof AutomationsT; when: string; then: string; desc: string
     desc: 'Lê o log do job e corrige no mesmo branch. Até 3 tentativas por MR.',
   },
   {
+    key: 'fixConflicts',
+    when: 'Conflito de merge no MR',
+    then: 'Pedir ao agente autor para resolver',
+    desc: 'Quando outro MR entra antes, o agente junta a base no branch, testa e envia de novo.',
+  },
+  {
     key: 'reviewComments',
     when: 'Comentário de revisão no MR',
     then: 'Enviar ao agente autor',

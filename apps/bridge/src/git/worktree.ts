@@ -111,6 +111,70 @@ export async function pushBranch(worktree: string, branch: string): Promise<void
   await git(worktree, 'push', '--quiet', '-u', 'origin', `${branch}:${branch}`);
 }
 
+export interface MergeConflicts {
+  /** Ref com que o branch foi comparado (`origin/main` ou `main`). */
+  base: string;
+  files: string[];
+}
+
+/**
+ * Confere, sem tocar no worktree, se o branch atual entra na base sem conflito
+ * (`git merge-tree --write-tree`, git 2.38+). Com `fetch`, atualiza `origin/<base>` antes;
+ * com `local` (revisão num repositório local, o merge é no branch local), ignora `origin/`.
+ * Devolve null quando não dá para saber (git antigo, base inexistente): quem chama segue.
+ */
+export async function mergeConflicts(
+  worktree: string,
+  base: string,
+  opts: { fetch?: boolean; local?: boolean } = {},
+): Promise<MergeConflicts | null> {
+  if (opts.fetch && !opts.local) await tryGit(worktree, 'fetch', '--quiet', 'origin', base);
+  let ref: string | null = null;
+  for (const candidate of opts.local ? [base] : [`origin/${base}`, base]) {
+    if (await tryGit(worktree, 'rev-parse', '--verify', '--quiet', `${candidate}^{commit}`)) {
+      ref = candidate;
+      break;
+    }
+  }
+  if (!ref) return null;
+  try {
+    await exec('git', ['merge-tree', '--write-tree', '--name-only', '--no-messages', ref, 'HEAD'], {
+      cwd: worktree,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { base: ref, files: [] };
+  } catch (err) {
+    const e = err as { code?: number; stdout?: string };
+    // 1 = conflito: a primeira linha é a árvore, as outras são os arquivos em conflito
+    if (e.code !== 1 || typeof e.stdout !== 'string') return null;
+    const files = [
+      ...new Set(
+        e.stdout
+          .trim()
+          .split('\n')
+          .slice(1)
+          .map((l) => l.trim())
+          .filter(Boolean),
+      ),
+    ];
+    return { base: ref, files };
+  }
+}
+
+/** Texto para o agente: onde está o conflito e como resolver no próprio worktree. */
+export function conflictNotice(c: MergeConflicts, intro: string): string {
+  const list = c.files
+    .slice(0, 20)
+    .map((f) => `- ${f}`)
+    .join('\n');
+  const more = c.files.length > 20 ? `\n- … e mais ${c.files.length - 20}` : '';
+  return [
+    `${intro} O branch tem conflito de merge com \`${c.base}\` em:`,
+    `${list}${more}`,
+    `Resolva no seu worktree: \`git merge ${c.base}\`${c.base.startsWith('origin/') ? ' (rode `git fetch origin` antes)' : ''}, abra cada arquivo em conflito e junte as duas versões, mantendo o que a base trouxe e a sua mudança (não descarte um dos lados sem entender o que ele faz). Rode os testes, faça o commit do merge e chame open_merge_request de novo. Não use rebase nem push --force.`,
+  ].join('\n');
+}
+
 /** Diff do branch atual em relação à base, separado por arquivo (para quando o GitLab não traz). */
 export async function localDiff(worktree: string, base: string): Promise<MrDiffFile[]> {
   let ref = base;

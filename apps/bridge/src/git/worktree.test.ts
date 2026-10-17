@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { commitsSince, createWorktree, slugify } from './worktree.ts';
+import { commitsSince, conflictNotice, createWorktree, mergeConflicts, slugify } from './worktree.ts';
 
 function makeRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'ac-wt-repo-'));
@@ -72,5 +72,45 @@ describe('worktree', () => {
         defaultBranch: null,
       }),
     ).rejects.toThrow(/não é um repositório/);
+  });
+
+  it('mergeConflicts acha os arquivos em conflito com a base sem tocar no worktree', async () => {
+    const { dir, git } = makeRepo();
+    const root = mkdtempSync(join(tmpdir(), 'ac-wt-root-'));
+    const wt = await createWorktree({
+      repoPath: dir,
+      root,
+      agentId: 'a1',
+      branchName: 'agent/1-conflito',
+      defaultBranch: 'main',
+    });
+    const g = (...a: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', ...a], {
+        cwd: wt.path,
+        stdio: 'pipe',
+      })
+        .toString()
+        .trim();
+    writeFileSync(join(wt.path, 'a.txt'), 'do agente\n');
+    writeFileSync(join(wt.path, 'novo.txt'), 'n\n');
+    g('commit', '-qam', 'agente');
+    g('add', '.');
+    g('commit', '-qm', 'novo');
+    expect(await mergeConflicts(wt.path, 'main', { local: true })).toEqual({ base: 'main', files: [] });
+
+    // outra mudança entra na base no mesmo arquivo
+    writeFileSync(join(dir, 'a.txt'), 'da base\n');
+    git('commit', '-qam', 'base');
+    const c = await mergeConflicts(wt.path, 'main', { local: true });
+    expect(c).toEqual({ base: 'main', files: ['a.txt'] });
+    expect(g('status', '--porcelain')).toBe('');
+    expect(conflictNotice(c!, 'Nada foi enviado.')).toMatch(/a\.txt[\s\S]*git merge main/);
+
+    // resolvido no branch: volta a entrar limpo
+    expect(() => g('merge', '-q', 'main')).toThrow();
+    writeFileSync(join(wt.path, 'a.txt'), 'da base\ndo agente\n');
+    g('commit', '-qam', 'merge da base');
+    expect(await mergeConflicts(wt.path, 'main', { local: true })).toEqual({ base: 'main', files: [] });
+    expect(await mergeConflicts(wt.path, 'nao-existe')).toBeNull();
   });
 });
