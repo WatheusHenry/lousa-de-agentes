@@ -489,7 +489,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
         const b = browsers.get(browser.id)!;
         if (b.status === 'error') throw new BrowserError(b.error ?? 'O navegador não abriu.');
         const head = `${created ? 'Navegador aberto no canvas' : 'Navegou'}: ${final}${b.title ? ` (${b.title})` : ''}`;
-        return [head, ...(b.error ? [`Aviso: ${b.error}`] : []), 'Use browser_snapshot para ler a página.'].join('\n');
+        return [
+          head,
+          ...(b.error ? [`Aviso: ${b.error}`] : []),
+          'Use browser_snapshot para ler a página.',
+        ].join('\n');
       },
       async navigate(agentId, action) {
         const url = await browsers.navigate(agentBrowser(agentId), { action });

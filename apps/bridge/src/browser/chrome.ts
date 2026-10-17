@@ -165,7 +165,11 @@ export class Chrome {
       });
       proc.on('exit', (code) => {
         clearTimeout(timer);
-        reject(new BrowserError(`O navegador fechou ao abrir (código ${code}).${buf ? ` ${buf.slice(-300)}` : ''}`));
+        reject(
+          new BrowserError(
+            `O navegador fechou ao abrir (código ${code}).${buf ? ` ${buf.slice(-300)}` : ''}`,
+          ),
+        );
       });
     });
     proc.stderr!.resume();

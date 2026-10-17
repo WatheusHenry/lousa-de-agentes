@@ -88,7 +88,8 @@ function snapshotPage(maxChars: number): string {
     if ((tag === 'input' || tag === 'textarea') && i.type !== 'checkbox' && i.type !== 'radio') {
       if (i.type === 'password') out.push(i.value ? 'value=***' : 'value=""');
       else out.push(`value="${clean(i.value, 80)}"`);
-      if (i.placeholder && nameOf(el) !== clean(i.placeholder)) out.push(`placeholder="${clean(i.placeholder, 60)}"`);
+      if (i.placeholder && nameOf(el) !== clean(i.placeholder))
+        out.push(`placeholder="${clean(i.placeholder, 60)}"`);
     }
     if (tag === 'select') {
       const s = el as HTMLSelectElement;
@@ -126,7 +127,20 @@ function snapshotPage(maxChars: number): string {
         refs.set(ref, el);
         push(depth, `[${ref}] ${role} "${nameOf(el)}"${stateOf(el)}`);
         // botões e links já mostram o texto; listas e grupos com role continuam abrindo
-        if (['link', 'button', 'textbox', 'combobox', 'checkbox', 'radio', 'option', 'menuitem', 'tab', 'switch'].includes(role))
+        if (
+          [
+            'link',
+            'button',
+            'textbox',
+            'combobox',
+            'checkbox',
+            'radio',
+            'option',
+            'menuitem',
+            'tab',
+            'switch',
+          ].includes(role)
+        )
           continue;
       } else if (/^h[1-6]$/.test(tag)) {
         push(depth, `${'#'.repeat(Number(tag[1]))} ${clean((el as HTMLElement).innerText, 200)}`);
@@ -139,7 +153,18 @@ function snapshotPage(maxChars: number): string {
         push(depth, `iframe ${clean(el.getAttribute('src'), 80)}`);
         continue;
       }
-      const landmark = ['nav', 'main', 'header', 'footer', 'form', 'dialog', 'aside', 'table', 'ul', 'ol'].includes(tag);
+      const landmark = [
+        'nav',
+        'main',
+        'header',
+        'footer',
+        'form',
+        'dialog',
+        'aside',
+        'table',
+        'ul',
+        'ol',
+      ].includes(tag);
       if (landmark) push(depth, `${tag}:`);
       walk(el, landmark ? depth + 1 : depth);
       if (el.shadowRoot) walk(el.shadowRoot, depth + 1);
@@ -171,8 +196,7 @@ function refCenter(ref: number): { x: number; y: number } | string {
 /** Foca o campo [ref] e seleciona o conteúdo (para a digitação substituir). */
 function focusRef(ref: number, clear: boolean): string | null {
   const el = (window as Window & { __acRefs?: Map<number, Element> }).__acRefs?.get(ref) as
-    | HTMLElement
-    | undefined;
+    HTMLElement | undefined;
   if (!el?.isConnected) return `Referência [${ref}] não existe mais. Tire um browser_snapshot novo.`;
   el.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
   el.focus();

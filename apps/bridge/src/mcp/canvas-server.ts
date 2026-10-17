@@ -272,7 +272,9 @@ function registerBrowserTools(server: McpServer, ctx: McpAgentContext, deps: Mcp
         'O usuário vê a mesma tela ao vivo e pode interagir junto. Use para testar a interface que você está mexendo ' +
         '(ex.: http://localhost:5173 depois de subir o dev server), ver componentes, ler documentação ou usar apps web. ' +
         'É um Chrome com perfil próprio, sem os logins do usuário.',
-      inputSchema: { url: z.string().min(1).max(4_000).describe('Ex.: http://localhost:3000/login ou docs.exemplo.com') },
+      inputSchema: {
+        url: z.string().min(1).max(4_000).describe('Ex.: http://localhost:3000/login ou docs.exemplo.com'),
+      },
     },
     async ({ url }) => asTool(() => b.open(id, url)),
   );
@@ -358,7 +360,8 @@ function registerBrowserTools(server: McpServer, ctx: McpAgentContext, deps: Mcp
   server.registerTool(
     'browser_console',
     {
-      description: 'Mensagens do console e erros JavaScript da página (as últimas 200). clear=true limpa depois de ler.',
+      description:
+        'Mensagens do console e erros JavaScript da página (as últimas 200). clear=true limpa depois de ler.',
       inputSchema: { clear: z.boolean().optional() },
     },
     async ({ clear }) => asTool(() => b.console(id, !!clear)),

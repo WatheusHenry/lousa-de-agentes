@@ -198,7 +198,8 @@ export class BrowserService {
         p.sessionId,
       );
       const entry = h.entries[h.currentIndex + (o.action === 'back' ? -1 : 1)];
-      if (!entry) throw new BrowserError(o.action === 'back' ? 'Não há página anterior.' : 'Não há próxima página.');
+      if (!entry)
+        throw new BrowserError(o.action === 'back' ? 'Não há página anterior.' : 'Não há próxima página.');
       const loaded = this.waitLoad(p);
       await cdp.send('Page.navigateToHistoryEntry', { entryId: entry.id }, p.sessionId);
       await loaded;
@@ -304,7 +305,8 @@ export class BrowserService {
   async press(id: string, key: string): Promise<void> {
     const k = KEYS[key];
     const single = !k && [...key].length === 1;
-    if (!k && !single) throw new BrowserError(`Tecla desconhecida: ${key}. Use ${BROWSER_KEYS.join(', ')} ou um caractere.`);
+    if (!k && !single)
+      throw new BrowserError(`Tecla desconhecida: ${key}. Use ${BROWSER_KEYS.join(', ')} ou um caractere.`);
     const p = await this.page(id);
     const cdp = await this.cdp();
     const text = k ? k.text : key;
@@ -443,7 +445,9 @@ export class BrowserService {
     this.patch(id, { status: 'loading', error: null });
     try {
       const cdp = await this.cdp();
-      const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' });
+      const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', {
+        url: 'about:blank',
+      });
       const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', {
         targetId,
         flatten: true,
@@ -524,7 +528,11 @@ export class BrowserService {
         this.pushConsole(p, `[dialog ${d.type}] ${d.message} (aceito automaticamente)`);
         void this.cdp()
           .then((c) =>
-            c.send('Page.handleJavaScriptDialog', { accept: true, promptText: d.defaultPrompt ?? '' }, p.sessionId),
+            c.send(
+              'Page.handleJavaScriptDialog',
+              { accept: true, promptText: d.defaultPrompt ?? '' },
+              p.sessionId,
+            ),
           )
           .catch(() => {});
         return;
@@ -533,7 +541,11 @@ export class BrowserService {
         const c = params as { type: string; args: { value?: unknown; description?: string; type: string }[] };
         const text = c.args
           .map((a) =>
-            a.value !== undefined ? (typeof a.value === 'string' ? a.value : JSON.stringify(a.value)) : (a.description ?? a.type),
+            a.value !== undefined
+              ? typeof a.value === 'string'
+                ? a.value
+                : JSON.stringify(a.value)
+              : (a.description ?? a.type),
           )
           .join(' ');
         this.pushConsole(p, `[${c.type}] ${text}`);
