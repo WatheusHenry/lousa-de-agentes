@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Markdown } from '../components/Markdown.tsx';
-import type { IssueComment, MrDiffFile } from '@agent-canvas/shared';
+import type { IssueComment, MergeRequest, MrDiffFile } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { noteFor, startFromCard } from '../actions.ts';
 import { AgentTreeItem } from '../agents/AgentPanel.tsx';
@@ -462,12 +462,34 @@ function CommentBox({ placeholder, onSend }: { placeholder: string; onSend(body:
   );
 }
 
-/** Linhas de um diff unificado, com as classes do protótipo. */
-function DiffFile({ f }: { f: MrDiffFile }) {
-  const lines = f.diff.replace(/\n$/, '').split('\n');
-  const add = lines.filter((l) => l.startsWith('+')).length;
-  const del = lines.filter((l) => l.startsWith('-')).length;
+/** Número de cada linha do diff (novo arquivo para + e contexto, antigo para -). */
+function numbered(lines: string[]) {
+  let oldN = 0;
+  let newN = 0;
+  return lines.map((l) => {
+    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l);
+    if (h) {
+      oldN = Number(h[1]);
+      newN = Number(h[2]);
+      return { l, kind: 'hunk' as const, n: null };
+    }
+    if (l[0] === '+') return { l, kind: 'add' as const, n: newN++ };
+    if (l[0] === '-') return { l, kind: 'del' as const, n: oldN++ };
+    oldN++;
+    return { l, kind: 'ctx' as const, n: newN++ };
+  });
+}
+
+/**
+ * Linhas de um diff unificado, com as classes do protótipo. Clicar numa linha abre um
+ * comentário ali mesmo, que vai para o agente autor (e, se marcado, para o MR no GitLab).
+ */
+function DiffFile({ f, mr, agentName }: { f: MrDiffFile; mr: MergeRequest; agentName: string | null }) {
+  const lines = numbered(f.diff.replace(/\n$/, '').split('\n'));
+  const add = lines.filter((x) => x.kind === 'add').length;
+  const del = lines.filter((x) => x.kind === 'del').length;
   const name = f.renamedFile ? `${f.oldPath} → ${f.newPath}` : f.newPath;
+  const [at, setAt] = useState<number | null>(null);
   return (
     <div className="diff">
       <div className="diff-h">
@@ -478,14 +500,103 @@ function DiffFile({ f }: { f: MrDiffFile }) {
         <DiffStat add={add} del={del} />
       </div>
       <div className="diff-b">
-        {lines.map((l, i) => (
-          <div
-            key={i}
-            className={`dl ${l.startsWith('@@') ? 'hunk' : l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx'}`}
-          >
-            {l || ' '}
+        {lines.map((x, i) => (
+          <div key={i}>
+            <div
+              className={`dl ${x.kind}${x.n !== null ? ' can' : ''}${at === i ? ' on' : ''}`}
+              title={x.n !== null ? 'Clique para comentar nesta linha' : undefined}
+              onClick={() => x.n !== null && setAt(at === i ? null : i)}
+            >
+              <span className="dn">{x.n ?? ''}</span>
+              {x.l || ' '}
+            </div>
+            {at === i && (
+              <LineComment
+                mr={mr}
+                agentName={agentName}
+                where={`${f.newPath}${x.kind === 'del' ? ' (linha removida)' : ''}:${x.n}`}
+                code={x.l}
+                onDone={() => setAt(null)}
+              />
+            )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Comentário numa linha do diff: para o agente autor e, se marcado, para o MR no GitLab. */
+function LineComment({
+  mr,
+  agentName,
+  where,
+  code,
+  onDone,
+}: {
+  mr: MergeRequest;
+  agentName: string | null;
+  where: string;
+  code: string;
+  onDone(): void;
+}) {
+  const [text, setText] = useState('');
+  const [publish, setPublish] = useState(!agentName);
+  const forwards = useStore((s) => !!s.settings?.automations.reviewComments);
+  const send = () => {
+    const body = text.trim();
+    if (!body) return;
+    const st = useStore.getState();
+    const quote = `\`${where}\`\n\n\`\`\`diff\n${code}\n\`\`\`\n\n${body}`;
+    if (publish) st.commentMr(mr.ref, quote);
+    // publicado no MR com a automação ligada, o comentário já chega ao autor por ela
+    if (agentName && mr.agentId && !(publish && forwards))
+      st.messageAgent(
+        mr.agentId,
+        `Comentário do usuário no MR !${mr.iid}, em ${quote}\n\nAjuste se fizer sentido, rode os testes, faça commit e chame open_merge_request para enviar ao MR.`,
+      );
+    st.showToast(
+      agentName
+        ? `Comentário enviado a ${agentName}${publish ? ' e publicado no MR' : ''}.`
+        : 'Comentário publicado no MR.',
+      { label: 'Ok', run: () => {} },
+    );
+    onDone();
+  };
+  return (
+    <div className="lc">
+      <textarea
+        className="field"
+        autoFocus
+        rows={3}
+        value={text}
+        placeholder={agentName ? `O que ${agentName} deve mudar aqui?` : 'Comentário sobre esta linha'}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            send();
+          }
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            onDone();
+          }
+        }}
+      />
+      <div className="lc-foot">
+        {agentName && (
+          <label>
+            <input type="checkbox" checked={publish} onChange={(e) => setPublish(e.target.checked)} /> Também
+            publicar no MR (GitLab)
+          </label>
+        )}
+        <span className="spacer" />
+        <button type="button" className="btn sm plain" onClick={onDone}>
+          Cancelar
+        </button>
+        <button type="button" className="btn sm primary" disabled={!text.trim()} onClick={send}>
+          {agentName ? `Enviar a ${agentName}` : 'Comentar no MR'}
+        </button>
       </div>
     </div>
   );
@@ -563,7 +674,10 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             <PipelineStages mr={mr} />
           </section>
           <section>
-            <h4>Mudanças{files ? ` · ${files.length} arquivo${files.length === 1 ? '' : 's'}` : ''}</h4>
+            <h4>
+              Mudanças{files ? ` · ${files.length} arquivo${files.length === 1 ? '' : 's'}` : ''}
+              {files?.length ? <small className="h4-hint"> · clique numa linha para comentar</small> : null}
+            </h4>
             {diffError ? (
               <p className="lab" style={{ margin: 0, color: 'var(--bad)' }}>
                 {diffError}
@@ -579,7 +693,7 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {files.map((f) => (
-                  <DiffFile key={`${f.oldPath}:${f.newPath}`} f={f} />
+                  <DiffFile key={`${f.oldPath}:${f.newPath}`} f={f} mr={mr} agentName={agent?.name ?? null} />
                 ))}
               </div>
             )}

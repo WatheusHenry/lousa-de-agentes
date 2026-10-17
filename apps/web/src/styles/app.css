@@ -3892,7 +3892,7 @@ a.btn {
   font-size: 11.5px;
   white-space: nowrap;
 }
-.agent-cfg select {
+.agent-cfg .sel {
   width: 100%;
 }
 /* canvas vazio: por onde começar */
@@ -4118,4 +4118,210 @@ a.btn {
 }
 .merge-order .callout .btn {
   margin-left: 0;
+}
+/* comentário numa linha do diff */
+.dl .dn {
+  display: inline-block;
+  width: 3.2em;
+  margin-right: 10px;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+.dl.can {
+  cursor: pointer;
+}
+.dl.can:hover,
+.dl.on {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.lc {
+  margin: 4px 14px 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 6px 18px -8px rgba(0, 0, 0, 0.2);
+  font-family: var(--sans);
+  white-space: normal;
+  position: sticky;
+  left: 14px;
+  max-width: 640px;
+}
+.lc textarea {
+  font-family: inherit;
+}
+.lc-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.lc-foot .spacer {
+  flex: 1;
+}
+.h4-hint {
+  font-weight: 400;
+  color: var(--faint);
+}
+/* gastos dos agentes (aba Atividade) */
+.cost {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.cost-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.cost-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px;
+  border-radius: var(--r-md);
+  background: var(--subtle);
+}
+.cost-tile b {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.cost-tile span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cost-tile small {
+  font-size: 11px;
+  color: var(--faint);
+}
+.cost-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cost-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  font-size: 12.5px;
+}
+.cb-l {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cb-v {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.cb-bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--subtle);
+  overflow: hidden;
+}
+.cb-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
+}
+/* seletor próprio (no lugar do <select> nativo) */
+.sel {
+  position: relative;
+  min-width: 0;
+}
+.sel.auto {
+  width: auto;
+  min-width: 170px;
+}
+.sel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--fg);
+}
+.sel-btn > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel-ph {
+  color: var(--muted);
+}
+.sel-caret {
+  color: var(--muted);
+  font-size: 11px;
+  transition: transform 0.12s;
+}
+.sel-btn[aria-expanded='true'] .sel-caret {
+  transform: rotate(180deg);
+}
+.sel-list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-width: 360px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--r-sm);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--sh-float);
+}
+.sel-list li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 7px 28px 7px 9px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sel-list li.act {
+  background: var(--hover);
+}
+.sel-list li.on .sel-l {
+  font-weight: 600;
+}
+.sel-l {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel-list small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.sel-ck {
+  position: absolute;
+  right: 9px;
+  top: 7px;
+  color: var(--accent);
+}
+.sel-list li.sel-empty {
+  color: var(--muted);
+  cursor: default;
 }

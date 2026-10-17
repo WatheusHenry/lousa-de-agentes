@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
 import { addIssue, fixPipeline, newAgentAt } from '../actions.ts';
 import { Leftovers } from './Leftovers.tsx';
+import { CostPanel } from './CostPanel.tsx';
 import { refreshIssues } from '../state/issues.ts';
 import { isLive } from '../agents/agent-ui.ts';
 import {
@@ -935,18 +936,21 @@ const shortPath = (p: string) => p.replace(/^\/(home|Users)\/[^/]+/, '~');
 
 function FeedTab() {
   const activity = useStore((s) => s.activity);
-  if (!activity.length) return <p className="tip">Nada aconteceu ainda.</p>;
   return (
-    <ol className="tl">
-      {activity.map((f, i) => (
-        <li key={`${f.ts}-${i}`}>
-          <span className="tl-dot" />
-          <div>
-            <p>{f.text}</p>
-            <time dateTime={f.ts}>{clock(f.ts)}</time>
-          </div>
-        </li>
-      ))}
-    </ol>
+    <>
+      <CostPanel />
+      {!activity.length && <p className="tip">Nada aconteceu ainda.</p>}
+      <ol className="tl">
+        {activity.map((f, i) => (
+          <li key={`${f.ts}-${i}`}>
+            <span className="tl-dot" />
+            <div>
+              <p>{f.text}</p>
+              <time dateTime={f.ts}>{clock(f.ts)}</time>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }

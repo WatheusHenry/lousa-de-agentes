@@ -1,6 +1,7 @@
 import type { Agent } from '@agent-canvas/shared';
 import { focusNode } from '../canvas/viewport.ts';
 import { askOpenMr } from '../actions.ts';
+import { Select } from '../components/Select.tsx';
 import { ContextSection } from '../context/ContextSection.tsx';
 import { AgentTimeline } from './Timeline.tsx';
 import { MrBadge } from '../mrs/mr-ui.tsx';
@@ -208,21 +209,12 @@ export function AgentPanel({
               <span className="badge repo">{repo.name}</span>
             ) : (
               <>
-                <select
-                  className="field"
+                <Select
+                  label="Repositório do agente"
                   value=""
-                  aria-label="Repositório do agente"
-                  onChange={(e) =>
-                    e.target.value && st.updateAgent(a.id, { repos: [Number(e.target.value)] })
-                  }
-                >
-                  <option value="">Escolher…</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.pathWithNamespace}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => v && st.updateAgent(a.id, { repos: [Number(v)] })}
+                  options={projects.map((p) => ({ value: String(p.id), label: p.pathWithNamespace }))}
+                />
                 <span className="lab">
                   Ou arraste um repositório da aba Repos, ou uma issue, para cima do agente.
                 </span>

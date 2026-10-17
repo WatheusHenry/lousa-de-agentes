@@ -5,6 +5,7 @@ import { noteFor, startIssueAgent } from '../actions.ts';
 import { AgentPanel, AgentTreeItem } from '../agents/AgentPanel.tsx';
 import { AgentSettingsForm } from './AgentSettingsForm.tsx';
 import { Markdown } from '../components/Markdown.tsx';
+import { Select } from '../components/Select.tsx';
 import { IconAgent, IconExpand, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel } from '../lib/format.ts';
 import { fixPipeline } from '../actions.ts';
@@ -215,18 +216,18 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
       <div className="grp">
         <h4>Autonomia</h4>
         <div className="row2">
-          <select
-            className="field"
-            style={{ width: 'auto' }}
-            aria-label="Profundidade de sub-agentes"
-            value={depth}
-            onChange={(e) => setDepth(Number(e.target.value))}
-          >
-            {!orch && <option value={0}>Sem sub-agentes</option>}
-            <option value={1}>Até 1 nível</option>
-            <option value={2}>Até 2 níveis</option>
-            <option value={3}>Até 3 níveis</option>
-          </select>
+          <Select
+            className="auto"
+            label="Profundidade de sub-agentes"
+            value={String(depth)}
+            onChange={(v) => setDepth(Number(v))}
+            options={[
+              ...(orch ? [] : [{ value: '0', label: 'Sem sub-agentes' }]),
+              { value: '1', label: 'Até 1 nível' },
+              { value: '2', label: 'Até 2 níveis' },
+              { value: '3', label: 'Até 3 níveis' },
+            ]}
+          />
           <label className="opt" style={{ border: 0, padding: 0 }}>
             <input type="checkbox" checked={openMr} onChange={(e) => setOpenMr(e.target.checked)} /> Abrir MR
             ao final
@@ -562,27 +563,20 @@ function NotePanel(nodeId: string): [ReactNode, ReactNode] {
             Nenhum vínculo ainda.
           </p>
         )}
-        <select
-          className="field"
+        <Select
+          label="Vincular a"
+          placeholder="Vincular a…"
           value=""
-          aria-label="Vincular a"
-          onChange={(e) => e.target.value && s.linkNote(nt.id, e.target.value)}
-        >
-          <option value="">Vincular a…</option>
-          {targets.map((t) => {
+          onChange={(v) => v && s.linkNote(nt.id, v)}
+          options={targets.map((t) => {
             const i = s.issues[t.refId];
             const a = t.type === 'agent' ? s.agents[t.refId] : undefined;
-            return (
-              <option key={t.id} value={t.id}>
-                {a
-                  ? `${a.name} · ${a.title.slice(0, 50)}`
-                  : i
-                    ? `Issue #${i.iid} · ${i.title.slice(0, 50)}`
-                    : t.refId}
-              </option>
-            );
+            return {
+              value: t.id,
+              label: a ? `${a.name} · ${a.title}` : i ? `Issue #${i.iid} · ${i.title}` : t.refId,
+            };
           })}
-        </select>
+        />
         <p className="lab" style={{ margin: 0 }}>
           Ou arraste o + da nota até uma issue ou um agente no canvas.
         </p>

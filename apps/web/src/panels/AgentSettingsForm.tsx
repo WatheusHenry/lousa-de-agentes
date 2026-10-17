@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AgentSettings, AgentSettingsInput } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
+import { Select } from '../components/Select.tsx';
 import { disableNotify, enableNotify, notifySupported, notifyWanted } from '../notify.ts';
 import { useStore } from '../state/store.ts';
 
@@ -107,17 +108,18 @@ export function AgentSettingsForm() {
       </div>
       <div className="grp agent-cfg">
         <h4>Agentes</h4>
-        <label className="cfg-row">
+        <div className="cfg-row">
           <span>Modelo</span>
-          <select className="field" value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="">Padrão{def.model ? ` (${def.model})` : ''}</option>
-            {[...MODELS, ...custom].map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Select
+            label="Modelo"
+            value={model}
+            onChange={setModel}
+            options={[
+              { value: '', label: `Padrão${def.model ? ` (${def.model})` : ''}` },
+              ...[...MODELS, ...custom].map((m) => ({ value: m, label: m })),
+            ]}
+          />
+        </div>
         {FIELDS.map((f) => (
           <label className="cfg-row" key={f.key}>
             <span>{f.label}</span>
