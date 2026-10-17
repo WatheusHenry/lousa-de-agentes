@@ -223,9 +223,9 @@ export class Supervisor {
   }
 
   /** Últimos eventos de cada agente com nó no canvas. */
-  recentEvents(): AgentEvent[] {
+  recentEvents(agents = this.agents()): AgentEvent[] {
     const out: AgentEvent[] = [];
-    for (const a of this.agents()) out.push(...this.events(a.id, undefined, EVENTS_PER_AGENT).reverse());
+    for (const a of agents) out.push(...this.events(a.id, undefined, EVENTS_PER_AGENT).reverse());
     return out;
   }
 
@@ -336,6 +336,9 @@ export class Supervisor {
       x: msg.x,
       y: msg.y,
       createdAt: nowIso(),
+      // agente de uma issue fica no workspace dela; os outros, no aberto
+      workspaceId:
+        (msg.issueRef && this.d.store.refWorkspace('issue', msg.issueRef)) || this.d.store.workspace(),
     };
     this.d.db.transaction((tx) => {
       tx.insert(agentT).values(row).run();
@@ -369,7 +372,10 @@ export class Supervisor {
     const a = this.save(agentId, { autoMode: on });
     if (on) this.d.approvals.releaseAuto(agentId);
     this.d.hub.broadcast(
-      this.d.store.logActivity(`${a.name} ${on ? 'no modo automático' : 'voltou a pedir permissão'}`),
+      this.d.store.logActivity(
+        `${a.name} ${on ? 'no modo automático' : 'voltou a pedir permissão'}`,
+        this.d.store.agentWorkspace(a.id),
+      ),
     );
     return a;
   }
@@ -383,6 +389,7 @@ export class Supervisor {
     this.d.hub.broadcast(
       this.d.store.logActivity(
         `${a.name} usa o modelo ${shown}${this.live.has(agentId) ? ' a partir do próximo turno' : ''}`,
+        this.d.store.agentWorkspace(a.id),
       ),
     );
     return a;
@@ -481,7 +488,7 @@ export class Supervisor {
     }
     if (!['done', 'stopped', 'error', 'idle'].includes(a.status) || l || a.status === 'queued') {
       this.setStatus(agentId, 'stopped', reason);
-      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} parado`));
+      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} parado`, this.d.store.agentWorkspace(a.id)));
     }
   }
 
@@ -612,7 +619,10 @@ export class Supervisor {
           mkdirSync(ws, { recursive: true });
           a = this.save(agentId, { worktreePath: ws });
           this.d.hub.broadcast(
-            this.d.store.logActivity(`${a.name} coordenando ${repos.map((x) => x.name).join(', ')}`),
+            this.d.store.logActivity(
+              `${a.name} coordenando ${repos.map((x) => x.name).join(', ')}`,
+              this.d.store.agentWorkspace(a.id),
+            ),
           );
         } else {
           const issue = a.issueRef ? this.d.store.cachedIssue(a.issueRef) : null;
@@ -639,7 +649,12 @@ export class Supervisor {
             ...(localBase || r.local ? { localBase: true } : {}),
           });
           a = this.save(agentId, { worktreePath: wt.path, branch: wt.branch });
-          this.d.hub.broadcast(this.d.store.logActivity(`${a.name} trabalhando em ${r.name} · ${wt.branch}`));
+          this.d.hub.broadcast(
+            this.d.store.logActivity(
+              `${a.name} trabalhando em ${r.name} · ${wt.branch}`,
+              this.d.store.agentWorkspace(a.id),
+            ),
+          );
         }
       }
 
@@ -921,7 +936,7 @@ export class Supervisor {
     if (l?.pausing) {
       closeInput(l);
       this.setStatus(agentId, 'paused');
-      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} pausado`));
+      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} pausado`, this.d.store.agentWorkspace(a.id)));
       return;
     }
     if (turn.isError) {
@@ -941,7 +956,9 @@ export class Supervisor {
     }
     this.setStatus(agentId, 'done');
     queueMicrotask(() => this.drainQueue());
-    this.d.hub.broadcast(this.d.store.logActivity(`${a.name} concluiu o turno`));
+    this.d.hub.broadcast(
+      this.d.store.logActivity(`${a.name} concluiu o turno`, this.d.store.agentWorkspace(a.id)),
+    );
   }
 
   private onExit(
@@ -991,7 +1008,10 @@ export class Supervisor {
     if (ap.status === 'pending') {
       this.setStatus(agentId, 'waiting');
       this.d.hub.broadcast(
-        this.d.store.logActivity(`${a.name} pediu permissão: ${ap.toolName}(${ap.summary})`),
+        this.d.store.logActivity(
+          `${a.name} pediu permissão: ${ap.toolName}(${ap.summary})`,
+          this.d.store.agentWorkspace(a.id),
+        ),
       );
     } else if (
       a.status === 'waiting' &&
@@ -1084,15 +1104,22 @@ export class Supervisor {
       .from(node)
       .where(and(eq(node.type, 'agent'), eq(node.refId, parentId), isNull(node.removedAt)))
       .get();
+    // o filho fica no workspace do pai, mesmo que outro esteja aberto
+    const ws = pn?.workspaceId ?? this.d.store.agentWorkspace(parentId);
     const n = {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'agent' as const,
       refId: id,
-      ...this.d.store.freeSpot('agent', {
-        x: (pn?.x ?? 0) + (siblings % 3) * 436,
-        y: (pn?.y ?? 0) + 420 + Math.floor(siblings / 3) * 400,
-      }),
+      ...this.d.store.freeSpot(
+        'agent',
+        {
+          x: (pn?.x ?? 0) + (siblings % 3) * 436,
+          y: (pn?.y ?? 0) + 420 + Math.floor(siblings / 3) * 400,
+        },
+        ws,
+      ),
       createdAt: nowIso(),
+      workspaceId: ws,
     };
     const e = {
       id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
@@ -1109,7 +1136,10 @@ export class Supervisor {
       { type: 'agent.upsert', agent: toAgent(row) },
       { type: 'node.upsert', node: n },
       ...(pn ? [{ type: 'edge.upsert' as const, edge: e }] : []),
-      this.d.store.logActivity(`${p.name} criou ${row.name} para ${project.name}`),
+      this.d.store.logActivity(
+        `${p.name} criou ${row.name} para ${project.name}`,
+        this.d.store.agentWorkspace(p.id),
+      ),
     ]);
     // contexto do filho: o plano do pai e o que o pai passou
     this.d.context.seed(id, [
@@ -1183,12 +1213,14 @@ export class Supervisor {
       .where(and(eq(node.type, 'mr'), eq(node.refId, mr.ref), isNull(node.removedAt)))
       .get();
     const helpers = this.agents().filter((x) => x.mrRef === mr.ref).length;
+    const ws = mn?.workspaceId ?? this.d.store.agentWorkspace(author.id);
     const n = {
       id: `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
       type: 'agent' as const,
       refId: id,
-      ...this.d.store.freeSpot('agent', { x: (mn?.x ?? 0) + 310, y: (mn?.y ?? 0) - 40 + helpers * 420 }),
+      ...this.d.store.freeSpot('agent', { x: (mn?.x ?? 0) + 310, y: (mn?.y ?? 0) - 40 + helpers * 420 }, ws),
       createdAt: nowIso(),
+      workspaceId: ws,
     };
     const e = {
       id: `e_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
@@ -1209,6 +1241,7 @@ export class Supervisor {
         role === 'fix'
           ? `${row.name} criado para corrigir o pipeline do MR !${mr.iid}`
           : `${row.name} criado para revisar o MR !${mr.iid}`,
+        ws,
       ),
     ]);
     this.d.context.seed(id, [{ kind: role === 'fix' ? 'pipeline_log' : 'mr_diff', ref: mr.ref }]);
@@ -1370,7 +1403,12 @@ export class Supervisor {
     this.event(q.agentId, { kind: 'question', questionId: q.id, text: q.text, answer: q.answer });
     if (q.status === 'pending') {
       this.setStatus(q.agentId, 'waiting');
-      this.d.hub.broadcast(this.d.store.logActivity(`${a.name} perguntou: ${q.text.slice(0, 80)}`));
+      this.d.hub.broadcast(
+        this.d.store.logActivity(
+          `${a.name} perguntou: ${q.text.slice(0, 80)}`,
+          this.d.store.agentWorkspace(a.id),
+        ),
+      );
     } else if (
       a.status === 'waiting' &&
       !this.d.approvals.hasPending(q.agentId) &&
