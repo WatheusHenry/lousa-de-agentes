@@ -68,6 +68,17 @@ export const api = {
     call<SettingsView>('/api/settings/gitlab', { method: 'POST', body: JSON.stringify(input) }),
   searchProjects: (search: string) =>
     call<GitLabProject[]>(`/api/gitlab/projects?search=${encodeURIComponent(search)}`),
+  createWorkspace: (name: string) =>
+    call<SettingsView>('/api/workspaces', { method: 'POST', body: JSON.stringify({ name }) }),
+  switchWorkspace: (id: string) =>
+    call<SettingsView>('/api/workspaces/active', { method: 'PUT', body: JSON.stringify({ id }) }),
+  renameWorkspace: (id: string, name: string) =>
+    call<SettingsView>(`/api/workspaces/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  deleteWorkspace: (id: string) =>
+    call<SettingsView>(`/api/workspaces/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   selectProjects: (projectIds: number[]) =>
     call<SettingsView>('/api/settings/projects', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
   issues: () => call<{ issues: Issue[]; errors: { project: string; error: string }[] }>('/api/gitlab/issues'),
