@@ -225,10 +225,25 @@ export const IconNewNote = () => (
     <path d="M9 13.5v-4h4" />
   </svg>
 );
-export const IconBolt = () => (
+export const IconActivity = ({ size = 14 }: P) => (
   <svg
-    width="14"
-    height="14"
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M1.5 8h2.8l1.7-4.5 3 9L10.7 8h3.8" />
+  </svg>
+);
+export const IconBolt = ({ size = 14 }: P) => (
+  <svg
+    width={size}
+    height={size}
     viewBox="0 0 16 16"
     fill="none"
     stroke="currentColor"
