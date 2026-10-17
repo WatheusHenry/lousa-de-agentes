@@ -22,6 +22,7 @@ import type { CanvasStore } from '../canvas/canvas-store.ts';
 import { writeContext } from '../context/builder.ts';
 import type { Db } from '../db/index.ts';
 import { agent as agentT, agentEvent, edge, node, repo as repoT } from '../db/schema.ts';
+import { turnErrorMessage } from './turn-error.ts';
 import { createWorktree, localDiff, slugify } from '../git/worktree.ts';
 import type { Hub } from '../hub.ts';
 import { APPROVE_TOOL, CANVAS_TOOLS, MCP_SERVER_NAME, type McpAgentContext } from '../mcp/canvas-server.ts';
@@ -747,7 +748,7 @@ export class Supervisor {
       return;
     }
     if (turn.isError) {
-      this.save(agentId, { error: `O turno terminou com erro (${turn.subtype}).` });
+      this.save(agentId, { error: turnErrorMessage(turn.subtype, turn.text) });
       if (l) closeInput(l);
       this.setStatus(agentId, 'error');
       return;
