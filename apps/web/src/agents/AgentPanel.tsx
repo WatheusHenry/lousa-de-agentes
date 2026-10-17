@@ -2,6 +2,7 @@ import { needsClaudeLogin, type Agent } from '@agent-canvas/shared';
 import { ClaudeLoginBox } from './ClaudeLoginBox.tsx';
 import { focusNode } from '../canvas/viewport.ts';
 import { askOpenMr } from '../actions.ts';
+import { Markdown } from '../components/Markdown.tsx';
 import { Select } from '../components/Select.tsx';
 import { ContextSection } from '../context/ContextSection.tsx';
 import { AgentTimeline } from './Timeline.tsx';
@@ -71,7 +72,9 @@ function PlanAndTeam({ agent: a }: { agent: Agent }) {
             {a.plan.map((it, j) => (
               <span key={j} className={`it${it.done ? ' ok' : it.agentId ? ' wip' : ''}`}>
                 <span className="ck">{it.done ? '✓' : ''}</span>
-                <span className="tx">{it.text}</span>
+                <Markdown inline className="tx">
+                  {it.text}
+                </Markdown>
                 {it.agentId && agents[it.agentId] && <span className="who">{agents[it.agentId]!.name}</span>}
               </span>
             ))}

@@ -37,4 +37,18 @@ describe('Markdown', () => {
     expect(out).not.toContain('<img');
     expect(out).toContain('🖼 print');
   });
+
+  it('inline: sem parágrafos nem blocos, mantém ênfase, código e links', () => {
+    const out = renderToStaticMarkup(
+      <Markdown inline className="tx">
+        {'## Rodar **testes** com `pnpm test` e ver [log](https://x.dev)'}
+      </Markdown>,
+    );
+    expect(out).toMatch(/^<span class="md inline tx">/);
+    expect(out).not.toContain('<p>');
+    expect(out).not.toContain('<h2>');
+    expect(out).toContain('<strong>testes</strong>');
+    expect(out).toContain('<code>pnpm test</code>');
+    expect(out).toContain('href="https://x.dev"');
+  });
 });

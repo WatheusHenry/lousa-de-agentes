@@ -3468,7 +3468,43 @@ a.btn {
 .md.compact table {
   margin-bottom: 0.45em;
 }
+.md.inline {
+  display: inline;
+}
+.md.inline code {
+  padding: 0 4px;
+}
+/* nota: prévia formatada no lugar do campo; clique para editar */
+.note-md {
+  cursor: text;
+  white-space: normal;
+}
+.note-md:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+/* texto apagado por fora (desfazer, outro agente) enquanto a prévia está aberta */
+.note-md:not(:has(.md > *))::before {
+  content: 'Sem texto ainda. Clique para escrever.';
+  color: var(--muted);
+}
+.note .note-md {
+  min-height: 48px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.note-ed .note-md {
+  flex: 1;
+  font-size: 15.5px;
+  line-height: 1.75;
+  min-height: 360px;
+  color: var(--fg2);
+}
 /* na janela do agente o texto não é pre-wrap: o markdown cuida das quebras */
+.l .md {
+  white-space: normal;
+}
 .l.txt.md-line {
   white-space: normal;
   display: flex;
