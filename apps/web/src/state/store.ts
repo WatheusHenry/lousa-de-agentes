@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  ClaudeLoginState,
   Agent,
   AgentContext,
   ContextKind,
@@ -61,6 +62,8 @@ export interface CanvasState {
   archived: StateSnapshot['archived'];
   /** Merge em sequência por issue (o mais recente de cada uma). */
   merges: Record<string, MergeProgress>;
+  /** Login do Claude Code refeito pelo canvas (quando expira, os agentes param). */
+  claudeLogin: ClaudeLoginState;
   startMerge(issueRef: string, mrRefs: string[]): void;
   cancelMerge(issueRef: string): void;
   archiveIssue(nodeId: string): void;
@@ -231,6 +234,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   questions: {},
   archived: [],
   merges: {},
+  claudeLogin: { state: 'idle', url: null, message: null },
   contexts: {},
   threadVersion: {},
   openIssueRefs: [],
@@ -351,6 +355,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set((s) => ({ mergeRequests: { ...s.mergeRequests, [m.mr.ref]: m.mr } }));
       case 'merge.progress':
         return set((s) => ({ merges: { ...s.merges, [m.progress.issueRef]: m.progress } }));
+      case 'claude.login':
+        return set({ claudeLogin: m.login });
       case 'question.upsert':
         return set((s) => ({
           questions:

@@ -209,6 +209,8 @@ Dá para usar o canvas só com repositórios da sua máquina, sem token nem issu
 - **Atalhos no canvas** (fora de campos de texto): **N** novo agente, **Shift + N** nova nota, **setas** vão ao item vizinho, **Enter** abre o item selecionado em foco, **A** aba Ações, **F** enquadra tudo, **?** abre a ajuda com a lista completa.
 - **Tema escuro**: segue o sistema por padrão; em Automações → Aparência dá para fixar Claro ou Escuro (ou trocar pela paleta).
 
+- **Login do Claude Code expirado**: se o `claude` desta máquina perder o login, o terminal do agente mostra **Entrar de novo no Claude**. O bridge roda `claude auth login`, que abre a página de login no navegador. Se a página mostrar um código, cole no campo da caixa. Depois, **Reenviar a última mensagem** retoma o agente de onde parou.
+
 ## Robustez (Fase 7)
 
 - **Reinício do bridge**: canvas, notas, histórico dos agentes, MRs, regras e pedidos de permissão ficam no SQLite. Se o bridge cair (crash, `kill -9`, `tsx watch` recarregando) ou for desligado, quem estava trabalhando volta sozinho quando ele sobe de novo: o bridge retoma cada sessão com `--resume` e avisa o agente que houve um reinício. Com `AGENT_CANVAS_AUTO_RESUME=0`, eles ficam **Pausados** para você retomar.

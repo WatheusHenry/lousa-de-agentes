@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ClaudeLoginState } from './claude.ts';
 import { Agent, AgentEvent, Approval, Policy, Question } from './agents.ts';
 import { Activity, CanvasEdge, CanvasNode, Note, NoteLink } from './canvas.ts';
 import { AgentContext, ContextKind } from './context.ts';
@@ -206,5 +207,6 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('context.updated'), context: AgentContext }),
   z.object({ type: z.literal('question.upsert'), question: Question }),
   z.object({ type: z.literal('merge.progress'), progress: MergeProgress }),
+  z.object({ type: z.literal('claude.login'), login: ClaudeLoginState }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;

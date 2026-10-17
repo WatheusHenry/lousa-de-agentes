@@ -1,4 +1,5 @@
-import type { Agent } from '@agent-canvas/shared';
+import { needsClaudeLogin, type Agent } from '@agent-canvas/shared';
+import { ClaudeLoginBox } from './ClaudeLoginBox.tsx';
 import { focusNode } from '../canvas/viewport.ts';
 import { askOpenMr } from '../actions.ts';
 import { Select } from '../components/Select.tsx';
@@ -129,6 +130,8 @@ export function AgentPanel({
   const now =
     lastTool?.body.kind === 'tool_use' ? `${lastTool.body.name}(${lastTool.body.summary})` : 'Preparando';
   const turns = events.filter((e) => e.body.kind === 'result').length;
+  const lastUserEvent = events.findLast((e) => e.body.kind === 'user_message')?.body;
+  const lastUserMessage = lastUserEvent?.kind === 'user_message' ? lastUserEvent.text : null;
 
   const ctl = live ? (
     <button className="btn" onClick={() => st.pauseAgent(a.id)}>
@@ -195,10 +198,13 @@ export function AgentPanel({
           </button>
         </div>
       )}
-      {a.error && a.status !== 'running' && (
+      {a.error && a.status !== 'running' && !(a.status === 'error' && needsClaudeLogin(a.error)) && (
         <div className="callout" style={{ background: 'var(--bad-soft)', color: 'var(--bad)' }}>
           <span>{a.error}</span>
         </div>
+      )}
+      {a.status === 'error' && needsClaudeLogin(a.error) && (
+        <ClaudeLoginBox agent={a} lastMessage={lastUserMessage} />
       )}
 
       {blank ? (
