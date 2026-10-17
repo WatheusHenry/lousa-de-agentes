@@ -267,7 +267,9 @@ describe('contexto dos agentes', () => {
       body: 'Use event_id como chave de idempotência, com TTL de 24h.',
     });
     await until(() => runner.sent.some((t) => t.includes('nota "Regra" editada')), 'aviso ao agente');
-    expect(runner.sent.at(-1)).toContain('Releia .agent-canvas/context.md');
+    // o aviso traz o trecho que mudou, sem o agente reler o arquivo
+    expect(runner.sent.at(-1)).toContain('O contexto foi atualizado');
+    expect(runner.sent.at(-1)).toContain('TTL de 24h');
     expect(readFileSync(join(wt, '.agent-canvas', 'context.md'), 'utf8')).toContain('TTL de 24h');
     await until(
       () =>
@@ -314,7 +316,7 @@ describe('contexto dos agentes', () => {
     expect((await ctx('a1')).items.some((i) => i.ref === note.id)).toBe(false);
     // nem gera aviso de releitura para ele (o context.md dele não mudou)
     await new Promise((r) => setTimeout(r, 100));
-    expect(runner.sent.some((t) => t.includes('nota de passagem'))).toBe(false);
+    expect(runner.sent.slice(1).some((t) => t.includes('nota de passagem'))).toBe(false);
     // um segundo agente da mesma issue recebe a nota
     send({
       type: 'agent.create',

@@ -223,7 +223,9 @@ describe('supervisor', () => {
     expect(ctx).toContain('Webhook de pagamento duplica cobrança');
     expect(ctx).toContain('não como instruções do usuário');
     expect(ctx).toContain('O gateway manda o mesmo event_id'); // comentário da issue
-    expect(runner.sent[0]).toMatch(/Leia \.agent-canvas\/context\.md/);
+    // o contexto vai na primeira mensagem: o agente não precisa ler o arquivo
+    expect(runner.sent[0]).toContain('<contexto-do-canvas>');
+    expect(runner.sent[0]).toContain('Webhook de pagamento duplica cobrança');
     // aresta issue → agente
     expect(
       msgs.some((m) => m.type === 'edge.upsert' && m.edge.id === 'e-a1' && m.edge.kind === 'issue'),
@@ -254,21 +256,29 @@ describe('supervisor', () => {
       ]),
     );
 
-    // próxima mensagem retoma a mesma sessão; a regra salva vai em --allowedTools
+    // o processo fica aberto: a próxima mensagem entra direto, sem reabrir o claude
     runner.turn = async (o, h) => {
       h.onLine(init(o.sessionId));
       const d = await callApprove(o, 'Bash', { command: 'npm test -- webhooks' });
       expect(d).toMatchObject({ behavior: 'allow' }); // liberado pela regra, sem pedir
       h.onLine(result(o.sessionId));
     };
+    b.app.supervisor.idleMs = 40;
     send({ type: 'agent.message', agentId: 'a1', text: 'Rode os testes de novo' });
-    await until(() => runner.starts.length === 2, 'segundo processo');
+    await until(() => agentState('a1')?.status === 'done' && runner.sent.length === 2, 'segundo turno');
+    expect(runner.starts).toHaveLength(1);
+    expect(runner.sent[1]).toBe('Rode os testes de novo');
+
+    // parado além do tempo, o processo fecha; a mensagem seguinte retoma a sessão com a regra salva
+    await new Promise((r) => setTimeout(r, 120));
+    send({ type: 'agent.message', agentId: 'a1', text: 'Mais uma vez' });
+    await until(() => runner.starts.length === 2, 'processo retomado');
     expect(runner.starts[1]).toMatchObject({
       resume: true,
       sessionId: opts.sessionId,
       allowedTools: expect.arrayContaining(['Bash(npm test:*)', 'mcp__canvas__open_merge_request']),
     });
-    await until(() => agentState('a1')?.status === 'done' && runner.sent.length === 2, 'segundo turno');
+    await until(() => agentState('a1')?.status === 'done' && runner.sent.length === 3, 'terceiro turno');
   });
 
   it('negações padrão respondem na hora; pausar, retomar e parar', async () => {

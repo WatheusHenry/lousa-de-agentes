@@ -210,5 +210,7 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('question.upsert'), question: Question }),
   z.object({ type: z.literal('merge.progress'), progress: MergeProgress }),
   z.object({ type: z.literal('claude.login'), login: ClaudeLoginState }),
+  /** Texto que o agente ainda está escrevendo (streaming); some quando a mensagem completa chega. */
+  z.object({ type: z.literal('agent.delta'), agentId: Id, text: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;

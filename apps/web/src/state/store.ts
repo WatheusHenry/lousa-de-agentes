@@ -64,6 +64,8 @@ export interface CanvasState {
   merges: Record<string, MergeProgress>;
   /** Login do Claude Code refeito pelo canvas (quando expira, os agentes param). */
   claudeLogin: ClaudeLoginState;
+  /** Texto que cada agente ainda está escrevendo (streaming), até a mensagem completa chegar. */
+  liveText: Record<string, string>;
   startMerge(issueRef: string, mrRefs: string[]): void;
   cancelMerge(issueRef: string): void;
   archiveIssue(nodeId: string): void;
@@ -237,6 +239,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   archived: [],
   merges: {},
   claudeLogin: { state: 'idle', url: null, message: null },
+  liveText: {},
   contexts: {},
   threadVersion: {},
   openIssueRefs: [],
@@ -336,8 +339,14 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set((s) => {
           const list = s.agentEvents[m.event.agentId] ?? [];
           if (list.length && list[list.length - 1]!.id >= m.event.id) return s;
+          const k = m.event.body.kind;
+          // a mensagem completa (ou o fim do turno) substitui o texto ao vivo
+          const clear =
+            (k === 'text' || k === 'tool_use' || k === 'result' || k === 'error') &&
+            s.liveText[m.event.agentId] !== undefined;
           return {
             agentEvents: { ...s.agentEvents, [m.event.agentId]: [...list, m.event].slice(-MAX_EVENTS) },
+            ...(clear ? { liveText: omit(s.liveText, m.event.agentId) } : {}),
           };
         });
       case 'approval.upsert':
@@ -359,6 +368,10 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set((s) => ({ merges: { ...s.merges, [m.progress.issueRef]: m.progress } }));
       case 'claude.login':
         return set({ claudeLogin: m.login });
+      case 'agent.delta':
+        return set((s) => ({
+          liveText: { ...s.liveText, [m.agentId]: (s.liveText[m.agentId] ?? '') + m.text },
+        }));
       case 'question.upsert':
         return set((s) => ({
           questions:

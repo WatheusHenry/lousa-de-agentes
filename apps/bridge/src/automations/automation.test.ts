@@ -142,11 +142,12 @@ describe('automações', () => {
 
     // o agente autor: commit com o teste quebrado e MR; depois responde à revisão
     runner.scripts.main = async (o, _h, text) => {
-      if (text.includes('Comentário')) {
+      // a primeira mensagem traz o contexto inteiro: decide pelo começo da mensagem
+      if (text.startsWith('Comentário')) {
         await callTool(o, 'comment_mr', { body: 'Ajustado.' });
         return;
       }
-      if (text.includes('pipeline')) return;
+      if (text.startsWith('O pipeline')) return;
       writeFileSync(join(o.cwd, 'webhooks.ts'), 'export const charges = 2;\n');
       gitIn(o.cwd, 'add', '.');
       gitIn(o.cwd, 'commit', '-qm', 'Webhook');
@@ -281,7 +282,7 @@ describe('automações', () => {
     // o poller acha o comentário do revisor e manda para o autor
     await b.app.poller.tick('mrs');
     const toAuthor = await until(
-      () => runner.received.find((r) => r.role === 'main' && r.text.includes('Comentário')),
+      () => runner.received.find((r) => r.role === 'main' && r.text.startsWith('Comentário')),
       'comentário no autor',
     );
     expect(toAuthor.text).toContain('Falta um teste para o reenvio do gateway.');

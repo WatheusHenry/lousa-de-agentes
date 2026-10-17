@@ -14,6 +14,8 @@ export function claudeArgs(o: RunnerStartOptions): string[] {
     '--output-format',
     'stream-json',
     '--verbose',
+    // texto em pedaços enquanto o modelo escreve (o canvas mostra ao vivo, sem gravar)
+    '--include-partial-messages',
     o.resume ? '--resume' : '--session-id',
     o.sessionId,
     '--mcp-config',
@@ -45,6 +47,8 @@ export class CliRunner implements AgentRunner {
         // versões novas do claude também abortam uma ferramenta parada há 5 min sem progresso,
         // o que derrubava pedidos de permissão esperando o usuário
         CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: MCP_TOOL_TIMEOUT_MS,
+        // as ferramentas do canvas carregam já no início: sem ToolSearch a cada sessão
+        ENABLE_TOOL_SEARCH: 'false',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

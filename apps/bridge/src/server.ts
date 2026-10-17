@@ -48,6 +48,8 @@ declare module 'fastify' {
     poller: Poller;
     /** Para os testes encurtarem a espera do merge em sequência. */
     mrs: MrService;
+    /** Para os testes encurtarem o tempo de um processo ocioso. */
+    supervisor: Supervisor;
   }
 }
 
@@ -682,6 +684,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.decorate('poller', poller);
   app.decorate('mrs', mrs);
+  app.decorate('supervisor', supervisor);
   poller.start({
     ...(deps.pollMrsEveryMs ? { mrsEveryMs: deps.pollMrsEveryMs } : {}),
     ...(deps.pollIssuesEveryMs ? { issuesEveryMs: deps.pollIssuesEveryMs } : {}),

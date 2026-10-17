@@ -86,7 +86,7 @@ export class AutomationService {
       return null;
     }
     this.d.context.invalidate('pipeline_log', ref);
-    const notice = `O pipeline do MR !${mr.iid} falhou. O log dos jobs com falha está em .agent-canvas/context.md. Ache a causa, corrija, rode de novo o que falhou, faça commit e chame open_merge_request para enviar os commits ao MR.`;
+    const notice = `O pipeline do MR !${mr.iid} falhou. O log dos jobs com falha está no contexto do canvas. Ache a causa, corrija, rode de novo o que falhou, faça commit e chame open_merge_request para enviar os commits ao MR.`;
     if (sup.busy(author.id)) {
       this.d.context.seed(author.id, [{ kind: 'pipeline_log', ref }]);
       await sup.message(author.id, notice);
@@ -114,7 +114,7 @@ export class AutomationService {
       this.d.supervisor.helper(
         'reviewer',
         mr,
-        `Revise o MR !${mr.iid} (${mr.title}), aberto por ${author.name}. O diff está em .agent-canvas/context.md e o código no seu worktree. Publique a revisão com comment_mr.`,
+        `Revise o MR !${mr.iid} (${mr.title}), aberto por ${author.name}. O diff está no contexto do canvas e o código no seu worktree. Publique a revisão com comment_mr.`,
       );
     } catch (err) {
       this.log(`Revisão automática do MR !${mr.iid}: ${(err as Error).message}`);
