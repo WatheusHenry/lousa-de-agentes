@@ -316,3 +316,63 @@ export const IconTheme = ({ size = 14 }: P) => (
     <path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" fill="currentColor" />
   </svg>
 );
+export const IconGlobe = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <circle cx="8" cy="8" r="6" />
+    <path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14M8 2C6.2 3.7 5.4 5.7 5.4 8s.8 4.3 2.6 6" />
+  </svg>
+);
+export const IconBack = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M13 8H3M7.5 3.5 3 8l4.5 4.5" />
+  </svg>
+);
+export const IconForward = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.7"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 8h10M8.5 3.5 13 8l-4.5 4.5" />
+  </svg>
+);
+export const IconReload = ({ size = 14 }: P) => (
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3" />
+  </svg>
+);
