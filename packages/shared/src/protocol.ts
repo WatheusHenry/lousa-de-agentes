@@ -134,6 +134,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
     agentId: Id,
     model: z.string().trim().min(1).max(100).nullable(),
   }),
+  /** Renomeia o terminal de um agente. Nome vazio volta ao nome automático. */
+  z.object({ type: z.literal('agent.rename'), agentId: Id, name: z.string().trim().max(40) }),
   z.object({
     type: z.literal('agent.update'),
     agentId: Id,

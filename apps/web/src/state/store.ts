@@ -82,6 +82,8 @@ export interface CanvasState {
 
   // ---------- interface ----------
   selected: string | null;
+  /** Seleção por área: 2 ou mais nós marcados juntos (vazio quando há 0 ou 1). */
+  multi: string[];
   panel: Panel;
   /** Seção da barra lateral pedida por último (atalho, aviso, botão) e um contador para repetir o pedido. */
   section: { id: Section; seq: number };
@@ -114,6 +116,9 @@ export interface CanvasState {
   linkNote(noteId: string, targetNodeId: string): void;
   unlinkNote(noteId: string, targetNodeId: string): void;
   removeNode(id: string): void;
+  /** Remove vários nós de uma vez; um único Desfazer devolve todos. */
+  removeNodes(ids: string[]): void;
+  setMulti(ids: string[]): void;
   undo(): void;
 
   createAgent(o: {
@@ -132,6 +137,11 @@ export interface CanvasState {
   setAgentMode(agentId: string, auto: boolean): void;
   /** Modelo do agente (`null` = o padrão das configurações); vale a partir do próximo turno. */
   setAgentModel(agentId: string, model: string | null): void;
+  /** Renomeia o terminal; nome vazio volta ao automático. */
+  renameAgent(agentId: string, name: string): void;
+  /** Agente cujo nome está em edição (aberto pelo menu de contexto). */
+  renaming: string | null;
+  setRenaming(agentId: string | null): void;
   pauseAgent(agentId: string): void;
   resumeAgent(agentId: string): void;
   stopAgent(agentId: string): void;
@@ -250,6 +260,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
   issuesLoading: false,
   issuesError: null,
   selected: null,
+  renaming: null,
+  multi: [],
   panel: firstVisit() ? 'help' : null,
   section: { id: 'issues', seq: 0 },
   filter: 'all',
@@ -287,6 +299,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
         archived: s.archived,
         merges: Object.fromEntries(s.merges.map((p) => [p.issueRef, p])),
         selected: st.selected && nodes[st.selected] ? st.selected : null,
+        multi: st.multi.filter((id) => nodes[id]),
         focusId: st.focusId && nodes[st.focusId] ? st.focusId : null,
       };
     });
@@ -530,6 +543,34 @@ export const useStore = create<CanvasState>()((set, get) => ({
     get().showToast(label);
   },
 
+  removeNodes(ids) {
+    const s = get();
+    const list = ids.filter((id) => s.nodes[id]);
+    if (list.length < 2) {
+      if (list[0]) get().removeNode(list[0]);
+      return;
+    }
+    for (const id of list) {
+      const n = s.nodes[id]!;
+      if (n.type === 'note') get().flushNote(n.refId);
+    }
+    set({
+      nodes: Object.fromEntries(Object.entries(s.nodes).filter(([id]) => !list.includes(id))),
+      selected: s.selected && list.includes(s.selected) ? null : s.selected,
+      focusId: s.focusId && list.includes(s.focusId) ? null : s.focusId,
+      multi: [],
+    });
+    for (const id of list) send({ type: 'node.remove', nodeId: id });
+    pendingUndo = () => list.forEach((id) => send({ type: 'node.restore', nodeId: id }));
+    get().showToast(`${list.length} itens removidos do canvas`);
+  },
+
+  setMulti(ids) {
+    const cur = get().multi;
+    if (cur.length === ids.length && cur.every((id, i) => id === ids[i])) return;
+    set({ multi: ids, ...(ids.length ? { selected: null, panel: null } : {}) });
+  },
+
   undo() {
     const f = pendingUndo;
     if (!f) return;
@@ -575,6 +616,16 @@ export const useStore = create<CanvasState>()((set, get) => ({
     });
     send({ type: 'agent.model', agentId, model });
   },
+  renameAgent: (agentId, name) => {
+    const typed = name.trim();
+    if (typed)
+      set((s) => {
+        const a = s.agents[agentId];
+        return a ? { agents: { ...s.agents, [agentId]: { ...a, name: typed } } } : {};
+      });
+    send({ type: 'agent.rename', agentId, name: typed });
+  },
+  setRenaming: (renaming) => set({ renaming }),
   pauseAgent: (agentId) => send({ type: 'agent.pause', agentId }),
   resumeAgent: (agentId) => send({ type: 'agent.resume', agentId }),
   stopAgent: (agentId) => send({ type: 'agent.stop', agentId }),
@@ -617,7 +668,12 @@ export const useStore = create<CanvasState>()((set, get) => ({
   commentMr: (ref, body) => send({ type: 'mr.comment', mrRef: ref, body }),
   commentIssue: (ref, body) => send({ type: 'issue.comment', issueRef: ref, body }),
 
-  select: (id) => set((s) => ({ selected: id, panel: id ? null : s.panel })),
+  select: (id) =>
+    set((s) => ({
+      selected: id,
+      multi: id && s.multi.includes(id) ? s.multi : [],
+      panel: id ? null : s.panel,
+    })),
   setPanel: (p) => set({ panel: p, selected: null }),
   showSection: (id) => set((s) => ({ section: { id, seq: s.section.seq + 1 } })),
   setFilter: (f) => set({ filter: f }),

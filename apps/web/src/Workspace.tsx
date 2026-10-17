@@ -77,6 +77,15 @@ export function Workspace() {
         else instantSide(main.current, () => st.setSideHidden(!st.sideHidden));
         return;
       }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && st.multi.length > 1 && !typing && !st.focusId) {
+        e.preventDefault();
+        st.removeNodes(st.multi);
+        return;
+      }
+      if (e.key === 'Escape' && st.multi.length && !typing) {
+        st.setMulti([]);
+        return;
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && st.selected && !typing && !st.focusId) {
         e.preventDefault();
         st.removeNode(st.selected);
