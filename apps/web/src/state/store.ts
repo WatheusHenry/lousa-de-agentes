@@ -18,6 +18,7 @@ import type {
   ServerMessage,
   SettingsView,
   StateSnapshot,
+  MergeProgress,
 } from '@agent-canvas/shared';
 
 export type Tab = 'issues' | 'actions' | 'repos' | 'feed';
@@ -58,6 +59,10 @@ export interface CanvasState {
   questions: Record<string, Question>;
   /** Issues arquivadas, para restaurar. */
   archived: StateSnapshot['archived'];
+  /** Merge em sequência por issue (o mais recente de cada uma). */
+  merges: Record<string, MergeProgress>;
+  startMerge(issueRef: string, mrRefs: string[]): void;
+  cancelMerge(issueRef: string): void;
   archiveIssue(nodeId: string): void;
   unarchiveIssue(issueRef: string): void;
   /** Contexto de cada agente (itens, tokens, sugestões), conforme o bridge manda. */
@@ -225,6 +230,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   mergeRequests: {},
   questions: {},
   archived: [],
+  merges: {},
   contexts: {},
   threadVersion: {},
   openIssueRefs: [],
@@ -266,6 +272,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
         mergeRequests: Object.fromEntries(s.mergeRequests.map((m) => [m.ref, m])),
         questions: byId(s.questions),
         archived: s.archived,
+        merges: Object.fromEntries(s.merges.map((p) => [p.issueRef, p])),
         selected: st.selected && nodes[st.selected] ? st.selected : null,
         focusId: st.focusId && nodes[st.focusId] ? st.focusId : null,
       };
@@ -342,6 +349,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
         return set((s) => ({ policies: s.policies.filter((p) => p.id !== m.policyId) }));
       case 'mr.upsert':
         return set((s) => ({ mergeRequests: { ...s.mergeRequests, [m.mr.ref]: m.mr } }));
+      case 'merge.progress':
+        return set((s) => ({ merges: { ...s.merges, [m.progress.issueRef]: m.progress } }));
       case 'question.upsert':
         return set((s) => ({
           questions:
@@ -572,6 +581,8 @@ export const useStore = create<CanvasState>()((set, get) => ({
   setQuery: (q) => set({ query: q }),
   setPalette: (open) => set({ paletteOpen: open }),
   archiveIssue: (nodeId) => send({ type: 'issue.archive', nodeId }),
+  startMerge: (issueRef, mrRefs) => send({ type: 'merge.start', issueRef, mrRefs }),
+  cancelMerge: (issueRef) => send({ type: 'merge.cancel', issueRef }),
   unarchiveIssue: (issueRef) => send({ type: 'issue.unarchive', issueRef }),
   setIssueProjects(ids) {
     const unique = [...new Set(ids)];

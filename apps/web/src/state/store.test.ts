@@ -55,6 +55,7 @@ const empty: StateSnapshot = {
   mergeRequests: [],
   questions: [],
   archived: [],
+  merges: [],
   issues: [issue],
   activity: [],
   agents: [],

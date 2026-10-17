@@ -185,6 +185,12 @@ O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado
 - **Notificações do sistema** (Automações → Avisos): com o canvas em segundo plano, o navegador avisa pedido de permissão, pergunta, agente concluído ou com erro, MR pronto para merge e pipeline com falha. Clicar leva ao item.
 - **Agentes** (Automações → Agentes): modelo, agentes ao mesmo tempo, tempo máximo de um agente, orçamento da árvore e contexto recomendado. Vale a partir do próximo turno, sem reiniciar.
 
+## Fechar uma issue: merge em sequência e arquivo
+
+- **Mergear na ordem**: com dois ou mais MRs abertos, o painel da issue lista os MRs na ordem do plano do orquestrador (ou do mais antigo para o mais novo), com ↑↓ para mudar. **Mergear na ordem** pede confirmação e o bridge mergeia um de cada vez: espera o pipeline do MR passar, faz o merge e só então segue para o próximo. Para na primeira falha (pipeline com falha, MR fechado, GitLab recusou), sempre dizendo o motivo, e tem **Cancelar sequência**. O merge continua sendo seu: só começa com o seu clique.
+- **Arquivar**: no painel da issue ou no botão direito, tira do canvas a issue com os agentes dela, os MRs e as notas que só servem a ela. Não arquiva com agente trabalhando. Nada é apagado: a seção **Arquivadas** da aba Issues tem **Restaurar**, e arrastar a issue de novo do backlog também traz tudo de volta.
+- **Paleta Ctrl/⌘ + K** (ou **Buscar** na toolbar): acha qualquer agente, issue, nota ou MR, traz issues do backlog e roda as ações mais usadas pelo teclado.
+
 ## Robustez (Fase 7)
 
 - **Reinício do bridge**: canvas, notas, histórico dos agentes, MRs, regras e pedidos de permissão ficam no SQLite. Se o bridge cair (crash, `kill -9`, `tsx watch` recarregando) ou for desligado, quem estava trabalhando volta sozinho quando ele sobe de novo: o bridge retoma cada sessão com `--resume` e avisa o agente que houve um reinício. Com `AGENT_CANVAS_AUTO_RESUME=0`, eles ficam **Pausados** para você retomar.

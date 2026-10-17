@@ -7,6 +7,7 @@ import {
   parseIssueRef,
   parseMrRef,
   type IssueComment,
+  type MergeProgress,
   type MergeRequest,
   type MrDiffFile,
 } from '@agent-canvas/shared';
@@ -58,6 +59,11 @@ export class MrService {
   onChanged: (mr: MergeRequest, prev: MergeRequest) => void = () => {};
   /** Avisado quando um agente abre um MR novo (automação do revisor). */
   onOpened: (mr: MergeRequest) => void = () => {};
+  /** Sequências de merge por issue (a mais recente de cada uma). */
+  private sequences = new Map<string, MergeProgress & { cancel: boolean }>();
+  /** Intervalo entre leituras do pipeline e tempo máximo de espera por MR (os testes encurtam). */
+  mergePollMs = 15_000;
+  mergeTimeoutMs = 45 * 60_000;
 
   constructor(
     private readonly db: Db,
@@ -277,6 +283,99 @@ export class MrService {
       this.store.logActivity(`MR !${mr.iid} aprovado e mergeado por você`),
     ]);
     return mr;
+  }
+
+  merges(): MergeProgress[] {
+    return [...this.sequences.values()].map(({ cancel: _c, ...p }) => p);
+  }
+
+  private progress(issueRef: string, patch: Partial<MergeProgress>): void {
+    const cur = this.sequences.get(issueRef);
+    if (!cur) return;
+    Object.assign(cur, patch);
+    const { cancel: _c, ...p } = cur;
+    this.hub.broadcast({ type: 'merge.progress', progress: p });
+  }
+
+  /**
+   * Merge em sequência, na ordem escolhida pelo usuário: para cada MR, espera o pipeline
+   * passar, faz o merge e só então segue. Para na primeira falha (pipeline com falha, MR
+   * fechado, GitLab recusou) ou se o usuário cancelar. Agentes não têm como chamar isto.
+   */
+  async mergeInOrder(issueRef: string, refs: string[]): Promise<void> {
+    const running = this.sequences.get(issueRef);
+    if (running && (running.state === 'waiting' || running.state === 'merging'))
+      throw new MrError('Já há um merge em sequência para esta issue.');
+    for (const ref of refs) if (!this.get(ref)) throw new MrError(`MR ${ref} desconhecido.`);
+    this.sequences.set(issueRef, {
+      issueRef,
+      refs,
+      index: 0,
+      state: 'waiting',
+      message: 'Começando',
+      merged: [],
+      cancel: false,
+    });
+    this.progress(issueRef, {});
+    const seq = this.sequences.get(issueRef)!;
+    const stop = (state: 'failed' | 'cancelled', message: string) => {
+      this.progress(issueRef, { state, message });
+      this.hub.broadcast(this.store.logActivity(`Merge em sequência parado: ${message}`));
+    };
+    for (let i = 0; i < refs.length; i++) {
+      const ref = refs[i]!;
+      const started = Date.now();
+      for (;;) {
+        if (seq.cancel) return stop('cancelled', 'cancelado por você');
+        let mr: MergeRequest | null;
+        try {
+          mr = await this.refresh(ref, true);
+        } catch (err) {
+          return stop('failed', `não consegui ler o MR no GitLab (${(err as Error).message})`);
+        }
+        if (!mr) return stop('failed', `MR ${ref} sumiu`);
+        if (mr.state === 'merged') break;
+        if (mr.state !== 'opened') return stop('failed', `o MR !${mr.iid} foi fechado`);
+        if (mr.pipelineStatus === 'failed' || mr.pipelineStatus === 'canceled')
+          return stop(
+            'failed',
+            `o pipeline do MR !${mr.iid} ${mr.pipelineStatus === 'failed' ? 'falhou' : 'foi cancelado'}`,
+          );
+        if (
+          mr.pipelineStatus === 'success' ||
+          mr.pipelineStatus === 'none' ||
+          mr.pipelineStatus === 'skipped'
+        ) {
+          this.progress(issueRef, { index: i, state: 'merging', message: `Mergeando !${mr.iid}` });
+          try {
+            await this.merge(ref);
+          } catch (err) {
+            return stop('failed', `o GitLab recusou o merge do !${mr.iid}: ${(err as Error).message}`);
+          }
+          break;
+        }
+        if (Date.now() - started > this.mergeTimeoutMs)
+          return stop('failed', `o pipeline do MR !${mr.iid} não terminou a tempo`);
+        this.progress(issueRef, {
+          index: i,
+          state: 'waiting',
+          message: `Esperando o pipeline do !${mr.iid}`,
+        });
+        await new Promise((r) => setTimeout(r, this.mergePollMs));
+      }
+      this.progress(issueRef, { merged: [...seq.merged, ref] });
+    }
+    this.progress(issueRef, {
+      index: refs.length,
+      state: 'done',
+      message: `${refs.length} MRs mergeados na ordem`,
+    });
+    this.hub.broadcast(this.store.logActivity(`Merge em sequência concluído: ${refs.length} MRs`));
+  }
+
+  cancelMerge(issueRef: string): void {
+    const s = this.sequences.get(issueRef);
+    if (s && (s.state === 'waiting' || s.state === 'merging')) s.cancel = true;
   }
 
   async diff(ref: string): Promise<MrDiffFile[]> {

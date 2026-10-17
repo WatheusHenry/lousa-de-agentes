@@ -115,6 +115,7 @@ function IssuePanel(nodeId: string): [ReactNode, ReactNode] {
           )}
         </dl>
       </div>
+      <MergeOrder issueRef={i.ref} />
       <IssueStart key={nodeId} nodeId={nodeId} issue={i} />
       <div className="grp">
         <h4>Notas</h4>
@@ -179,6 +180,8 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
     setRepos(next);
   };
   const orch = repos.length > 1;
+  // a issue já tem agentes: começar outro trabalho deixa de ser a ação principal
+  const hasAgents = useStore((s) => Object.values(s.agents).some((a) => a.issueRef === issue.ref));
   const names = repos.map((id) => projects.find((p) => p.id === id)?.name).filter(Boolean);
   const summary = [
     orch ? `${names.length} repositórios` : (names[0] ?? 'repositório da issue'),
@@ -245,10 +248,11 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
       <div className="insp-cta">
         <span className="lab">{summary}</span>
         <button
-          className="btn primary"
+          className={`btn${hasAgents ? '' : ' primary'}`}
           onClick={() => startIssueAgent(nodeId, extra, { repos, maxDepth: depth, openMr })}
         >
-          {orch ? `Iniciar orquestrador (${repos.length} repositórios)` : 'Iniciar agente'}
+          {hasAgents ? 'Iniciar de novo: ' : 'Iniciar '}
+          {orch ? `orquestrador (${repos.length} repositórios)` : 'agente'}
         </button>
       </div>
     </>
@@ -256,6 +260,132 @@ function IssueStart({ nodeId, issue }: { nodeId: string; issue: Issue }) {
 }
 
 const NO_PROJECTS: never[] = [];
+
+/**
+ * MRs abertos da issue para mergear em sequência: na ordem do plano do orquestrador quando
+ * houver (o usuário ajusta com ↑↓), o bridge espera o pipeline de cada um antes do próximo.
+ */
+function MergeOrder({ issueRef }: { issueRef: string }) {
+  const mrs = useStore((s) => s.mergeRequests);
+  const agents = useStore((s) => s.agents);
+  const progress = useStore((s) => s.merges[issueRef]);
+  const open = Object.values(mrs).filter((m) => m.issueRef === issueRef && m.state === 'opened');
+  // ordem do plano: passos do agente raiz da issue, cada um com o MR do agente responsável
+  const planned: string[] = [];
+  for (const a of Object.values(agents))
+    if (a.issueRef === issueRef && a.depth === 0)
+      for (const it of a.plan ?? []) {
+        const m = open.find((x) => x.agentId && it.agentId === x.agentId);
+        if (m && !planned.includes(m.ref)) planned.push(m.ref);
+      }
+  const fallback = open
+    .filter((m) => !planned.includes(m.ref))
+    .sort((a, b) => a.iid - b.iid)
+    .map((m) => m.ref);
+  const suggested = [...planned, ...fallback];
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const running = progress && (progress.state === 'waiting' || progress.state === 'merging');
+  const refs = running ? progress.refs : (order ?? suggested).filter((r) => open.some((m) => m.ref === r));
+  for (const r of suggested) if (!refs.includes(r) && !running) refs.push(r);
+  const shown = running ? progress.refs : refs;
+  if (shown.length < 2 && !progress) return null;
+
+  const move = (k: number, d: -1 | 1) => {
+    const next = [...refs];
+    [next[k], next[k + d]] = [next[k + d]!, next[k]!];
+    setOrder(next);
+  };
+  const icon = (ref: string, k: number) => {
+    if (progress?.merged.includes(ref)) return '✓';
+    if (running && progress.index === k) return progress.state === 'merging' ? '↻' : '⏳';
+    return String(k + 1);
+  };
+  return (
+    <div className="grp merge-order">
+      <h4>Merge requests da issue</h4>
+      <ol>
+        {shown.map((ref, k) => {
+          const m = mrs[ref];
+          return (
+            <li key={ref} className={progress?.merged.includes(ref) ? 'ok' : ''}>
+              <span className="mo-n" aria-hidden="true">
+                {icon(ref, k)}
+              </span>
+              <span className="mo-t">
+                <b>!{m?.iid}</b> {m?.projectPath.split('/').pop()}
+                <small>{m?.title}</small>
+              </span>
+              {m && <MrBadge mr={m} />}
+              {!running && (
+                <span className="mo-mv">
+                  <button
+                    className="btn plain icon xs"
+                    aria-label="Subir"
+                    disabled={k === 0}
+                    onClick={() => move(k, -1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className="btn plain icon xs"
+                    aria-label="Descer"
+                    disabled={k === refs.length - 1}
+                    onClick={() => move(k, 1)}
+                  >
+                    ↓
+                  </button>
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {progress && (
+        <p className={`lab mo-st ${progress.state}`} style={{ margin: 0 }}>
+          {progress.message}
+        </p>
+      )}
+      {running ? (
+        <div className="act-btns">
+          <button className="btn sm" onClick={() => useStore.getState().cancelMerge(issueRef)}>
+            Cancelar sequência
+          </button>
+        </div>
+      ) : refs.length >= 2 && confirming ? (
+        <div className="callout">
+          <span>
+            Mergear {refs.length} MRs nesta ordem? O app espera o pipeline de cada um passar antes do próximo
+            e para na primeira falha.
+          </span>
+          <div className="act-btns">
+            <button
+              className="btn sm primary"
+              onClick={() => {
+                setConfirming(false);
+                useStore.getState().startMerge(issueRef, refs);
+              }}
+            >
+              Mergear na ordem
+            </button>
+            <button className="btn sm plain" onClick={() => setConfirming(false)}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        refs.length >= 2 && (
+          <div className="act-btns">
+            <button className="btn sm" onClick={() => setConfirming(true)}>
+              Mergear na ordem ({refs.length})
+            </button>
+            {planned.length > 0 && <span className="lab">Ordem do plano do orquestrador</span>}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
 
 /** Arquivar: some do canvas com agentes, MRs e notas; volta pela aba Issues. */
 function ArchiveButton({ nodeId, issueRef }: { nodeId: string; issueRef: string }) {

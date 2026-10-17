@@ -107,7 +107,7 @@ export function startFromCard(issueNodeId: string): string | null {
 
 /** Rola o painel até o botão de iniciar da issue e foca nele (o painel pode ainda estar abrindo). */
 function focusStartButton(tries = 30) {
-  const btn = document.querySelector<HTMLButtonElement>('.insp.open .insp-cta .btn.primary');
+  const btn = document.querySelector<HTMLButtonElement>('.insp.open .insp-cta .btn');
   if (btn) {
     btn.scrollIntoView({ block: 'nearest' });
     btn.focus({ preventScroll: true });

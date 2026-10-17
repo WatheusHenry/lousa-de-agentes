@@ -11,6 +11,20 @@ export const SESSION_QUERY = 'token';
 /** Meta tag em que o index.html recebe o token de sessão. */
 export const SESSION_META = 'agent-canvas-token';
 
+/** Merge em sequência dos MRs de uma issue (o usuário escolhe a ordem e confirma). */
+export const MergeProgress = z.object({
+  issueRef: z.string(),
+  refs: z.array(z.string()),
+  /** MR da vez (índice em refs). */
+  index: z.number(),
+  state: z.enum(['waiting', 'merging', 'done', 'failed', 'cancelled']),
+  /** O que está acontecendo ou por que parou. */
+  message: z.string(),
+  /** MRs já mergeados nesta sequência. */
+  merged: z.array(z.string()),
+});
+export type MergeProgress = z.infer<typeof MergeProgress>;
+
 /** GET /state: tudo o que o front precisa para desenhar o canvas. */
 export const StateSnapshot = z.object({
   settings: SettingsView,
@@ -31,6 +45,8 @@ export const StateSnapshot = z.object({
   mergeRequests: z.array(MergeRequest),
   /** Perguntas pendentes dos agentes (ask_human). */
   questions: z.array(Question),
+  /** Sequências de merge em andamento ou recém-terminadas. */
+  merges: z.array(MergeProgress),
   /** Issues arquivadas (com agentes, MRs e notas), para restaurar. */
   archived: z.array(
     z.object({
@@ -120,6 +136,9 @@ export const ClientMessage = z.discriminatedUnion('type', [
   /** Merge é sempre uma ação humana, pela caixa de Ações. */
   z.object({ type: z.literal('mr.merge'), mrRef: MrRef }),
   z.object({ type: z.literal('mr.refresh'), mrRef: MrRef }),
+  /** Mergeia os MRs na ordem dada, esperando o pipeline de cada um passar. */
+  z.object({ type: z.literal('merge.start'), issueRef: IssueRef, mrRefs: z.array(MrRef).min(1).max(20) }),
+  z.object({ type: z.literal('merge.cancel'), issueRef: IssueRef }),
   /** Cria (ou retoma) o agente fix do MR com pipeline falhando. */
   z.object({ type: z.literal('mr.fix'), mrRef: MrRef }),
   z.object({ type: z.literal('mr.comment'), mrRef: MrRef, body: z.string().min(1).max(20_000) }),
@@ -171,5 +190,6 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('state.snapshot'), state: StateSnapshot }),
   z.object({ type: z.literal('context.updated'), context: AgentContext }),
   z.object({ type: z.literal('question.upsert'), question: Question }),
+  z.object({ type: z.literal('merge.progress'), progress: MergeProgress }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;

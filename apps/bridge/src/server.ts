@@ -43,6 +43,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Para os testes rodarem uma rodada do poller sem esperar o intervalo. */
     poller: Poller;
+    /** Para os testes encurtarem a espera do merge em sequência. */
+    mrs: MrService;
   }
 }
 
@@ -221,6 +223,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     policies: approvals.policies(),
     mergeRequests: mrs.canvasMrs(),
     questions: questions.pending(),
+    merges: mrs.merges(),
     archived: store.archivedIssues().flatMap((a) => {
       const i = store.cachedIssue(a.issueRef);
       return i ? [{ ...a, iid: i.iid, title: i.title, projectPath: i.projectPath }] : [];
@@ -469,6 +472,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       if (
         msg.type.startsWith('agent.') ||
         msg.type.startsWith('mr.') ||
+        msg.type.startsWith('merge.') ||
         msg.type.startsWith('context.') ||
         msg.type === 'issue.comment' ||
         msg.type === 'approval.decide' ||
@@ -564,6 +568,20 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       return automations.pollMr(msg.mrRef).catch(() => {});
     }
     if (msg.type === 'mr.fix') return void (await automations.fixPipeline(msg.mrRef, 'user'));
+    if (msg.type === 'merge.cancel') return mrs.cancelMerge(msg.issueRef);
+    if (msg.type === 'merge.start') {
+      // a sequência pode levar minutos (espera os pipelines): roda em segundo plano
+      if (
+        mrs
+          .merges()
+          .some((m) => m.issueRef === msg.issueRef && (m.state === 'waiting' || m.state === 'merging'))
+      )
+        throw new MrError('Já há um merge em sequência para esta issue.');
+      void mrs
+        .mergeInOrder(msg.issueRef, msg.mrRefs)
+        .catch((err: Error) => broadcast([{ type: 'error', message: err.message }]));
+      return;
+    }
     if (msg.type === 'issue.comment') {
       await mrs.commentIssue(msg.issueRef, msg.body);
       // comentário do usuário é informação nova para os agentes da issue
@@ -601,6 +619,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   }
 
   app.decorate('poller', poller);
+  app.decorate('mrs', mrs);
   poller.start({
     ...(deps.pollMrsEveryMs ? { mrsEveryMs: deps.pollMrsEveryMs } : {}),
     ...(deps.pollIssuesEveryMs ? { issuesEveryMs: deps.pollIssuesEveryMs } : {}),
