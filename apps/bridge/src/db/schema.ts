@@ -109,7 +109,7 @@ export const activity = sqliteTable('activity', {
 export const agent = sqliteTable('agent', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  role: text('role', { enum: ['main', 'orchestrator', 'sub', 'reviewer', 'fix'] }).notNull(),
+  role: text('role', { enum: ['main', 'orchestrator', 'sub', 'explorer', 'reviewer', 'fix'] }).notNull(),
   parentId: text('parent_id'),
   issueRef: text('issue_ref'),
   repos: text('repos', { mode: 'json' }).$type<number[]>().notNull(),

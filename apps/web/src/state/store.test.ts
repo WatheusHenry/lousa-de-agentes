@@ -12,6 +12,7 @@ import { actionsCount } from '../panels/Sidebar.tsx';
 const AGENTS = {
   model: null,
   maxRunning: 4,
+  maxChildren: 4,
   maxAgentMinutes: 60,
   treeTokenBudget: 5_000_000,
   contextBudget: 60_000,

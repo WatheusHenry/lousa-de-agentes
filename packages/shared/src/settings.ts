@@ -107,6 +107,8 @@ export const AgentSettings = z.object({
   model: z.string().trim().min(1).max(100).nullable(),
   /** Agentes rodando ao mesmo tempo; o resto fica na fila. */
   maxRunning: z.number().int().min(1).max(20),
+  /** Sub-agentes trabalhando ao mesmo tempo para um mesmo agente (spawn_agent recusa além disso). */
+  maxChildren: z.number().int().min(1).max(20),
   /** Minutos de um agente antes de ser pausado. */
   maxAgentMinutes: z.number().int().min(1).max(600),
   /** Tokens (entrada + saída) de uma árvore de agentes. */

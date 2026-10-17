@@ -14,6 +14,8 @@ const TOOL_LABEL: Record<string, string> = {
   comment_mr: 'Comentou no MR',
   comment_issue: 'Comentou na issue',
   write_note: 'Escreveu uma nota no canvas',
+  message_agent: 'Mandou mensagem a um sub-agente',
+  stop_agent: 'Parou um sub-agente',
 };
 
 type Mark = { id: number; ts: string; k: string; label: string };
@@ -26,7 +28,7 @@ export function timeline(events: AgentEvent[]): Mark[] {
     const b = e.body;
     switch (b.kind) {
       case 'user_message':
-        push(e, 'msg', `Mensagem: ${cut(b.text)}`);
+        push(e, 'msg', `${b.from ? `Mensagem de ${b.from}` : 'Mensagem'}: ${cut(b.text)}`);
         break;
       case 'permission':
         // o pedido é o marco; só a recusa muda o rumo do agente
