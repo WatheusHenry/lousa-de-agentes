@@ -16,6 +16,8 @@ export const CanvasNode = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   createdAt: z.string(),
+  /** Workspace do nó (o bridge preenche; o cliente cria sempre no workspace aberto). */
+  workspaceId: z.string().optional(),
 });
 export type CanvasNode = z.infer<typeof CanvasNode>;
 

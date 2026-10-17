@@ -256,7 +256,10 @@ function MultiBar({ count }: { count: number }) {
   return (
     <div className="multibar" role="toolbar" aria-label="Itens selecionados">
       <b>{count} itens selecionados</b>
-      <button className="btn sm danger" onClick={() => useStore.getState().removeNodes(useStore.getState().multi)}>
+      <button
+        className="btn sm danger"
+        onClick={() => useStore.getState().removeNodes(useStore.getState().multi)}
+      >
         Remover
       </button>
       <button className="btn sm plain" onClick={() => useStore.getState().setMulti([])}>

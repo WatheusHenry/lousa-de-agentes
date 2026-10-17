@@ -201,7 +201,12 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('noteLink.remove'), link: NoteLink }),
   z.object({ type: z.literal('issue.upsert'), issue: Issue }),
   z.object({ type: z.literal('settings.updated'), settings: SettingsView }),
-  z.object({ type: z.literal('activity'), text: z.string(), ts: z.string() }),
+  z.object({
+    type: z.literal('activity'),
+    text: z.string(),
+    ts: z.string(),
+    workspaceId: z.string().optional(),
+  }),
   z.object({ type: z.literal('agent.upsert'), agent: Agent }),
   z.object({ type: z.literal('agent.event'), event: AgentEvent }),
   z.object({ type: z.literal('approval.upsert'), approval: Approval }),
