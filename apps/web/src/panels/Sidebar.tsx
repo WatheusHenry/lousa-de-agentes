@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Issue, Question, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
+import { Markdown } from '../components/Markdown.tsx';
 import { addIssue, fixPipeline, newAgentAt } from '../actions.ts';
 import { Leftovers } from './Leftovers.tsx';
 import { CostPanel } from './CostPanel.tsx';
@@ -849,7 +850,9 @@ function QuestionCard({ q, agentName, onOpen }: { q: Question; agentName: string
           <IconExpand />
         </button>
       </div>
-      <p className="act-t">{q.text}</p>
+      <Markdown compact className="act-t">
+        {q.text}
+      </Markdown>
       {q.options.length > 0 && (
         <div className="act-btns">
           {q.options.map((o) => (

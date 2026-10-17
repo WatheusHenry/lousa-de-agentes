@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Markdown } from '../components/Markdown.tsx';
+import { NoteBody } from '../components/NoteBody.tsx';
 import type { IssueComment, MergeRequest, MrDiffFile } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { noteFor, startFromCard } from '../actions.ts';
@@ -258,7 +259,7 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
                 {crit.map((c, i) => (
                   <li key={i} className={c.done ? 'ok' : ''}>
                     <span className="ck">{c.done ? '✓' : ''}</span>
-                    {c.text}
+                    <Markdown inline>{c.text}</Markdown>
                   </li>
                 ))}
               </ul>
@@ -1018,11 +1019,6 @@ function NoteDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
   );
   const updateNote = useStore((s) => s.updateNote);
   const flushNote = useStore((s) => s.flushNote);
-  const body = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const t = setTimeout(() => body.current?.focus({ preventScroll: true }), 60);
-    return () => clearTimeout(t);
-  }, [nodeId]);
   if (!note) return null;
   const count = links ? links.split(', ').length : 0;
   return (
@@ -1053,16 +1049,18 @@ function NoteDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
               flushNote(note.id);
             }}
           />
-          <textarea
-            ref={body}
+          <NoteBody
+            key={nodeId}
+            className="note-body"
+            autoFocus
             value={note.body}
-            aria-label="Texto da nota"
             placeholder="Escreva decisões, regras de negócio, links, trechos de log…"
-            onChange={(e) => updateNote(note.id, { body: e.target.value })}
-            onBlur={() => flushNote(note.id)}
+            onChange={(b) => updateNote(note.id, { body: b })}
+            onCommit={() => flushNote(note.id)}
           />
           <p className="lab" style={{ margin: 0 }}>
-            As alterações salvam sozinhas. Agentes vinculados leem de novo quando você sai do campo.
+            Aceita Markdown: clique no texto para editar. As alterações salvam sozinhas. Agentes vinculados
+            leem de novo quando você sai do campo.
           </p>
         </div>
       </div>
