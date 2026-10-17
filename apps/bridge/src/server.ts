@@ -22,6 +22,7 @@ import {
 import { AgentError, DEFAULT_LIMITS, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
 import { AutomationService } from './automations/automation-service.ts';
 import { ClaudeLogin } from './agents/claude-login.ts';
+import { ClaudeUsageService } from './agents/claude-usage.ts';
 import { WorktreeCleanup } from './agents/worktree-cleanup.ts';
 import { QuestionService } from './agents/questions.ts';
 import type { AgentRunner } from './agents/runner.ts';
@@ -69,6 +70,8 @@ export interface ServerDeps {
   pollIssuesEveryMs?: number;
   /** Comando do `claude` para refazer o login (os testes trocam por um falso). */
   claudeBin?: string;
+  /** Uso do plano do Claude (os testes trocam para não consultar a Anthropic). */
+  claudeUsage?: ClaudeUsageService;
   /** Resumidor de itens pesados (o padrão roda `claude -p` com um modelo pequeno). */
   summarizer?: Summarizer;
   contextBudget?: number;
@@ -220,6 +223,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   const broadcast = hub.broadcast.bind(hub);
   const claudeLogin = new ClaudeLogin((login) => broadcast({ type: 'claude.login', login }), deps.claudeBin);
+  const claudeUsage = deps.claudeUsage ?? new ClaudeUsageService();
 
   const snapshot = (): StateSnapshot => ({
     settings: settings.view(),
@@ -434,6 +438,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     claudeLogin.cancel();
     return claudeLogin.state();
   });
+
+  /** Sessão de 5 h e semana do plano; `?force=1` ignora o cache de um minuto. */
+  app.get('/api/claude/usage', async (req) =>
+    claudeUsage.get((req.query as { force?: string }).force === '1'),
+  );
 
   app.get('/api/worktrees/leftovers', async () => cleanup.list());
   app.post('/api/worktrees/cleanup', async (req) => {
