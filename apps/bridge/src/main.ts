@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './config.ts';
@@ -11,7 +12,7 @@ import { Session } from './session.ts';
 import { SettingsService } from './settings.ts';
 
 // .env local opcional na raiz do repositório (ex.: AGENT_CANVAS_GITLAB_TOKEN)
-const envFile = new URL('../../../.env', import.meta.url).pathname;
+const envFile = fileURLToPath(new URL('../../../.env', import.meta.url));
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const config = loadConfig();
@@ -60,6 +61,8 @@ const url = config.webDist
 console.log(`\n  Agent Canvas bridge em http://${config.host}:${config.port}`);
 console.log(`  Dados em ${config.home}`);
 console.log(`  Abra ${url}\n`);
+if (process.argv.includes('--serve-web') && !config.webDist)
+  console.log('  Front-end não encontrado em apps/web/dist: rode `pnpm build` antes de `pnpm start`.\n');
 
 let closing = false;
 async function shutdown() {

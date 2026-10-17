@@ -41,7 +41,11 @@ export class CliSummarizer implements Summarizer {
       SUMMARY_PROMPT,
     ];
     return new Promise<string>((resolve, reject) => {
-      const child = spawn('claude', args, { cwd, env: cleanClaudeEnv(process.env), stdio: 'pipe' });
+      const child = spawn(process.env.AGENT_CANVAS_CLAUDE_BIN || 'claude', args, {
+        cwd,
+        env: cleanClaudeEnv(process.env),
+        stdio: 'pipe',
+      });
       let out = '';
       let err = '';
       const timer = setTimeout(() => child.kill('SIGTERM'), this.timeoutMs);

@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +23,8 @@ export function loadConfig(
   const port = Number(env.AGENT_CANVAS_PORT || 4317);
   const webPort = Number(env.AGENT_CANVAS_WEB_PORT || 5173);
   const extra = (env.AGENT_CANVAS_ALLOWED_ORIGINS || '').split(',').filter(Boolean);
-  const dist = new URL('../../web/dist', import.meta.url).pathname;
+  // fileURLToPath, não .pathname: no Windows o .pathname vira "/C:/…", um caminho que não existe
+  const dist = fileURLToPath(new URL('../../web/dist', import.meta.url));
   return {
     home,
     host: '127.0.0.1',
