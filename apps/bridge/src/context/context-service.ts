@@ -123,7 +123,9 @@ export class ContextService {
   /** Pasta de onde ler arquivos do projeto: o worktree do agente ou, antes dele, o clone. */
   private dirFor(a: AgentRow, projectId: number | undefined = a.repos[0]): string | null {
     if (projectId === undefined) return null;
-    if (projectId === a.repos[0] && a.worktreePath && a.role !== 'orchestrator') return a.worktreePath;
+    // orquestrador e explorador têm uma pasta vazia: os arquivos vêm do clone
+    if (projectId === a.repos[0] && a.worktreePath && a.role !== 'orchestrator' && a.role !== 'explorer')
+      return a.worktreePath;
     return (
       this.d.db.select().from(repoT).where(eq(repoT.gitlabProjectId, projectId)).get()?.localPath ?? null
     );
@@ -398,11 +400,12 @@ export class ContextService {
         ? {
             pathWithNamespace: r.pathWithNamespace,
             defaultBranch: r.defaultBranch,
-            branch: a.branch ?? '(ainda não criado)',
+            branch:
+              a.role === 'explorer' ? 'nenhum (você só lê o código)' : (a.branch ?? '(ainda não criado)'),
             ...(r.local ? { local: true } : {}),
           }
         : null,
-      ...(a.role === 'orchestrator'
+      ...(a.role === 'orchestrator' || a.role === 'explorer'
         ? {}
         : { mr: { openOnFinish: a.openMr, current: this.d.mrs.mrOfAgent(a.id), role: a.role } }),
       // a nota de passagem é da raiz (agente da issue ou orquestrador), como no plano
@@ -411,16 +414,35 @@ export class ContextService {
     };
   }
 
-  /** Profundidade e sub-agentes, para o agente saber se pode delegar. */
+  /**
+   * Quem está acima, o que o agente pode delegar (profundidade, filhos ao mesmo tempo, vagas) e
+   * os filhos que ele já criou, para decidir sozinho se divide o trabalho.
+   */
   private team(a: AgentRow): string {
     const left = a.maxDepth - a.depth;
-    const kids = this.d.db.select().from(agentT).where(eq(agentT.parentId, a.id)).all();
+    const kids = this.d.db
+      .select()
+      .from(agentT)
+      .where(eq(agentT.parentId, a.id))
+      .all()
+      .filter((k) => !k.mrRef);
+    const parent = a.parentId ? this.d.db.select().from(agentT).where(eq(agentT.id, a.parentId)).get() : null;
+    const limits = this.d.settings.agentSettings();
+    const projects = this.d.settings.projects();
     return [
+      parent ? `- Você foi criado por ${parent.name}, que recebe a sua resposta final.` : null,
       left > 0
-        ? `- Você pode criar sub-agentes com \`spawn_agent\` (até ${left} nível${left > 1 ? 's' : ''} abaixo de você).`
+        ? `- Você pode criar sub-agentes com \`spawn_agent\` (até ${left} nível${left > 1 ? 's' : ''} abaixo de você), ` +
+          `com até ${limits.maxChildren} trabalhando ao mesmo tempo; o app roda ${limits.maxRunning} agentes por vez ` +
+          '(o resto espera na fila). Decida você se vale dividir: veja "Delegar" nas suas instruções.'
         : '- Você não pode criar sub-agentes nesta tarefa.',
-      ...kids.map((k) => `- ${k.name}: ${k.status}${k.branch ? `, branch ${k.branch}` : ''}`),
-    ].join('\n');
+      ...kids.map((k) => {
+        const repo = projects.find((p) => p.id === k.repos[0])?.name;
+        return `- ${k.name} (${k.role === 'explorer' ? 'explore' : 'code'}${repo ? `, ${repo}` : ''}): ${k.status}${k.branch ? `, branch ${k.branch}` : ''} · ${k.title}`;
+      }),
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   /** O context.md do agente, como vai para o worktree. */

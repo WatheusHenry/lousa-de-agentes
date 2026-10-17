@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, sessionToken } from './api/http.ts';
+import { WorkspaceSwitcher } from './canvas/WorkspaceSwitcher.tsx';
 import { SettingsScreen } from './settings/SettingsScreen.tsx';
 import { useStore } from './state/store.ts';
 import { Workspace } from './Workspace.tsx';
@@ -69,8 +70,15 @@ export function App() {
   return (
     <>
       {!needsSetup && <Workspace />}
+      {/* workspace novo, ainda sem projetos: dá para voltar a outro sem escolher nada */}
+      {needsSetup && settings.configured && settings.workspaces.length > 1 && (
+        <div className="setup-ws">
+          <WorkspaceSwitcher />
+        </div>
+      )}
       {(needsSetup || settingsOpen) && (
         <SettingsScreen
+          key={settings.workspaceId}
           settings={settings}
           modal={!needsSetup}
           onSaved={st.setSettings}

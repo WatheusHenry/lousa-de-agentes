@@ -12,6 +12,7 @@ import { actionsCount } from '../panels/Sidebar.tsx';
 const AGENTS = {
   model: null,
   maxRunning: 4,
+  maxChildren: 4,
   maxAgentMinutes: 60,
   treeTokenBudget: 5_000_000,
   contextBudget: 60_000,
@@ -47,6 +48,8 @@ const empty: StateSnapshot = {
     agents: AGENTS,
     agentDefaults: AGENTS,
     trustedRepos: [],
+    workspaceId: 'default',
+    workspaces: [{ id: 'default', name: 'Principal', projects: 0, busy: 0 }],
     configured: true,
   },
   nodes: [],

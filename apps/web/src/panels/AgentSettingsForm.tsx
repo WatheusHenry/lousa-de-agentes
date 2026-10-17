@@ -20,6 +20,7 @@ const FIELDS: {
   k: number;
 }[] = [
   { key: 'maxRunning', label: 'Agentes ao mesmo tempo', unit: 'agentes', k: 1 },
+  { key: 'maxChildren', label: 'Sub-agentes ao mesmo tempo, por agente', unit: 'agentes', k: 1 },
   { key: 'maxAgentMinutes', label: 'Tempo máximo de um agente', unit: 'min', k: 1 },
   { key: 'treeTokenBudget', label: 'Orçamento de uma árvore de agentes', unit: 'mil tokens', k: 1000 },
   { key: 'contextBudget', label: 'Contexto recomendado por agente', unit: 'mil tokens', k: 1000 },
@@ -195,6 +196,7 @@ export function AgentSettingsForm() {
               void save({
                 model: null,
                 maxRunning: null,
+                maxChildren: null,
                 maxAgentMinutes: null,
                 treeTokenBudget: null,
                 contextBudget: null,

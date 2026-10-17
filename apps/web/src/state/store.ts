@@ -140,6 +140,11 @@ export interface CanvasState {
   setAgentMode(agentId: string, auto: boolean): void;
   /** Modelo do agente (`null` = o padrão das configurações); vale a partir do próximo turno. */
   setAgentModel(agentId: string, model: string | null): void;
+  /** Renomeia o terminal; nome vazio volta ao automático. */
+  renameAgent(agentId: string, name: string): void;
+  /** Agente cujo nome está em edição (aberto pelo menu de contexto). */
+  renaming: string | null;
+  setRenaming(agentId: string | null): void;
   pauseAgent(agentId: string): void;
   resumeAgent(agentId: string): void;
   stopAgent(agentId: string): void;
@@ -258,6 +263,7 @@ export const useStore = create<CanvasState>()((set, get) => ({
   issuesLoading: false,
   issuesError: null,
   selected: null,
+  renaming: null,
   multi: [],
   panel: firstVisit() ? 'help' : null,
   section: { id: 'issues', seq: 0 },
@@ -622,6 +628,16 @@ export const useStore = create<CanvasState>()((set, get) => ({
     });
     send({ type: 'agent.model', agentId, model });
   },
+  renameAgent: (agentId, name) => {
+    const typed = name.trim();
+    if (typed)
+      set((s) => {
+        const a = s.agents[agentId];
+        return a ? { agents: { ...s.agents, [agentId]: { ...a, name: typed } } } : {};
+      });
+    send({ type: 'agent.rename', agentId, name: typed });
+  },
+  setRenaming: (renaming) => set({ renaming }),
   pauseAgent: (agentId) => send({ type: 'agent.pause', agentId }),
   resumeAgent: (agentId) => send({ type: 'agent.resume', agentId }),
   stopAgent: (agentId) => send({ type: 'agent.stop', agentId }),
@@ -665,7 +681,11 @@ export const useStore = create<CanvasState>()((set, get) => ({
   commentIssue: (ref, body) => send({ type: 'issue.comment', issueRef: ref, body }),
 
   select: (id) =>
-    set((s) => ({ selected: id, multi: id && s.multi.includes(id) ? s.multi : [], panel: id ? null : s.panel })),
+    set((s) => ({
+      selected: id,
+      multi: id && s.multi.includes(id) ? s.multi : [],
+      panel: id ? null : s.panel,
+    })),
   setPanel: (p) => set({ panel: p, selected: null }),
   showSection: (id) => set((s) => ({ section: { id, seq: s.section.seq + 1 } })),
   setFilter: (f) => set({ filter: f }),

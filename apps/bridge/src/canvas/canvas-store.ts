@@ -29,6 +29,7 @@ const toNode = (r: NodeRow): CanvasNode => ({
   y: r.y,
   ...(r.w != null && r.h != null ? { w: r.w, h: r.h } : {}),
   createdAt: r.createdAt,
+  workspaceId: r.workspaceId,
 });
 
 /** Estado do canvas no SQLite: nós, arestas, notas, vínculos e atividade. */
@@ -43,14 +44,77 @@ const NODE_SIZE: Record<CanvasNode['type'], { w: number; h: number }> = {
 export class CanvasStore {
   constructor(private readonly db: Db) {}
 
-  // ---------- leitura ----------
+  /** Workspace aberto (o servidor liga às configurações). Nós novos do usuário vão para ele. */
+  workspace: () => string = () => 'default';
+  /** Workspace de cada agente: não muda depois de criado. */
+  private agentWs = new Map<string, string>();
 
-  liveNodes(): CanvasNode[] {
-    return this.db.select().from(node).where(isNull(node.removedAt)).all().map(toNode);
+  // ---------- workspaces ----------
+
+  /** Workspace do nó do agente (o aberto, se ainda não tiver nó). */
+  agentWorkspace(agentId: string): string {
+    const known = this.agentWs.get(agentId);
+    if (known) return known;
+    const r = this.db
+      .select({ ws: node.workspaceId })
+      .from(node)
+      .where(and(eq(node.type, 'agent'), eq(node.refId, agentId)))
+      .get();
+    if (!r) return this.workspace();
+    this.agentWs.set(agentId, r.ws);
+    return r.ws;
   }
 
-  liveEdges(): CanvasEdge[] {
-    const live = new Set(this.liveNodes().map((n) => n.id));
+  nodeWorkspace(nodeId: string): string | null {
+    return this.db.select({ ws: node.workspaceId }).from(node).where(eq(node.id, nodeId)).get()?.ws ?? null;
+  }
+
+  /** Workspace do nó mais recente de um item (nota, issue, MR) pela referência. */
+  refWorkspace(type: NodeRow['type'], refId: string): string | null {
+    return (
+      this.db
+        .select({ ws: node.workspaceId })
+        .from(node)
+        .where(and(eq(node.type, type), eq(node.refId, refId)))
+        .orderBy(desc(node.createdAt))
+        .get()?.ws ?? null
+    );
+  }
+
+  /**
+   * Tira do canvas todos os nós do workspace (ao apagá-lo). Devolve os agentes que estavam nele,
+   * para o supervisor parar os processos.
+   */
+  removeWorkspace(ws: string): string[] {
+    const rows = this.db
+      .select()
+      .from(node)
+      .where(and(eq(node.workspaceId, ws), isNull(node.removedAt)))
+      .all();
+    // arquivados também: sem o workspace não há onde restaurá-los
+    this.db
+      .update(node)
+      .set({ removedAt: nowIso(), archivedAt: null })
+      .where(and(eq(node.workspaceId, ws), or(isNull(node.removedAt), isNotNull(node.archivedAt))))
+      .run();
+    this.db.delete(activity).where(eq(activity.workspaceId, ws)).run();
+    return rows.filter((n) => n.type === 'agent').map((n) => n.refId);
+  }
+
+  // ---------- leitura ----------
+
+  /** Nós vivos; com `ws`, só os desse workspace. */
+  liveNodes(ws?: string): CanvasNode[] {
+    return this.db
+      .select()
+      .from(node)
+      .where(ws ? and(isNull(node.removedAt), eq(node.workspaceId, ws)) : isNull(node.removedAt))
+      .all()
+      .map(toNode);
+  }
+
+  liveEdges(ws?: string): CanvasEdge[] {
+    const live = new Set(this.liveNodes(ws).map((n) => n.id));
     return this.db
       .select()
       .from(edge)
@@ -58,16 +122,16 @@ export class CanvasStore {
       .filter((e) => live.has(e.fromNodeId) && live.has(e.toNodeId));
   }
 
-  liveNotes(): Note[] {
-    const ids = this.liveNodes()
+  liveNotes(ws?: string): Note[] {
+    const ids = this.liveNodes(ws)
       .filter((n) => n.type === 'note')
       .map((n) => n.refId);
     if (!ids.length) return [];
     return this.db.select().from(note).where(inArray(note.id, ids)).all().map(toNote);
   }
 
-  liveNoteLinks(): NoteLink[] {
-    const nodes = this.liveNodes();
+  liveNoteLinks(ws?: string): NoteLink[] {
+    const nodes = this.liveNodes(ws);
     const live = new Set(nodes.map((n) => n.id));
     const liveNotes = new Set(nodes.filter((n) => n.type === 'note').map((n) => n.refId));
     return this.db
@@ -78,8 +142,8 @@ export class CanvasStore {
   }
 
   /** Issues em cache referenciadas por nós vivos do canvas. */
-  canvasIssues(): Issue[] {
-    const refs = this.liveNodes()
+  canvasIssues(ws?: string): Issue[] {
+    const refs = this.liveNodes(ws)
       .filter((n) => n.type === 'issue')
       .map((n) => n.refId);
     return refs.map((r) => this.cachedIssue(r)).filter((i): i is Issue => !!i);
@@ -105,10 +169,11 @@ export class CanvasStore {
       .map(toIssue);
   }
 
-  recentActivity(): Activity[] {
+  recentActivity(ws = this.workspace()): Activity[] {
     return this.db
       .select()
       .from(activity)
+      .where(eq(activity.workspaceId, ws))
       .orderBy(desc(activity.id))
       .limit(ACTIVITY_LIMIT)
       .all()
@@ -145,10 +210,11 @@ export class CanvasStore {
 
   // ---------- escrita ----------
 
-  logActivity(text: string): ServerMessage {
+  /** Registra na atividade do workspace dado (padrão: o aberto). */
+  logActivity(text: string, ws = this.workspace()): ServerMessage {
     const ts = nowIso();
-    this.db.insert(activity).values({ text, ts }).run();
-    return { type: 'activity', text, ts };
+    this.db.insert(activity).values({ text, ts, workspaceId: ws }).run();
+    return { type: 'activity', text, ts, workspaceId: ws };
   }
 
   /**
@@ -158,7 +224,7 @@ export class CanvasStore {
   apply(msg: ClientMessage): ServerMessage[] {
     switch (msg.type) {
       case 'issue.place':
-        return this.placeIssue(msg.nodeId, msg.issueRef, msg.x, msg.y);
+        return this.placeIssue(msg.nodeId, msg.issueRef, msg.x, msg.y, this.workspace());
       case 'node.move': {
         const r = this.db
           .update(node)
@@ -208,7 +274,8 @@ export class CanvasStore {
     }
   }
 
-  private placeIssue(nodeId: string, ref: string, x: number, y: number): ServerMessage[] {
+  /** Põe a issue no canvas do workspace `ws` (a automação usa o workspace do projeto). */
+  placeIssue(nodeId: string, ref: string, x: number, y: number, ws: string): ServerMessage[] {
     const issue = this.cachedIssue(ref);
     if (!issue) throw new CanvasError('Issue desconhecida. Atualize a lista de issues.');
     const existing = this.db
@@ -217,6 +284,8 @@ export class CanvasStore {
       .where(and(eq(node.type, 'issue'), eq(node.refId, ref)))
       .all();
     const live = existing.find((n) => !n.removedAt);
+    if (live && live.workspaceId !== ws)
+      throw new CanvasError(`A issue #${issue.iid} já está em outro workspace.`);
     if (live) return [{ type: 'node.upsert', node: toNode(live) }];
     // arquivada: volta com agentes, MRs e notas, no lugar onde estava
     if (existing.some((n) => n.archivedAt)) return this.unarchiveIssue(ref);
@@ -224,13 +293,21 @@ export class CanvasStore {
     for (const old of existing) this.purgeNode(old.id);
     const row = this.db
       .insert(node)
-      .values({ id: nodeId, type: 'issue', refId: ref, x, y, createdAt: nowIso() })
+      .values({
+        id: nodeId,
+        type: 'issue',
+        refId: ref,
+        x,
+        y,
+        createdAt: nowIso(),
+        workspaceId: ws,
+      })
       .returning()
       .get();
     return [
       { type: 'issue.upsert', issue },
       { type: 'node.upsert', node: toNode(row) },
-      this.logActivity(`Issue #${issue.iid} adicionada ao canvas`),
+      this.logActivity(`Issue #${issue.iid} adicionada ao canvas`, ws),
     ];
   }
 
@@ -248,6 +325,7 @@ export class CanvasStore {
     issueRef: string | null;
   }): { noteId: string; created: boolean; out: ServerMessage[] } {
     const agentNode = this.liveNodeByRef('agent', o.agentId);
+    const ws = agentNode?.workspaceId ?? this.agentWorkspace(o.agentId);
     const ts = nowIso();
     const existing = o.handoff
       ? this.db
@@ -269,13 +347,17 @@ export class CanvasStore {
         created: false,
         out: [
           { type: 'note.upsert', note: toNote(r) },
-          this.logActivity(`${o.agentName} atualizou a nota de passagem`),
+          this.logActivity(`${o.agentName} atualizou a nota de passagem`, ws),
         ],
       };
     }
     const id = `t_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const nodeId = `n_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
-    const { x, y } = this.freeSpot('note', { x: (agentNode?.x ?? 0) + 460, y: (agentNode?.y ?? 0) + 260 });
+    const { x, y } = this.freeSpot(
+      'note',
+      { x: (agentNode?.x ?? 0) + 460, y: (agentNode?.y ?? 0) + 260 },
+      ws,
+    );
     const out: ServerMessage[] = [];
     this.db.transaction((tx) => {
       tx.insert(note)
@@ -289,7 +371,9 @@ export class CanvasStore {
           updatedAt: ts,
         })
         .run();
-      tx.insert(node).values({ id: nodeId, type: 'note', refId: id, x, y, createdAt: ts }).run();
+      tx.insert(node)
+        .values({ id: nodeId, type: 'note', refId: id, x, y, createdAt: ts, workspaceId: ws })
+        .run();
     });
     const nt = this.db.select().from(note).where(eq(note.id, id)).get()!;
     const nd = this.db.select().from(node).where(eq(node.id, nodeId)).get()!;
@@ -315,6 +399,7 @@ export class CanvasStore {
     out.push(
       this.logActivity(
         `${o.agentName} deixou ${o.handoff ? 'uma nota de passagem' : `a nota "${o.title}"`}${issue && issueNode ? ` na issue #${issue.iid}` : ''}`,
+        ws,
       ),
     );
     return { noteId: id, created: true, out };
@@ -343,7 +428,7 @@ export class CanvasStore {
         .get();
       const nd = tx
         .insert(node)
-        .values({ id: nodeId, type: 'note', refId: n.id, x, y, createdAt: ts })
+        .values({ id: nodeId, type: 'note', refId: n.id, x, y, createdAt: ts, workspaceId: this.workspace() })
         .returning()
         .get();
       return { nt, nd };
@@ -507,18 +592,24 @@ export class CanvasStore {
       .orderBy(desc(node.archivedAt))
       .get();
     if (!issueNode) throw new CanvasError('Issue não está arquivada.');
+    // volta para o workspace aberto, mesmo que tenha sido arquivada em outro
     this.db
       .update(node)
-      .set({ removedAt: null, archivedAt: null })
+      .set({ removedAt: null, archivedAt: null, workspaceId: this.workspace() })
       .where(eq(node.archivedAt, issueNode.archivedAt!))
       .run();
+    this.agentWs.clear();
     const i = this.cachedIssue(ref);
     return [this.logActivity(`Issue #${i?.iid ?? ref.split('#')[1]} restaurada do arquivo`)];
   }
 
   /** Issues arquivadas, da mais recente para a mais antiga. */
-  archivedIssues(): { issueRef: string; archivedAt: string; items: number }[] {
-    const rows = this.db.select().from(node).where(isNotNull(node.archivedAt)).all();
+  archivedIssues(ws?: string): { issueRef: string; archivedAt: string; items: number }[] {
+    const rows = this.db
+      .select()
+      .from(node)
+      .where(ws ? and(isNotNull(node.archivedAt), eq(node.workspaceId, ws)) : isNotNull(node.archivedAt))
+      .all();
     return rows
       .filter((r) => r.type === 'issue')
       .map((r) => ({
@@ -571,8 +662,8 @@ export class CanvasStore {
    * passagem e agentes de correção sem o navegador). Desce em passos de 50 px; se a coluna estiver
    * cheia, tenta as colunas à direita. Tamanhos aproximados dos cartões no zoom 100%.
    */
-  freeSpot(type: CanvasNode['type'], at: { x: number; y: number }): { x: number; y: number } {
-    const rects = this.liveNodes().map((n) => ({
+  freeSpot(type: CanvasNode['type'], at: { x: number; y: number }, ws?: string): { x: number; y: number } {
+    const rects = this.liveNodes(ws).map((n) => ({
       x: n.x,
       y: n.y,
       // cartão redimensionado ocupa o tamanho escolhido (a altura nunca é menor que a padrão)

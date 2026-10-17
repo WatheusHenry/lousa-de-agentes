@@ -20,6 +20,18 @@ export const repo = sqliteTable('repo', {
   local: integer('local', { mode: 'boolean' }).notNull().default(false),
 });
 
+/**
+ * Workspaces: ambientes isolados, cada um com o seu canvas (nós, notas, agentes, atividade) e a
+ * sua seleção de projetos. A conexão com o GitLab, as regras e as automações são da máquina.
+ */
+export const workspace = sqliteTable('workspace', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  /** Projetos escolhidos neste workspace (ids do GitLab; negativos para repositórios locais). */
+  projectIds: text('project_ids', { mode: 'json' }).$type<number[]>().notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
 export const issueCache = sqliteTable(
   'issue_cache',
   {
@@ -58,6 +70,8 @@ export const node = sqliteTable(
      * removidos não apaga arquivados; restaurar devolve o grupo inteiro (mesmo carimbo).
      */
     archivedAt: text('archived_at'),
+    /** Workspace em que o nó aparece. */
+    workspaceId: text('workspace_id').notNull().default('default'),
   },
   (t) => [index('node_ref_idx').on(t.type, t.refId)],
 );
@@ -92,12 +106,13 @@ export const activity = sqliteTable('activity', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   text: text('text').notNull(),
   ts: text('ts').notNull(),
+  workspaceId: text('workspace_id').notNull().default('default'),
 });
 
 export const agent = sqliteTable('agent', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  role: text('role', { enum: ['main', 'orchestrator', 'sub', 'reviewer', 'fix'] }).notNull(),
+  role: text('role', { enum: ['main', 'orchestrator', 'sub', 'explorer', 'reviewer', 'fix'] }).notNull(),
   parentId: text('parent_id'),
   issueRef: text('issue_ref'),
   repos: text('repos', { mode: 'json' }).$type<number[]>().notNull(),
