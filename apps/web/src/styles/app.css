@@ -5424,6 +5424,8 @@ button.diff-h:hover {
 @media (prefers-reduced-motion: reduce) {
   .bnav .spin svg {
     animation: none;
+  }
+}
 /* ---------- redimensionar cartões ---------- */
 /* --nw é a largura e --nh a altura mínima: o cartão nunca fica menor que o conteúdo */
 .react-flow__node > .card {
