@@ -14,6 +14,7 @@ import {
   type AgentStatus,
   type Approval,
   type ClientMessage,
+  isLocalProject,
 } from '@agent-canvas/shared';
 import type { ApprovalService } from '../approvals/approval-service.ts';
 import { DISALLOWED_TOOLS } from '../approvals/rules.ts';
@@ -568,7 +569,8 @@ export class Supervisor {
             agentId,
             branchName,
             defaultBranch: localBase ?? r.defaultBranch,
-            ...(localBase ? { localBase: true } : {}),
+            // repositório local: parte do branch local, não do origin (que pode estar atrás)
+            ...(localBase || r.local ? { localBase: true } : {}),
           });
           a = this.save(agentId, { worktreePath: wt.path, branch: wt.branch });
           this.d.hub.broadcast(this.d.store.logActivity(`${a.name} trabalhando em ${r.name} · ${wt.branch}`));
@@ -1083,7 +1085,11 @@ export class Supervisor {
     return [
       `## ${a.name} (${project?.name ?? 'sem repositório'}): ${a.status}`,
       a.branch ? `Branch: ${a.branch}` : null,
-      mr ? `MR !${mr.iid} (${mr.state}, pipeline: ${mr.pipelineStatus}): ${mr.webUrl}` : null,
+      mr
+        ? isLocalProject(mr.projectId)
+          ? `Revisão local #${mr.iid} (${mr.state}), branch ${mr.sourceBranch} → ${mr.targetBranch}`
+          : `MR !${mr.iid} (${mr.state}, pipeline: ${mr.pipelineStatus}): ${mr.webUrl}`
+        : null,
       a.error ? `Erro: ${a.error}` : null,
       result ? `Resposta final:\n${result.slice(0, 2000)}` : null,
       await this.childDiff(a),

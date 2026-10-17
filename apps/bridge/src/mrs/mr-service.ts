@@ -3,6 +3,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   agentNoteHeader,
   diffStat,
+  isLocalProject,
   mrRef,
   parseIssueRef,
   parseMrRef,
@@ -14,7 +15,8 @@ import {
 import type { CanvasStore } from '../canvas/canvas-store.ts';
 import type { Db } from '../db/index.ts';
 import { agent as agentT, edge, mergeRequestCache as mrT, node, repo as repoT } from '../db/schema.ts';
-import { commitsSince, localDiff, pushBranch } from '../git/worktree.ts';
+import { diffBranches, isMerged, mergeLocal, originUrl, publishBranch, remoteKind } from '../git/local.ts';
+import { commitsSince, GitError, localDiff, pushBranch } from '../git/worktree.ts';
 import type { GitLabMr } from '../gitlab/client.ts';
 import type { Hub } from '../hub.ts';
 import type { SettingsService } from '../settings.ts';
@@ -41,7 +43,13 @@ const toMr = (r: Row): MergeRequest => ({
   agentId: r.agentId,
   issueRef: r.issueRef,
   updatedAt: r.updatedAt,
+  remoteUrl: r.remoteUrl,
+  publishedTo: r.publishedTo,
 });
+
+/** Nome curto para logs e mensagens: "MR !12" no GitLab, "revisão #3" num repositório local. */
+export const mrName = (m: { projectId: number; iid: number }) =>
+  isLocalProject(m.projectId) ? `revisão local #${m.iid}` : `MR !${m.iid}`;
 
 const PIPELINE_LABEL: Partial<Record<MergeRequest['pipelineStatus'], string>> = {
   success: 'passou',
@@ -118,6 +126,7 @@ export class MrService {
       this.db.select().from(repoT).where(eq(repoT.gitlabProjectId, projectId)).get();
     if (!r) throw new MrError('Projeto do agente não está entre os escolhidos.');
     const target = r.defaultBranch ?? 'main';
+    if (r.local) return this.openLocal(a, r, opts);
     const commits =
       (await commitsSince(a.worktreePath, `origin/${target}`)).length ||
       (await commitsSince(a.worktreePath, target)).length;
@@ -198,6 +207,154 @@ export class MrService {
     return { mr, created: true };
   }
 
+  /**
+   * Repositório local: não há GitLab para abrir MR. O branch do agente fica para revisão no
+   * canvas (diff, comentários para o agente, merge no clone e, se quiser, envio ao remoto).
+   * Nada sai da máquina aqui: o push só acontece pelo botão "Enviar", que é do usuário.
+   */
+  private async openLocal(
+    a: typeof agentT.$inferSelect,
+    r: typeof repoT.$inferSelect,
+    opts: { title: string; description?: string },
+  ): Promise<{ mr: MergeRequest; created: boolean }> {
+    const target = r.defaultBranch ?? 'main';
+    if (!(await commitsSince(a.worktreePath!, target)).length)
+      throw new MrError('Não há commits novos no branch. Faça commit das mudanças antes de entregar.');
+    const files = await localDiff(a.worktreePath!, target);
+    const existing = this.db
+      .select()
+      .from(mrT)
+      .where(and(eq(mrT.agentId, a.id), eq(mrT.sourceBranch, a.branch!), eq(mrT.state, 'opened')))
+      .get();
+    const now = nowIso();
+    if (existing) {
+      const row = this.db
+        .update(mrT)
+        .set({ ...diffStat(files), updatedAt: now, fetchedAt: now })
+        .where(and(eq(mrT.projectId, existing.projectId), eq(mrT.iid, existing.iid)))
+        .returning()
+        .get()!;
+      const mr = toMr(row);
+      this.hub.broadcast({ type: 'mr.upsert', mr });
+      return { mr, created: false };
+    }
+    const iid =
+      (this.db
+        .select({ n: sql<number>`max(${mrT.iid})` })
+        .from(mrT)
+        .where(eq(mrT.projectId, r.gitlabProjectId))
+        .get()?.n ?? 0) + 1;
+    const row = this.db
+      .insert(mrT)
+      .values({
+        projectId: r.gitlabProjectId,
+        iid,
+        projectPath: r.pathWithNamespace,
+        title: opts.title.trim().slice(0, 250) || a.title,
+        description: (opts.description ?? '').trim(),
+        sourceBranch: a.branch!,
+        targetBranch: target,
+        state: 'opened',
+        pipelineStatus: 'none',
+        webUrl: '',
+        ...diffStat(files),
+        agentId: a.id,
+        issueRef: a.issueRef,
+        updatedAt: now,
+        fetchedAt: now,
+      })
+      .returning()
+      .get();
+    const mr = toMr(row);
+    this.placeNode(a.id, mr);
+    this.hub.broadcast(
+      this.store.logActivity(`${a.name} entregou o branch ${a.branch} para revisão em ${r.name}`),
+    );
+    this.onOpened(mr);
+    return { mr, created: true };
+  }
+
+  private repoOfMr(m: MergeRequest) {
+    const r = this.db.select().from(repoT).where(eq(repoT.gitlabProjectId, m.projectId)).get();
+    if (!r?.localPath) throw new MrError('O repositório desta revisão não está mais no canvas.');
+    return { ...r, localPath: r.localPath };
+  }
+
+  /** Revisão local: merge feito (aqui ou pelo terminal) e diff atualizado. */
+  private async refreshLocal(cur: MergeRequest, force: boolean): Promise<MergeRequest> {
+    if (cur.state !== 'opened') return cur;
+    let r;
+    try {
+      r = this.repoOfMr(cur);
+    } catch {
+      return cur;
+    }
+    const merged = await isMerged(r.localPath, cur.sourceBranch, cur.targetBranch);
+    if (!merged && !force) return cur;
+    const files = merged ? [] : await diffBranches(r.localPath, cur.targetBranch, cur.sourceBranch);
+    const now = nowIso();
+    const row = this.db
+      .update(mrT)
+      .set({
+        ...(merged ? { state: 'merged' as const } : diffStat(files)),
+        updatedAt: now,
+        fetchedAt: now,
+      })
+      .where(and(eq(mrT.projectId, cur.projectId), eq(mrT.iid, cur.iid)))
+      .returning()
+      .get()!;
+    const mr = toMr(row);
+    this.hub.broadcast({ type: 'mr.upsert', mr });
+    if (merged) {
+      this.onChanged(mr, cur);
+      this.hub.broadcast(this.store.logActivity(`${cur.sourceBranch} mergeado em ${cur.targetBranch}`));
+    }
+    return mr;
+  }
+
+  /**
+   * Botão "Enviar ao GitLab/GitHub" de uma revisão local: push do branch com as credenciais git
+   * do usuário; no GitLab o push já abre o MR, no GitHub devolve a página do PR preenchida.
+   */
+  async publish(ref: string): Promise<MergeRequest> {
+    const cur = this.get(ref);
+    if (!cur) throw new MrError('Revisão desconhecida.');
+    if (!isLocalProject(cur.projectId)) throw new MrError('Este MR já está no GitLab.');
+    if (cur.state !== 'opened') throw new MrError('Esta revisão já foi fechada.');
+    const r = this.repoOfMr(cur);
+    const kind = remoteKind(originUrl(r.localPath), this.settings.view().baseUrl);
+    if (!kind) throw new MrError('O repositório não tem remoto: só dá para mergear localmente.');
+    const a = cur.agentId ? this.db.select().from(agentT).where(eq(agentT.id, cur.agentId)).get() : null;
+    const body = [cur.description, a ? `_Feito por ${a.name} no Agent Canvas._` : '']
+      .filter(Boolean)
+      .join('\n\n');
+    let url: string | null;
+    try {
+      ({ url } = await publishBranch(r.localPath, {
+        branch: cur.sourceBranch,
+        base: cur.targetBranch,
+        title: cur.title,
+        body,
+        kind,
+      }));
+    } catch (err) {
+      throw new MrError(err instanceof GitError ? err.message : 'O envio falhou.');
+    }
+    const row = this.db
+      .update(mrT)
+      .set({ remoteUrl: url, publishedTo: kind, updatedAt: nowIso() })
+      .where(and(eq(mrT.projectId, cur.projectId), eq(mrT.iid, cur.iid)))
+      .returning()
+      .get()!;
+    const mr = toMr(row);
+    const where = kind === 'gitlab' ? 'GitLab' : kind === 'github' ? 'GitHub' : 'remoto';
+    this.hub.broadcast([
+      { type: 'mr.upsert', mr },
+      this.store.logActivity(`Branch ${cur.sourceBranch} enviado ao ${where} por você`),
+    ]);
+    return mr;
+  }
+
   /** Cria o nó do MR ao lado do agente, com a aresta agente → MR. */
   private placeNode(agentId: string, mr: MergeRequest): void {
     const agentNode = this.db
@@ -233,6 +390,7 @@ export class MrService {
   async refresh(ref: string, force = false): Promise<MergeRequest | null> {
     const cur = this.get(ref);
     if (!cur) return null;
+    if (isLocalProject(cur.projectId)) return this.refreshLocal(cur, force);
     const fresh = await this.settings.client().getMergeRequest(cur.projectId, cur.iid);
     const changed =
       force ||
@@ -262,6 +420,7 @@ export class MrService {
   async pollOnce(): Promise<void> {
     for (const mr of this.canvasMrs()) {
       if (mr.state !== 'opened') continue;
+      // revisão local: só confere se o merge já foi feito (pelo terminal, por exemplo)
       await this.refresh(mr.ref).catch(() => {});
     }
   }
@@ -270,6 +429,7 @@ export class MrService {
   async merge(ref: string): Promise<MergeRequest> {
     const cur = this.get(ref);
     if (!cur) throw new MrError('MR desconhecido.');
+    if (isLocalProject(cur.projectId)) return this.mergeLocal(cur);
     const merged = await this.settings.client().mergeMergeRequest(cur.projectId, cur.iid);
     const row = this.save(cur.projectId, cur.projectPath, merged, {
       additions: cur.additions,
@@ -282,6 +442,37 @@ export class MrService {
       { type: 'mr.upsert', mr },
       this.store.logActivity(`MR !${mr.iid} aprovado e mergeado por você`),
     ]);
+    return mr;
+  }
+
+  /** Merge de uma revisão local no clone do usuário (nunca com mudanças não salvas dele). */
+  private async mergeLocal(cur: MergeRequest): Promise<MergeRequest> {
+    if (cur.state !== 'opened') throw new MrError('Esta revisão já foi fechada.');
+    const r = this.repoOfMr(cur);
+    const a = cur.agentId ? this.db.select().from(agentT).where(eq(agentT.id, cur.agentId)).get() : null;
+    try {
+      await mergeLocal(
+        r.localPath,
+        cur.sourceBranch,
+        cur.targetBranch,
+        `Merge do branch '${cur.sourceBranch}'${a ? ` (${a.name}, Agent Canvas)` : ''}\n\n${cur.title}`,
+      );
+    } catch (err) {
+      throw new MrError(err instanceof GitError ? err.message : 'O merge falhou.');
+    }
+    const now = nowIso();
+    const row = this.db
+      .update(mrT)
+      .set({ state: 'merged', updatedAt: now, fetchedAt: now })
+      .where(and(eq(mrT.projectId, cur.projectId), eq(mrT.iid, cur.iid)))
+      .returning()
+      .get()!;
+    const mr = toMr(row);
+    this.hub.broadcast([
+      { type: 'mr.upsert', mr },
+      this.store.logActivity(`${cur.sourceBranch} mergeado em ${cur.targetBranch} por você (${r.name})`),
+    ]);
+    this.onChanged(mr, cur);
     return mr;
   }
 
@@ -381,6 +572,10 @@ export class MrService {
   async diff(ref: string): Promise<MrDiffFile[]> {
     const cur = this.get(ref);
     if (!cur) throw new MrError('MR desconhecido.');
+    if (isLocalProject(cur.projectId)) {
+      const r = this.repoOfMr(cur);
+      return diffBranches(r.localPath, cur.targetBranch, cur.sourceBranch);
+    }
     const files = await this.settings.client().listMergeRequestDiffs(cur.projectId, cur.iid);
     if (files.length) return files;
     const a = cur.agentId ? this.db.select().from(agentT).where(eq(agentT.id, cur.agentId)).get() : null;
@@ -390,6 +585,7 @@ export class MrService {
   async comments(ref: string): Promise<IssueComment[]> {
     const cur = this.get(ref);
     if (!cur) throw new MrError('MR desconhecido.');
+    if (isLocalProject(cur.projectId)) return [];
     return this.settings.client().listMergeRequestComments(cur.projectId, cur.iid);
   }
 
@@ -397,6 +593,12 @@ export class MrService {
   async comment(ref: string, body: string, agentName?: string): Promise<void> {
     const cur = this.get(ref);
     if (!cur) throw new MrError('MR desconhecido.');
+    if (isLocalProject(cur.projectId))
+      throw new MrError(
+        agentName
+          ? 'Repositório local: não há discussão de MR. Escreva o resultado na sua resposta final.'
+          : 'Repositório local: não há discussão de MR. Mande a mensagem direto ao agente.',
+      );
     await this.settings
       .client()
       .commentOnMergeRequest(cur.projectId, cur.iid, agentName ? agentNoteHeader(agentName) + body : body);
@@ -408,7 +610,7 @@ export class MrService {
 
   async commentIssue(issueRef: string, body: string, agentName?: string): Promise<void> {
     const { projectId, iid } = parseIssueRef(issueRef);
-    if (!this.settings.projects().some((p) => p.id === projectId))
+    if (!this.settings.gitlabProjects().some((p) => p.id === projectId))
       throw new MrError('Projeto não escolhido.');
     await this.settings
       .client()
@@ -434,7 +636,7 @@ export class MrService {
 
   /** MRs abertos do canvas com agente autor (o poller lê a discussão deles). */
   openAgentMrs(): MergeRequest[] {
-    return this.canvasMrs().filter((m) => m.state === 'opened' && m.agentId);
+    return this.canvasMrs().filter((m) => m.state === 'opened' && m.agentId && !isLocalProject(m.projectId));
   }
 
   /** Último comentário já visto do MR; nulo se a discussão ainda não foi lida. */

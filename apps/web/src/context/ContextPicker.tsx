@@ -5,6 +5,7 @@ import { api } from '../api/http.ts';
 import { IconNote, IconPlus, IconSearch } from '../icons.tsx';
 import { agentNodeOf, liveMrs, useStore } from '../state/store.ts';
 import { kindIcon } from './ctx-ui.tsx';
+import { mrNum } from '../mrs/mr-ui.tsx';
 
 const NONE: never[] = [];
 
@@ -117,7 +118,12 @@ export function ContextPicker({
       ],
       [
         'Merge requests',
-        mrs.map((m) => ({ kind: 'mr_diff' as const, ref: m.ref, title: `diff do !${m.iid}`, desc: m.title })),
+        mrs.map((m) => ({
+          kind: 'mr_diff' as const,
+          ref: m.ref,
+          title: `diff do ${mrNum(m)}`,
+          desc: m.title,
+        })),
       ],
       [
         'Logs de pipeline',

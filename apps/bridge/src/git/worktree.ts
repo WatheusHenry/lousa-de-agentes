@@ -121,6 +121,11 @@ export async function localDiff(worktree: string, base: string): Promise<MrDiffF
     }
   }
   const out = (await tryGit(worktree, 'diff', '--no-color', '--no-ext-diff', `${ref}...HEAD`)) ?? '';
+  return parseDiff(out);
+}
+
+/** Saída do `git diff` separada por arquivo. */
+export function parseDiff(out: string): MrDiffFile[] {
   const files: MrDiffFile[] = [];
   for (const block of out.split(/^diff --git /m).slice(1)) {
     const lines = block.split('\n');

@@ -108,7 +108,14 @@ export const ClientMessage = z.discriminatedUnion('type', [
     edgeId: Id.optional(),
     issueRef: IssueRef.optional(),
     /** Mais de um repositório: o agente é um orquestrador, que cria um agente por repositório. */
-    repos: z.array(z.number().int().positive()).max(8),
+    repos: z
+      .array(
+        z
+          .number()
+          .int()
+          .refine((n) => n !== 0, 'projeto inválido'),
+      )
+      .max(8),
     instruction: z.string().max(20_000).optional(),
     maxDepth: z.number().int().min(0).max(3).default(1),
     openMr: z.boolean().default(false),
@@ -119,7 +126,15 @@ export const ClientMessage = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('agent.update'),
     agentId: Id,
-    repos: z.array(z.number().int().positive()).max(1).optional(),
+    repos: z
+      .array(
+        z
+          .number()
+          .int()
+          .refine((n) => n !== 0, 'projeto inválido'),
+      )
+      .max(1)
+      .optional(),
     issueRef: IssueRef.nullable().optional(),
   }),
   z.object({ type: z.literal('agent.message'), agentId: Id, text: z.string().min(1).max(20_000) }),

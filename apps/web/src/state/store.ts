@@ -490,7 +490,9 @@ export const useStore = create<CanvasState>()((set, get) => ({
           : n.type === 'agent'
             ? `${s.agents[n.refId]?.name ?? 'Agente'} parado e removido do canvas`
             : n.type === 'mr'
-              ? `MR !${s.mergeRequests[n.refId]?.iid ?? ''} removido do canvas (continua no GitLab)`
+              ? (s.mergeRequests[n.refId]?.projectId ?? 0) < 0
+                ? `Revisão #${s.mergeRequests[n.refId]?.iid ?? ''} removida do canvas (o branch continua no clone)`
+                : `MR !${s.mergeRequests[n.refId]?.iid ?? ''} removido do canvas (continua no GitLab)`
               : 'Item removido do canvas';
     const nodes = omit(s.nodes, id);
     set({

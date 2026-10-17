@@ -1,7 +1,7 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { basename, join, resolve } from 'node:path';
+import { eq, min } from 'drizzle-orm';
 import type {
   AgentSettings,
   AgentSettingsInput,
@@ -19,6 +19,7 @@ import {
 import type { Db } from './db/index.ts';
 import { issueCache, repo, setting } from './db/schema.ts';
 import { cloneOfOtherProject, cloneRepo, cloneUrls, matchClone, scanClones } from './git/discover.ts';
+import { currentBranch, isGitRepo, originUrl, remoteKind, remoteWebUrl } from './git/local.ts';
 import { GitError } from './git/worktree.ts';
 import { GitLabError, type GitLabClient } from './gitlab/client.ts';
 import { DEMO_USER, MockGitLabClient } from './gitlab/mock-client.ts';
@@ -76,7 +77,7 @@ export class SettingsService {
           path: r.localPath,
           manual: !!this.overrides()[r.gitlabProjectId],
         })),
-      configured: mode === 'demo' || (!!tok && !!user),
+      configured: mode === 'demo' || mode === 'local' || (!!tok && !!user),
       automations: this.automations(),
       agents: this.agentSettings(),
       agentDefaults: this.agentDefaults,
@@ -124,6 +125,7 @@ export class SettingsService {
   }
 
   projects(): GitLabProject[] {
+    const baseUrl = this.get<string>('baseUrl');
     return this.db
       .select()
       .from(repo)
@@ -135,7 +137,77 @@ export class SettingsService {
         description: r.description,
         defaultBranch: r.defaultBranch,
         webUrl: r.webUrl,
+        ...(r.local
+          ? { local: true, remote: r.localPath ? remoteKind(originUrl(r.localPath), baseUrl) : null }
+          : {}),
       }));
+  }
+
+  /** Projetos do GitLab escolhidos (sem os repositórios locais): issues, MRs e poller. */
+  gitlabProjects(): GitLabProject[] {
+    return this.projects().filter((p) => !p.local);
+  }
+
+  /** Há GitLab para consultar? (no modo local, ou sem token, não há) */
+  hasGitLab(): boolean {
+    const v = this.view();
+    return v.configured && v.mode !== 'local';
+  }
+
+  /**
+   * Repositório local escolhido pela pasta: entra no canvas com id negativo, sem precisar do
+   * GitLab. O branch base dos agentes é o branch em que o clone está agora.
+   */
+  addLocalRepo(raw: string): SettingsView {
+    const abs = expandHome(raw);
+    if (!existsSync(abs) || !statSync(abs).isDirectory())
+      throw new SettingsError(`A pasta ${abs} não existe.`);
+    if (!isGitRepo(abs)) throw new SettingsError(`${abs} não é um repositório git (falta a pasta .git).`);
+    const path = realpathSync(abs);
+    const real = (p: string) => {
+      try {
+        return realpathSync(p);
+      } catch {
+        return p;
+      }
+    };
+    const dup = this.repos().find((r) => r.localPath && real(r.localPath) === path);
+    if (dup) throw new SettingsError(`${path} já está no canvas como ${dup.name}.`);
+    const remote = originUrl(path);
+    const web = remote ? remoteWebUrl(remote) : null;
+    const lowest =
+      this.db
+        .select({ v: min(repo.gitlabProjectId) })
+        .from(repo)
+        .get()?.v ?? 0;
+    const id = Math.min(lowest, 0) - 1;
+    const name = basename(path);
+    this.db
+      .insert(repo)
+      .values({
+        gitlabProjectId: id,
+        pathWithNamespace: web ? new URL(web).pathname.replace(/^\/+/, '') : name,
+        name,
+        description: null,
+        defaultBranch: currentBranch(path),
+        webUrl: web ?? '',
+        localPath: path,
+        local: true,
+      })
+      .run();
+    return this.view();
+  }
+
+  /** Tira um repositório local do canvas (a pasta e o git não mudam). */
+  removeLocalRepo(projectId: number): SettingsView {
+    const r = this.repoOf(projectId);
+    if (!r.local) throw new SettingsError('Só repositórios locais saem por aqui.');
+    this.db.delete(repo).where(eq(repo.id, r.id)).run();
+    this.set(
+      'trustedRepos',
+      (this.get<number[]>('trustedRepos') ?? []).filter((id) => id !== projectId),
+    );
+    return this.view();
   }
 
   /**
@@ -156,10 +228,12 @@ export class SettingsService {
         throw new SettingsError(`A pasta ${reposDir} não existe.`);
     }
 
-    let user: GitLabUser;
+    let user: GitLabUser | null;
     let baseUrl = current.baseUrl;
     if (input.mode === 'demo') {
       user = DEMO_USER;
+    } else if (input.mode === 'local') {
+      user = null;
     } else {
       baseUrl = (input.baseUrl ?? current.baseUrl).replace(/\/+$/, '');
       const token = input.token ?? this.secrets.gitlabToken()?.token;
@@ -173,14 +247,16 @@ export class SettingsService {
         this.secrets.setGitlabToken(input.token);
     }
 
+    // os repositórios locais ficam: não dependem do GitLab
     if (input.mode !== current.mode || baseUrl !== current.baseUrl) {
-      this.db.delete(repo).run();
+      this.db.delete(repo).where(eq(repo.local, false)).run();
       this.db.delete(issueCache).run();
     }
     this.set('mode', input.mode);
     this.set('baseUrl', baseUrl);
     this.set('reposDir', reposDir);
-    this.set('user', user);
+    if (user) this.set('user', user);
+    else this.db.delete(setting).where(eq(setting.key, 'user')).run();
     this.cachedClient = null;
     if (reposDir !== current.reposDir) this.locateClones();
     return this.view();
@@ -209,7 +285,7 @@ export class SettingsService {
     const client = this.client();
     const projects = await Promise.all(projectIds.map((id) => client.getProject(id)));
     this.db.transaction((tx) => {
-      tx.delete(repo).run();
+      tx.delete(repo).where(eq(repo.local, false)).run();
       for (const p of projects) {
         tx.insert(repo)
           .values({
@@ -246,7 +322,7 @@ export class SettingsService {
     const { root, depth } = this.searchRoot();
     const clones = scanClones(root, depth);
     const manual = this.overrides();
-    for (const r of this.repos()) {
+    for (const r of this.repos().filter((x) => !x.local)) {
       const m = manual[r.gitlabProjectId];
       const path =
         m && existsSync(join(m, '.git'))
@@ -305,6 +381,8 @@ export class SettingsService {
   client(): GitLabClient {
     const v = this.view();
     if (!v.configured) throw new SettingsError('Configure o GitLab primeiro.', 409);
+    if (v.mode === 'local')
+      throw new SettingsError('Sem GitLab configurado: o app está só com repositórios locais.', 409);
     if (v.mode === 'demo') return this.memo('demo', () => new MockGitLabClient());
     const tok = this.secrets.gitlabToken()!.token;
     return this.memo(`${v.baseUrl}\n${tok}`, () => this.makeClient(v.baseUrl, tok));

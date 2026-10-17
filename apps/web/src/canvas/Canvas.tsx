@@ -15,7 +15,7 @@ import { MrNode } from '../nodes/MrNode.tsx';
 import { NoteNode } from '../nodes/NoteNode.tsx';
 import { AgentNode } from '../nodes/AgentNode.tsx';
 import { useStore } from '../state/store.ts';
-import { IconIssue } from '../icons.tsx';
+import { IconAgent, IconIssue } from '../icons.tsx';
 import { openContextMenu } from './ContextMenu.tsx';
 import { EdgeMarkers, FloatingEdge } from './FloatingEdge.tsx';
 import { toFlowEdge, toFlowNode, type FlowNode } from './flow.ts';
@@ -242,6 +242,33 @@ export function Canvas() {
 /** Canvas sem nada: por onde começar, no lugar do espaço vazio. */
 function EmptyCanvas() {
   const st = useStore.getState();
+  const local = useStore((s) => s.settings?.mode === 'local');
+  if (local)
+    return (
+      <div className="canvas-empty">
+        <div className="ce-card">
+          <span className="ico agent">
+            <IconAgent />
+          </span>
+          <b>Comece por um agente</b>
+          <p>
+            Crie um agente em branco (tecla N), escolha um dos seus repositórios e diga o que ele deve fazer.
+            A entrega volta para cá para você revisar e mergear.
+          </p>
+          <div className="act-btns">
+            <button className="btn sm primary" onClick={() => newAgentAt()}>
+              + Agente em branco
+            </button>
+            <button className="btn sm" onClick={() => st.setTab('repos')}>
+              Repositórios
+            </button>
+            <button className="btn sm plain" onClick={() => st.setPanel('help')}>
+              Como funciona
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   return (
     <div className="canvas-empty">
       <div className="ce-card">

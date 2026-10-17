@@ -1,4 +1,5 @@
 import type { ServerMessage } from '@agent-canvas/shared';
+import { mrName } from './mrs/mr-ui.tsx';
 import { agentNodeOf, mrNodeOf, type CanvasState, useStore } from './state/store.ts';
 
 /**
@@ -104,7 +105,7 @@ export function notifyFor(m: ServerMessage, prev: CanvasState): void {
       if (n) useStore.getState().select(n.id);
     };
     if (m.mr.pipelineStatus === 'success')
-      show(`MR !${m.mr.iid} pronto para merge`, m.mr.title, `mr-${m.mr.ref}`, open);
+      show(`${mrName(m.mr)} pronto para merge`, m.mr.title, `mr-${m.mr.ref}`, open);
     else if (m.mr.pipelineStatus === 'failed')
       show(`Pipeline do MR !${m.mr.iid} falhou`, m.mr.title, `mr-${m.mr.ref}`, open);
   }

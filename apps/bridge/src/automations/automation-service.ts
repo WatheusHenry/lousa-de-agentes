@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   AGENT_READY_LABEL,
   detectRepos,
+  isLocalProject,
   type Agent,
   type ContextKind,
   type IssueComment,
@@ -103,6 +104,8 @@ export class AutomationService {
   // ---------- MR aberto por agente → reviewer ----------
 
   onMrOpened(mr: MergeRequest): void {
+    // revisão local (repositório fora do GitLab): sem discussão nem pipeline para acompanhar
+    if (isLocalProject(mr.projectId)) return;
     void this.baseline(mr);
     if (!this.on.reviewer || !mr.agentId) return;
     const author = this.d.supervisor.get(mr.agentId);
@@ -166,10 +169,10 @@ export class AutomationService {
 
   /** Rodada do poller: issues abertas com a label, que ainda não têm agente. */
   async pollIssues(): Promise<void> {
-    if (!this.on.agentReady) return;
+    if (!this.on.agentReady || !this.d.settings.hasGitLab()) return;
     const { settings, store, supervisor: sup } = this.d;
     const client = settings.client();
-    const projects = settings.projects();
+    const projects = settings.gitlabProjects();
     for (const p of projects) {
       const issues = await client.listOpenIssues(p).catch(() => null);
       if (!issues) continue;

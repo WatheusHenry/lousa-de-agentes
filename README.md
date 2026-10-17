@@ -191,6 +191,17 @@ O bridge consulta o GitLab a cada 30 segundos (MRs dos agentes: pipeline, estado
 - **Arquivar**: no painel da issue ou no botão direito, tira do canvas a issue com os agentes dela, os MRs e as notas que só servem a ela. Não arquiva com agente trabalhando. Nada é apagado: a seção **Arquivadas** da aba Issues tem **Restaurar**, e arrastar a issue de novo do backlog também traz tudo de volta.
 - **Paleta Ctrl/⌘ + K** (ou **Buscar** na toolbar): acha qualquer agente, issue, nota ou MR, traz issues do backlog e roda as ações mais usadas pelo teclado.
 
+## Sem GitLab: repositórios locais
+
+Dá para usar o canvas só com repositórios da sua máquina, sem token nem issues:
+
+- **Começar**: na tela inicial, **Usar sem GitLab**, e depois **+ Adicionar repositório** com a pasta de um repositório git. Com o GitLab ligado, os repositórios locais também funcionam junto dos projetos (aba **Repos** → **+ Local**).
+- **Trabalhar**: crie um agente em branco (**N** ou **+ Novo agente**), escolha o repositório e escreva a tarefa. Ele trabalha num worktree próprio, num branch criado a partir do branch em que o clone estava quando você o adicionou. Modo confiança, sub-agentes e orquestrador funcionam igual.
+- **Revisar**: ao terminar, o agente entrega o branch (`open_merge_request`) e aparece um cartão **Revisão #N** com o diff, a busca e o comentário em linha, que vai direto para o agente.
+- **Mergear**: **Mergear em main** faz o merge no seu clone. Se você estiver em outro branch, o merge acontece num worktree temporário e o seu checkout não muda. Com mudanças não salvas no branch base, ou com conflito, o app não mexe em nada e mostra o comando para rodar no terminal. O merge continua sendo só seu.
+- **Enviar para o remoto**: se o `origin` for do GitHub ou do GitLab, **Enviar ao GitHub e abrir PR** (ou **ao GitLab e abrir MR**) faz o `git push` com as suas credenciais do git (chave SSH ou credential helper). No GitLab, as push options já abrem o MR. No GitHub, abre a página do PR preenchida para você confirmar. O token do app não é usado. Instâncias próprias do GitLab são reconhecidas pela URL configurada no app ou por terem "gitlab" no endereço.
+- Pipeline, correção automática de pipeline, revisor automático e comentários do GitLab não se aplicam a repositórios locais.
+
 ## Revisar, acompanhar gastos e teclado
 
 - **Diff do MR** (modo foco): clique numa linha para comentar. O comentário vai direto ao agente autor e, se marcado, também para o MR no GitLab. **Buscar nas mudanças** marca as ocorrências (Enter vai à próxima, Shift + Enter à anterior); com vários arquivos, a lista no topo pula para cada um, e cada arquivo pode ser recolhido.

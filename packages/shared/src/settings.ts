@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { GitLabProject, GitLabUser } from './gitlab.ts';
 
-export const GitLabMode = z.enum(['gitlab', 'demo']);
+/** `local`: sem GitLab, só com repositórios locais escolhidos pela pasta. */
+export const GitLabMode = z.enum(['gitlab', 'demo', 'local']);
 export type GitLabMode = z.infer<typeof GitLabMode>;
 
 /** POST /settings/gitlab. O token é opcional para permitir mudar só a URL ou a pasta. */
@@ -51,6 +52,10 @@ export const SettingsView = z.object({
 export type SettingsView = z.infer<typeof SettingsView>;
 
 export const RepoPathInput = z.object({ path: z.string().trim().max(1024).nullable() });
+
+/** POST /repos/local: um repositório git escolhido pela pasta, sem precisar do GitLab. */
+export const LocalRepoInput = z.object({ path: z.string().trim().min(1).max(1024) });
+export type LocalRepoInput = z.infer<typeof LocalRepoInput>;
 export type RepoPathInput = z.infer<typeof RepoPathInput>;
 
 /** Interruptores do painel de Automações (seção 9 do plano). */

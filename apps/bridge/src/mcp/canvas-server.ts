@@ -97,7 +97,8 @@ function buildServer(ctx: McpAgentContext, deps: McpDeps): McpServer {
       description:
         'Envia o seu branch para o GitLab e abre o merge request para a branch padrão, com "Closes #<issue>" ' +
         'quando houver issue. Faça commit de tudo antes. Se você já tem um MR aberto, envia os commits novos ' +
-        'para ele. Nunca faça git push nem merge por conta própria.',
+        'para ele. Num repositório local (sem GitLab), entrega o branch para o usuário revisar no canvas. ' +
+        'Nunca faça git push nem merge por conta própria.',
       inputSchema: {
         title: z.string().min(1).max(250).describe('Título do MR, curto e no imperativo'),
         description: z

@@ -18,6 +18,7 @@ import {
   IconTheme,
 } from '../icons.tsx';
 import { firstLine } from '../lib/format.ts';
+import { isLocalMr, mrNum } from '../mrs/mr-ui.tsx';
 import { useStore } from '../state/store.ts';
 import { effectiveTheme, toggleTheme } from '../theme.ts';
 
@@ -87,8 +88,10 @@ export function Palette() {
             group: 'No canvas',
             icon: <IconMr />,
             cls: 'mr',
-            title: `!${m.iid} ${m.title}`,
-            desc: `${m.projectPath} · pipeline ${m.pipelineStatus}`,
+            title: `${mrNum(m)} ${m.title}`,
+            desc: isLocalMr(m)
+              ? `${m.projectPath} · revisão local`
+              : `${m.projectPath} · pipeline ${m.pipelineStatus}`,
             run: go,
           });
       } else if (n.type === 'note') {

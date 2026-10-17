@@ -8,6 +8,7 @@ import {
   type GitLabSettingsInput,
   type Issue,
   type IssueComment,
+  type MergeRequest,
   type MrDiffFile,
   type SettingsView,
   type StateSnapshot,
@@ -88,6 +89,12 @@ export const api = {
   setRepoPath: (projectId: number, path: string | null) =>
     call<SettingsView>(`/api/repos/${projectId}/path`, { method: 'PUT', body: JSON.stringify({ path }) }),
   cloneRepo: (projectId: number) => call<SettingsView>(`/api/repos/${projectId}/clone`, { method: 'POST' }),
+  addLocalRepo: (path: string) =>
+    call<SettingsView>('/api/repos/local', { method: 'POST', body: JSON.stringify({ path }) }),
+  removeLocalRepo: (projectId: number) =>
+    call<SettingsView>(`/api/repos/local/${projectId}`, { method: 'DELETE' }),
+  publishMr: (ref: string) =>
+    call<MergeRequest>(`/api/mrs/${encodeURIComponent(ref)}/publish`, { method: 'POST' }),
   mrDiff: (ref: string) => call<MrDiffFile[]>(`/api/mrs/${encodeURIComponent(ref)}/diff`),
   leftovers: () => call<WorktreeLeftover[]>('/api/worktrees/leftovers'),
   cleanupWorktrees: (agentIds: string[]) =>

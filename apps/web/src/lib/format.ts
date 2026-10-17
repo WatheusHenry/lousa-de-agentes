@@ -57,3 +57,13 @@ export const clock = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '' : d.toTimeString().slice(0, 5);
 };
+
+/** Onde fica o remoto de um repositório local, por extenso. */
+export const remoteLabel = (r: 'gitlab' | 'github' | 'other' | null | undefined) =>
+  r === 'github'
+    ? 'remoto no GitHub'
+    : r === 'gitlab'
+      ? 'remoto no GitLab'
+      : r
+        ? 'outro remoto'
+        : 'sem remoto';

@@ -9,7 +9,7 @@ import { Select } from '../components/Select.tsx';
 import { IconAgent, IconExpand, IconFit, IconIssue, IconMr, IconNote, IconRepo } from '../icons.tsx';
 import { checklist, descriptionWithoutChecklist, firstLine, isRedLabel } from '../lib/format.ts';
 import { fixPipeline } from '../actions.ts';
-import { DiffStat, MrBadge, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
+import { DiffStat, isLocalMr, MrBadge, mrFailed, mrName, mrReady, PublishButton } from '../mrs/mr-ui.tsx';
 import { activeFixer, agentNodeOf, liveAgents, useStore } from '../state/store.ts';
 import { focusNode } from '../canvas/viewport.ts';
 
@@ -427,23 +427,25 @@ function MrPanel(nodeId: string): [ReactNode, ReactNode] {
   const s = useStore.getState();
   const n = s.nodes[nodeId]!;
   const m = s.mergeRequests[n.refId];
-  if (!m) return ['MR', <p className="lab">Carregando dados do GitLab…</p>];
+  if (!m) return ['MR', <p className="lab">Carregando…</p>];
   const agent = m.agentId ? s.agents[m.agentId] : undefined;
   const agentNode = agent ? agentNodeOf(s, agent.id) : undefined;
   const issue = m.issueRef ? s.issues[m.issueRef] : undefined;
+  const local = isLocalMr(m);
+  const clone = local ? s.settings?.clones.find((c) => c.projectId === m.projectId)?.path : null;
   return [
-    <span className="badge mrb">MR !{m.iid}</span>,
+    <span className="badge mrb">{mrName(m)}</span>,
     <>
       <div className="grp">
-        <TitleRow title={m.title} label="Ver diff e discussão" onExpand={() => s.openFocus(nodeId)} />
+        <TitleRow title={m.title} label="Ver diff" onExpand={() => s.openFocus(nodeId)} />
         <div>
           <button className="btn sm" onClick={() => s.openFocus(nodeId)}>
-            Ver diff e discussão
+            {local ? 'Ver diff' : 'Ver diff e discussão'}
           </button>
         </div>
         <dl className="kv">
-          <dt>Projeto</dt>
-          <dd className="mono">{m.projectPath}</dd>
+          <dt>{local ? 'Repositório' : 'Projeto'}</dt>
+          <dd className="mono">{local ? m.projectPath.split('/').pop() : m.projectPath}</dd>
           <dt>Branch</dt>
           <dd className="mono">
             {m.sourceBranch} → {m.targetBranch}
@@ -458,7 +460,7 @@ function MrPanel(nodeId: string): [ReactNode, ReactNode] {
           </dd>
           {agent && (
             <>
-              <dt>Aberto por</dt>
+              <dt>{local ? 'Feito por' : 'Aberto por'}</dt>
               <dd>
                 {agentNode ? (
                   <button className="btn sm" onClick={() => focusNode(agentNode.id)}>
@@ -484,18 +486,32 @@ function MrPanel(nodeId: string): [ReactNode, ReactNode] {
           style={{ justifyContent: 'center', padding: 10 }}
           onClick={() => s.mergeMr(m.ref)}
         >
-          Aprovar e mergear
+          {local ? `Mergear em ${m.targetBranch}` : 'Aprovar e mergear'}
         </button>
       )}
       {mrFailed(m) && agent && <FixButton mrRef={m.ref} />}
-      <p className="lab" style={{ margin: 0 }}>
-        O status do pipeline atualiza sozinho a cada 30 segundos. Agentes nunca fazem merge.
-      </p>
-      <div className="row2">
-        <a className="btn" href={m.webUrl} target="_blank" rel="noreferrer noopener">
-          Abrir no GitLab
-        </a>
-      </div>
+      {local ? (
+        <>
+          <p className="lab" style={{ margin: 0 }}>
+            Repositório local: o merge acontece no seu clone{clone ? ` (${clone})` : ''}, sem mexer em
+            arquivos que você não salvou. Agentes nunca fazem merge nem push.
+          </p>
+          <div className="row2">
+            <PublishButton mr={m} />
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="lab" style={{ margin: 0 }}>
+            O status do pipeline atualiza sozinho a cada 30 segundos. Agentes nunca fazem merge.
+          </p>
+          <div className="row2">
+            <a className="btn" href={m.webUrl} target="_blank" rel="noreferrer noopener">
+              Abrir no GitLab
+            </a>
+          </div>
+        </>
+      )}
       <div className="foot-danger">
         <button className="btn plain danger sm" onClick={() => s.removeNode(nodeId)}>
           Remover do canvas

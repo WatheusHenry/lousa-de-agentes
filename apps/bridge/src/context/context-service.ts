@@ -399,6 +399,7 @@ export class ContextService {
             pathWithNamespace: r.pathWithNamespace,
             defaultBranch: r.defaultBranch,
             branch: a.branch ?? '(ainda não criado)',
+            ...(r.local ? { local: true } : {}),
           }
         : null,
       ...(a.role === 'orchestrator'

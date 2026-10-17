@@ -3,6 +3,7 @@ import type { GitLabProject, SettingsView } from '@agent-canvas/shared';
 import { api, ApiError } from '../api/http.ts';
 import { FolderPicker } from '../components/FolderPicker.tsx';
 import { IconRepo, IconSearch } from '../icons.tsx';
+import { remoteLabel } from '../lib/format.ts';
 
 interface Props {
   settings: SettingsView;
@@ -14,7 +15,9 @@ interface Props {
 
 /** Configuração do GitLab: URL, token e pasta dos repositórios; depois, os projetos do canvas. */
 export function SettingsScreen({ settings, modal, onSaved, onClose }: Props) {
-  const [step, setStep] = useState<'gitlab' | 'projects'>(settings.configured ? 'projects' : 'gitlab');
+  const [step, setStep] = useState<'gitlab' | 'projects' | 'local'>(
+    !settings.configured ? 'gitlab' : settings.mode === 'local' ? 'local' : 'projects',
+  );
   const [current, setCurrent] = useState(settings);
 
   const done = (s: SettingsView) => {
@@ -35,11 +38,19 @@ export function SettingsScreen({ settings, modal, onSaved, onClose }: Props) {
           onClose={onClose}
           onSaved={(s) => {
             done(s);
-            setStep('projects');
+            setStep(s.mode === 'local' ? 'local' : 'projects');
           }}
         />
+      ) : step === 'local' ? (
+        <LocalStep settings={current} onBack={() => setStep('gitlab')} onSaved={done} onClose={onClose} />
       ) : (
-        <ProjectsStep settings={current} onBack={() => setStep('gitlab')} onSaved={done} onClose={onClose} />
+        <ProjectsStep
+          settings={current}
+          onBack={() => setStep('gitlab')}
+          onLocal={() => setStep('local')}
+          onSaved={done}
+          onClose={onClose}
+        />
       )}
     </div>
   );
@@ -62,7 +73,7 @@ function GitLabStep({
   const [busy, setBusy] = useState(false);
   const tokenFromEnv = settings.tokenSource === 'env';
 
-  async function save(mode: 'gitlab' | 'demo', e?: FormEvent) {
+  async function save(mode: 'gitlab' | 'demo' | 'local', e?: FormEvent) {
     e?.preventDefault();
     setBusy(true);
     setError(null);
@@ -175,6 +186,15 @@ function GitLabStep({
           Conectado como @{settings.user.username} em {settings.baseUrl}
         </p>
       )}
+      <div className="setup-alt">
+        <button type="button" className="setup-local" onClick={() => save('local')} disabled={busy}>
+          <IconRepo />
+          <span>
+            <b>Usar sem GitLab</b>
+            <small>Só com repositórios da sua máquina: agentes em branco, revisão e merge locais.</small>
+          </span>
+        </button>
+      </div>
       <div className="row-end">
         <button type="button" className="link-btn" onClick={() => save('demo')} disabled={busy}>
           Usar dados de exemplo
@@ -196,18 +216,20 @@ function GitLabStep({
 function ProjectsStep({
   settings,
   onBack,
+  onLocal,
   onSaved,
   onClose,
 }: {
   settings: SettingsView;
   onBack(): void;
+  onLocal(): void;
   onSaved(s: SettingsView): void;
   onClose?(): void;
 }) {
   const [q, setQ] = useState('');
   const [found, setFound] = useState<GitLabProject[]>([]);
   const [picked, setPicked] = useState<Map<number, GitLabProject>>(
-    () => new Map(settings.projects.map((p) => [p.id, p])),
+    () => new Map(settings.projects.filter((p) => !p.local).map((p) => [p.id, p])),
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -329,6 +351,9 @@ function ProjectsStep({
         <button type="button" className="link-btn" onClick={onBack}>
           Conexão com o GitLab
         </button>
+        <button type="button" className="link-btn" onClick={onLocal}>
+          Repositórios locais
+        </button>
         <span className="spacer" />
         {onClose && (
           <button type="button" className="btn" onClick={onClose}>
@@ -342,6 +367,108 @@ function ProjectsStep({
               ? `Usar ${picked.size} projeto${picked.size === 1 ? '' : 's'}`
               : 'Escolha ao menos um'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Repositórios locais, escolhidos pela pasta: valem com ou sem GitLab. Os agentes trabalham
+ * num worktree do clone; a revisão e o merge acontecem aqui mesmo.
+ */
+function LocalStep({
+  settings,
+  onBack,
+  onSaved,
+  onClose,
+}: {
+  settings: SettingsView;
+  onBack(): void;
+  onSaved(s: SettingsView): void;
+  onClose?(): void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const local = settings.projects.filter((p) => p.local);
+  const gitlab = settings.mode !== 'local';
+
+  async function run(fn: () => Promise<SettingsView>) {
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await fn());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Falha ao salvar.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="setup-card">
+      <div>
+        <h2 id="setup-title">Repositórios locais</h2>
+        <p className="lead">
+          {gitlab
+            ? 'Além dos projetos do GitLab, escolha pastas de repositórios git da sua máquina.'
+            : 'Sem GitLab: escolha as pastas dos repositórios git em que os agentes vão trabalhar.'}{' '}
+          Cada agente trabalha num branch próprio; você revisa o diff e faz o merge pelo canvas. Se o
+          repositório tiver remoto no GitLab ou no GitHub, dá para enviar o branch e abrir o MR ou PR.
+        </p>
+      </div>
+      <div className="opts" role="list" aria-label="Repositórios locais">
+        {local.length === 0 && <p className="tip">Nenhum repositório ainda.</p>}
+        {local.map((p) => (
+          <div className="opt" role="listitem" key={p.id}>
+            <IconRepo />
+            <span className="mono">{p.name}</span>
+            <small>
+              {p.defaultBranch ?? 'sem branch'} · {remoteLabel(p.remote)}
+            </small>
+            <span className="spacer" />
+            <button
+              type="button"
+              className="link-btn"
+              disabled={busy}
+              onClick={() => run(() => api.removeLocalRepo(p.id))}
+            >
+              Tirar
+            </button>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="btn" onClick={() => setPicking(true)} disabled={busy}>
+        + Adicionar repositório
+      </button>
+      {picking && (
+        <FolderPicker
+          title="Repositório local"
+          mode="repo"
+          start={settings.reposDir}
+          onClose={() => setPicking(false)}
+          onPick={(path) => {
+            setPicking(false);
+            void run(() => api.addLocalRepo(path));
+          }}
+        />
+      )}
+      {error && (
+        <p className="err" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="row-end">
+        <button type="button" className="link-btn" onClick={onBack}>
+          {gitlab ? 'Conexão com o GitLab' : 'Conectar ao GitLab'}
+        </button>
+        <span className="spacer" />
+        {onClose && (
+          <button type="button" className="btn primary" onClick={onClose}>
+            Pronto
+          </button>
+        )}
+        {!onClose && <span className="lab">O canvas abre quando houver um repositório.</span>}
       </div>
     </div>
   );

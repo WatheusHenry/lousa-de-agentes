@@ -225,8 +225,8 @@ function TopBar({ workspace }: { workspace: string }) {
           </button>
         )}
         {mrReadyCount > 0 ? (
-          <button className="badge ok badge-btn" title="Ver MRs prontos para merge" onClick={goActions}>
-            {mrReadyCount} MR{mrReadyCount > 1 ? 's' : ''} pronto{mrReadyCount > 1 ? 's' : ''}
+          <button className="badge ok badge-btn" title="Ver o que está pronto para merge" onClick={goActions}>
+            {mrReadyCount} pronto{mrReadyCount > 1 ? 's' : ''} para merge
           </button>
         ) : (
           mrCount > 0 && (

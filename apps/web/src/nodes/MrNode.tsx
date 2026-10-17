@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { memo } from 'react';
 import { IconExpand, IconMr } from '../icons.tsx';
-import { DiffStat, MrBadge } from '../mrs/mr-ui.tsx';
+import { DiffStat, MrBadge, mrName } from '../mrs/mr-ui.tsx';
 import { useStore } from '../state/store.ts';
 import type { FlowNode } from '../canvas/flow.ts';
 
@@ -22,9 +22,12 @@ function MrNodeView({ id, data }: NodeProps<FlowNode>) {
           <span className="ico mr">
             <IconMr />
           </span>
-          <span className="num">MR !{data.refId.split('!')[1]}</span>
+          <span className="num">
+            {data.refId.startsWith('-') ? 'Revisão #' : 'MR !'}
+            {data.refId.split('!')[1]}
+          </span>
         </div>
-        <div className="nmeta">Carregando dados do GitLab…</div>
+        <div className="nmeta">Carregando…</div>
         {handles}
       </div>
     );
@@ -34,7 +37,7 @@ function MrNodeView({ id, data }: NodeProps<FlowNode>) {
         <span className="ico mr">
           <IconMr />
         </span>
-        <span className="num">MR !{mr.iid}</span>
+        <span className="num">{mrName(mr)}</span>
         <span className="spacer" style={{ flex: 1 }} />
         <span className="badge repo">{mr.projectPath.split('/').pop()}</span>
         <button

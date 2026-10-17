@@ -16,7 +16,16 @@ import {
   timeAgo,
 } from '../lib/format.ts';
 import { agentNodeOf, mrNodeOf, useStore } from '../state/store.ts';
-import { DiffStat, MrBadge, mrReady, PipelineStages } from '../mrs/mr-ui.tsx';
+import {
+  DiffStat,
+  isLocalMr,
+  MrBadge,
+  mrName,
+  mrNum,
+  mrReady,
+  PipelineStages,
+  PublishButton,
+} from '../mrs/mr-ui.tsx';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
 import { isBlank, reposText, roleLabel, statusLabel, statusTone, SUGGESTIONS } from '../agents/agent-ui.ts';
 
@@ -290,7 +299,7 @@ function IssueDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
                       <IconMr />
                     </span>
                     <span>
-                      <b>!{m.iid}</b> {m.projectPath.split('/').pop()}
+                      <b>{mrNum(m)}</b> {m.projectPath.split('/').pop()}
                     </span>
                     <MrBadge mr={m} />
                     <button
@@ -759,7 +768,8 @@ function LineComment({
   onDone(): void;
 }) {
   const [text, setText] = useState('');
-  const [publish, setPublish] = useState(!agentName);
+  const local = isLocalMr(mr);
+  const [publish, setPublish] = useState(!agentName && !local);
   const forwards = useStore((s) => !!s.settings?.automations.reviewComments);
   const send = () => {
     const body = text.trim();
@@ -802,7 +812,7 @@ function LineComment({
         }}
       />
       <div className="lc-foot">
-        {agentName && (
+        {agentName && !local && (
           <label>
             <input type="checkbox" checked={publish} onChange={(e) => setPublish(e.target.checked)} /> Também
             publicar no MR (GitLab)
@@ -847,6 +857,7 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
   }, [mr?.ref, mr?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!mr) return null;
+  const local = isLocalMr(mr);
   const repo = mr.projectPath.split('/').pop();
   const description = mr.description.replace(/\n*_Aberto por .+ no Agent Canvas\._\s*$/, '').trim();
 
@@ -858,7 +869,7 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             <IconMr />
           </span>
         }
-        name={`MR !${mr.iid}`}
+        name={mrName(mr)}
         sub={`${repo} · ${mr.sourceBranch}`}
         status={<MrBadge mr={mr} />}
         onClose={onClose}
@@ -874,7 +885,7 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             </div>
             <h2 className="fx-title">{mr.title}</h2>
             <p className="fx-meta">
-              {agent ? `Aberto por ${agent.name}` : 'Aberto pelo canvas'}
+              {agent ? `${local ? 'Feito' : 'Aberto'} por ${agent.name}` : 'Aberto pelo canvas'}
               {issue ? ` · fecha #${issue.iid}` : ''} · <DiffStat add={mr.additions} del={mr.deletions} /> ·
               atualizado {timeAgo(mr.updatedAt)}
             </p>
@@ -887,10 +898,12 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
               </Markdown>
             </section>
           )}
-          <section>
-            <h4>Pipeline</h4>
-            <PipelineStages mr={mr} />
-          </section>
+          {!local && (
+            <section>
+              <h4>Pipeline</h4>
+              <PipelineStages mr={mr} />
+            </section>
+          )}
           <section>
             <h4>
               Mudanças{files ? ` · ${files.length} arquivo${files.length === 1 ? '' : 's'}` : ''}
@@ -912,17 +925,28 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
               <DiffView files={files} mr={mr} agentName={agent?.name ?? null} />
             )}
           </section>
-          <section>
-            <h4>Discussão</h4>
-            <Thread {...thread} baseUrl={mr.webUrl.replace(/\/-\/merge_requests\/\d+$/, '')} />
-          </section>
+          {local ? (
+            <section>
+              <h4>Repositório local</h4>
+              <p className="fx-p">
+                Sem MR no GitLab: você revisa o diff aqui, comenta numa linha ou escreve abaixo para{' '}
+                {agent?.name ?? 'o agente'} ajustar, e faz o merge em <code>{mr.targetBranch}</code> no seu
+                clone. Se quiser revisão no remoto, envie o branch e abra o MR/PR por lá.
+              </p>
+            </section>
+          ) : (
+            <section>
+              <h4>Discussão</h4>
+              <Thread {...thread} baseUrl={mr.webUrl.replace(/\/-\/merge_requests\/\d+$/, '')} />
+            </section>
+          )}
         </div>
       </div>
       <div className="f-foot">
         <div className="f-sugg">
           {mrReady(mr) && (
             <button type="button" onClick={() => mergeMr(mr.ref)}>
-              Aprovar e mergear
+              {local ? `Mergear em ${mr.targetBranch}` : 'Aprovar e mergear'}
             </button>
           )}
           {agent && (
@@ -939,12 +963,40 @@ function MrDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
           <button type="button" onClick={() => refreshMr(mr.ref)}>
             Atualizar status
           </button>
-          <button type="button" onClick={() => window.open(mr.webUrl, '_blank', 'noopener,noreferrer')}>
-            Abrir no GitLab
-          </button>
+          {local ? (
+            <PublishButton mr={mr} className="" />
+          ) : (
+            <button type="button" onClick={() => window.open(mr.webUrl, '_blank', 'noopener,noreferrer')}>
+              Abrir no GitLab
+            </button>
+          )}
         </div>
-        <CommentBox placeholder={`Comentar no MR !${mr.iid}`} onSend={(body) => commentMr(mr.ref, body)} />
-        <div className="f-hint">O comentário vai para o GitLab com o seu usuário · Esc fecha</div>
+        {local ? (
+          agent && (
+            <>
+              <CommentBox
+                placeholder={`Mensagem para ${agent.name} sobre esta revisão`}
+                onSend={(body) =>
+                  useStore
+                    .getState()
+                    .messageAgent(
+                      agent.id,
+                      `Sobre a sua entrega (revisão #${mr.iid}, branch ${mr.sourceBranch}): ${body}\n\nAjuste, rode os testes, faça commit e chame open_merge_request para atualizar a revisão.`,
+                    )
+                }
+              />
+              <div className="f-hint">A mensagem vai direto para {agent.name} · Esc fecha</div>
+            </>
+          )
+        ) : (
+          <>
+            <CommentBox
+              placeholder={`Comentar no MR !${mr.iid}`}
+              onSend={(body) => commentMr(mr.ref, body)}
+            />
+            <div className="f-hint">O comentário vai para o GitLab com o seu usuário · Esc fecha</div>
+          </>
+        )}
       </div>
     </div>
   );

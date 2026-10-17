@@ -4573,3 +4573,54 @@ button.diff-h:hover {
 .cost-tile.over small {
   color: var(--warn);
 }
+/* modo local: opção na tela inicial, selo na aba Repos e aba Issues sem GitLab */
+.setup-alt {
+  display: flex;
+}
+.setup-local {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--subtle);
+  box-shadow: inset 0 0 0 1px var(--line);
+  text-align: left;
+  cursor: pointer;
+  color: var(--repo);
+}
+.setup-local:hover {
+  background: var(--hover);
+}
+.setup-local span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--fg);
+}
+.setup-local small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.setup-card .opt .spacer {
+  flex: 1;
+}
+.badge.local {
+  margin-left: 6px;
+  background: var(--repo-soft);
+  color: var(--repo);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  vertical-align: 1px;
+}
+.no-gitlab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.no-gitlab .btn svg {
+  margin-right: 4px;
+}

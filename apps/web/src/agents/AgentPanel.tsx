@@ -4,7 +4,7 @@ import { askOpenMr } from '../actions.ts';
 import { Select } from '../components/Select.tsx';
 import { ContextSection } from '../context/ContextSection.tsx';
 import { AgentTimeline } from './Timeline.tsx';
-import { MrBadge } from '../mrs/mr-ui.tsx';
+import { isLocalMr, MrBadge, mrNum } from '../mrs/mr-ui.tsx';
 import { agentNodeOf, issueNodeOf, mrNodeOf, mrOfAgent, useStore } from '../state/store.ts';
 import {
   fmtK,
@@ -213,7 +213,10 @@ export function AgentPanel({
                   label="Repositório do agente"
                   value=""
                   onChange={(v) => v && st.updateAgent(a.id, { repos: [Number(v)] })}
-                  options={projects.map((p) => ({ value: String(p.id), label: p.pathWithNamespace }))}
+                  options={projects.map((p) => ({
+                    value: String(p.id),
+                    label: p.local ? `${p.name} (local)` : p.pathWithNamespace,
+                  }))}
                 />
                 <span className="lab">
                   Ou arraste um repositório da aba Repos, ou uma issue, para cima do agente.
@@ -295,7 +298,7 @@ export function AgentPanel({
           )}
           {mr && (
             <>
-              <dt>MR</dt>
+              <dt>{isLocalMr(mr) ? 'Revisão' : 'MR'}</dt>
               <dd style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   className="btn sm"
@@ -304,7 +307,7 @@ export function AgentPanel({
                     if (n) focusNode(n.id);
                   }}
                 >
-                  !{mr.iid}
+                  {mrNum(mr)}
                 </button>
                 <MrBadge mr={mr} />
               </dd>

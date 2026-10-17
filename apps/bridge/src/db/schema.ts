@@ -16,6 +16,8 @@ export const repo = sqliteTable('repo', {
   defaultBranch: text('default_branch'),
   description: text('description'),
   webUrl: text('web_url').notNull(),
+  /** Repositório local escolhido pela pasta (id negativo, fora do GitLab do app). */
+  local: integer('local', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const issueCache = sqliteTable(
@@ -177,6 +179,9 @@ export const mergeRequestCache = sqliteTable(
     seenCommentId: integer('seen_comment_id'),
     /** Agentes fix já acionados para este MR (a automação para no limite). */
     fixAttempts: integer('fix_attempts').notNull().default(0),
+    /** Revisão local enviada ao remoto: link do MR (GitLab) ou da página do PR (GitHub). */
+    remoteUrl: text('remote_url'),
+    publishedTo: text('published_to', { enum: ['gitlab', 'github', 'other'] }),
     updatedAt: text('updated_at').notNull(),
     fetchedAt: text('fetched_at').notNull(),
   },

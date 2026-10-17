@@ -9,6 +9,7 @@ import {
   AutomationsInput,
   DEFAULT_CONTEXT_BUDGET,
   ProjectSelectionInput,
+  LocalRepoInput,
   RepoPathInput,
   SESSION_HEADER,
   SESSION_META,
@@ -16,6 +17,7 @@ import {
   type Issue,
   type ServerMessage,
   type StateSnapshot,
+  isLocalProject,
 } from '@agent-canvas/shared';
 import { AgentError, DEFAULT_LIMITS, Supervisor, type SupervisorLimits } from './agents/supervisor.ts';
 import { AutomationService } from './automations/automation-service.ts';
@@ -294,6 +296,29 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return settingsChanged(settings.setClonePath(projectParam(req), parsed.data.path || null));
   });
 
+  /** Repositório local escolhido pela pasta (funciona com ou sem GitLab). */
+  app.post('/api/repos/local', async (req) => {
+    const parsed = LocalRepoInput.safeParse(req.body);
+    if (!parsed.success) throw new SettingsError('Informe a pasta do repositório.');
+    const view = settings.addLocalRepo(parsed.data.path);
+    const added = view.projects.filter((p) => p.local).sort((a, b) => a.id - b.id)[0];
+    broadcast([store.logActivity(`Repositório local ${added?.name ?? ''} adicionado`)]);
+    return settingsChanged(view);
+  });
+
+  app.delete('/api/repos/local/:projectId', async (req) => {
+    const id = projectParam(req);
+    if (
+      supervisor
+        .agents()
+        .some(
+          (a) => a.repos.includes(id) && ['running', 'waiting', 'queued', 'coordinating'].includes(a.status),
+        )
+    )
+      throw new SettingsError('Há agentes trabalhando neste repositório. Pare-os antes de tirá-lo.', 409);
+    return settingsChanged(settings.removeLocalRepo(id));
+  });
+
   app.post('/api/repos/:projectId/clone', async (req) => {
     const view = await settings.cloneProject(projectParam(req));
     const r = settings.repos().find((x) => x.gitlabProjectId === projectParam(req));
@@ -303,8 +328,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   /** Issues abertas dos projetos escolhidos. Atualiza o cache local a cada chamada. */
   app.get('/api/gitlab/issues', async () => {
+    // só com repositórios locais não há issues para buscar
+    if (!settings.hasGitLab()) return { issues: [], errors: [] };
     const client = settings.client();
-    const projects = settings.projects();
+    const projects = settings.gitlabProjects();
     const results = await Promise.allSettled(projects.map((p) => client.listOpenIssues(p)));
     const issues: Issue[] = [];
     const errors: { project: string; error: string }[] = [];
@@ -324,7 +351,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.get('/api/gitlab/issues/:projectId/:iid/comments', async (req) => {
     const { projectId, iid } = req.params as { projectId: string; iid: string };
     const p = Number(projectId);
-    if (!settings.projects().some((x) => x.id === p)) throw new SettingsError('Projeto não escolhido.', 404);
+    if (!settings.gitlabProjects().some((x) => x.id === p))
+      throw new SettingsError('Projeto não escolhido.', 404);
     return settings.client().listIssueComments(p, Number(iid));
   });
 
@@ -387,6 +415,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.get('/api/mrs/:ref/diff', async (req) => mrs.diff((req.params as { ref: string }).ref));
   app.get('/api/mrs/:ref/comments', async (req) => mrs.comments((req.params as { ref: string }).ref));
+  /** Revisão local → remoto (GitLab abre o MR no push; GitHub devolve a página do PR). Só o usuário. */
+  app.post('/api/mrs/:ref/publish', async (req) => mrs.publish((req.params as { ref: string }).ref));
 
   registerMcp(app, {
     agentByToken: (t) => supervisor.mcpContext(t),
@@ -431,6 +461,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     gitlab: {
       async openMergeRequest(agentId, opts) {
         const { mr, created } = await mrs.openForAgent(agentId, opts);
+        if (isLocalProject(mr.projectId))
+          return created
+            ? `Repositório local (sem GitLab): o branch ${mr.sourceBranch} ficou para revisão no canvas (revisão #${mr.iid}, base ${mr.targetBranch}). O usuário revisa o diff e faz o merge; não há pipeline nem MR.`
+            : `Revisão #${mr.iid} atualizada com os commits novos do branch ${mr.sourceBranch}.`;
         return created
           ? `MR !${mr.iid} aberto: ${mr.webUrl} (${mr.sourceBranch} → ${mr.targetBranch}). O pipeline é acompanhado pelo canvas; o merge é do usuário.`
           : `Commits enviados ao MR !${mr.iid} (${mr.webUrl}); o pipeline roda de novo e é acompanhado pelo canvas. O merge é do usuário.`;

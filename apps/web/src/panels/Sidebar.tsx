@@ -18,8 +18,8 @@ import {
   IconRepo,
   IconSearch,
 } from '../icons.tsx';
-import { clock, isBug, isP1, repoName } from '../lib/format.ts';
-import { DiffStat, mrFailed, mrReady } from '../mrs/mr-ui.tsx';
+import { clock, isBug, isP1, remoteLabel, repoName } from '../lib/format.ts';
+import { DiffStat, mrFailed, mrNum, mrReady } from '../mrs/mr-ui.tsx';
 import { activeFixer, liveMrs, mrNodeOf, useStore, type CanvasState, type Tab } from '../state/store.ts';
 
 /**
@@ -59,6 +59,7 @@ export function Sidebar() {
     if (indRef.current) indRef.current.style.transform = `translateX(${idx * 100}%)`;
   }, [idx]);
 
+  const localOnly = settings?.mode === 'local';
   return (
     <aside className={`side${sideOpen ? ' open' : ''}`} id="side" aria-label="Barra lateral">
       <div className="side-h">
@@ -71,7 +72,7 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        {(tab === 'issues' || tab === 'repos') && (
+        {((tab === 'issues' && !localOnly) || tab === 'repos') && (
           <div className="search-w">
             <IconSearch />
             <input
@@ -84,8 +85,10 @@ export function Sidebar() {
             />
           </div>
         )}
-        {tab === 'issues' && (settings?.projects.length ?? 0) > 1 && <ProjectPicker />}
-        {tab === 'issues' && (
+        {tab === 'issues' && (settings?.projects.filter((p) => !p.local).length ?? 0) > 1 && (
+          <ProjectPicker />
+        )}
+        {tab === 'issues' && !localOnly && (
           <div className="chips" role="group" aria-label="Filtrar issues">
             {(
               [
@@ -119,10 +122,19 @@ export function Sidebar() {
           }
         />
         <span className="side-f-t">
-          {connection === 'open' ? 'GitLab conectado' : 'Reconectando ao bridge…'}
+          {connection !== 'open'
+            ? 'Reconectando ao bridge…'
+            : settings.mode === 'local'
+              ? 'Sem GitLab'
+              : 'GitLab conectado'}
           <span className="lab">
             {' '}
-            · {settings.mode === 'demo' ? 'dados de exemplo' : `@${settings.user?.username ?? ''}`}
+            ·{' '}
+            {settings.mode === 'demo'
+              ? 'dados de exemplo'
+              : settings.mode === 'local'
+                ? 'repositórios locais'
+                : `@${settings.user?.username ?? ''}`}
           </span>
         </span>
         <button className="link-btn" onClick={() => setSettingsOpen(true)}>
@@ -134,6 +146,38 @@ export function Sidebar() {
 }
 
 function IssuesTab() {
+  const local = useStore((s) => s.settings?.mode === 'local');
+  return local ? <NoGitLab /> : <IssueList />;
+}
+
+/** Sem GitLab não há issues: o trabalho começa por um agente em branco num repositório local. */
+function NoGitLab() {
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  return (
+    <div className="no-gitlab">
+      <p className="tip">
+        Sem GitLab, não há issues. Crie um agente em branco, escolha um repositório local e diga o que ele
+        deve fazer. Quando terminar, você revisa o diff e faz o merge pelo canvas.
+      </p>
+      <div className="act-btns">
+        <button className="btn sm primary" onClick={() => newAgentAt()}>
+          <IconAgent /> Novo agente
+        </button>
+        <button className="btn sm plain" onClick={() => useStore.getState().setTab('repos')}>
+          Repositórios
+        </button>
+      </div>
+      <p className="tip">
+        Usa GitLab também?{' '}
+        <button className="link-btn" onClick={() => setSettingsOpen(true)}>
+          Conectar ao GitLab
+        </button>
+      </p>
+    </div>
+  );
+}
+
+function IssueList() {
   const refs = useStore((s) => s.openIssueRefs);
   const issues = useStore((s) => s.issues);
   const nodes = useStore((s) => s.nodes);
@@ -286,7 +330,9 @@ function RefreshIssues() {
 
 /** Escolhe de quais projetos a aba Issues mostra as issues (nenhum marcado = todos). */
 function ProjectPicker() {
-  const projects = useStore((s) => s.settings?.projects ?? EMPTY_PROJECTS);
+  const allProjects = useStore((s) => s.settings?.projects ?? EMPTY_PROJECTS);
+  // repositórios locais não têm issues
+  const projects = useMemo(() => allProjects.filter((p) => !p.local), [allProjects]);
   const chosen = useStore((s) => s.issueProjects);
   const setChosen = useStore((s) => s.setIssueProjects);
   const refs = useStore((s) => s.openIssueRefs);
@@ -607,7 +653,7 @@ function ActionsTab() {
                 <span className="ico mr sm">
                   <IconMr />
                 </span>
-                <b>!{m.iid}</b>
+                <b>{mrNum(m)}</b>
                 <span className="lab">{m.projectPath.split('/').pop()}</span>
                 <span style={{ marginLeft: 'auto' }}>
                   <DiffStat add={m.additions} del={m.deletions} />
@@ -638,7 +684,7 @@ function ActionsTab() {
                 <span className="ico mr sm">
                   <IconMr />
                 </span>
-                <b>!{m.iid}</b>
+                <b>{mrNum(m)}</b>
                 <span className="lab">{m.projectPath.split('/').pop()}</span>
                 <span className="badge bad" style={{ marginLeft: 'auto' }}>
                   Falhou
@@ -754,6 +800,8 @@ function ReposTab() {
   const nodes = useStore((s) => s.nodes);
   const [busy, setBusy] = useState<string | null>(null);
   const [picking, setPicking] = useState<number | null>(null);
+  const [addingLocal, setAddingLocal] = useState(false);
+  const hasGitLab = settings.projects.some((p) => !p.local);
   const activeByRepo = new Map<number, number>();
   for (const n of Object.values(nodes)) {
     const a = n.type === 'agent' ? agents[n.refId] : undefined;
@@ -761,7 +809,7 @@ function ReposTab() {
       activeByRepo.set(a.repos[0], (activeByRepo.get(a.repos[0]) ?? 0) + 1);
   }
   const cloneOf = (id: number) => settings.clones.find((c) => c.projectId === id);
-  const missing = list.filter((p) => !cloneOf(p.id)?.path).length;
+  const missing = list.filter((p) => !p.local && !cloneOf(p.id)?.path).length;
 
   /** Chama o bridge; o settings.updated pelo WebSocket atualiza a lista. */
   async function run(key: string, fn: () => Promise<SettingsView>, done?: string) {
@@ -786,16 +834,26 @@ function ReposTab() {
       <div className="grp-h">
         <span>Repositórios</span>
         <span className="cnt">{list.length}</span>
+        <span className="spacer" style={{ marginLeft: 'auto' }} />
+        {hasGitLab && (
+          <button
+            className="btn sm plain"
+            disabled={!!busy}
+            title="Procura os clones de novo, pelo remoto do git"
+            onClick={() =>
+              run('rescan', api.rescanRepos, missing ? undefined : 'Todos os projetos têm clone local.')
+            }
+          >
+            {busy === 'rescan' ? 'Procurando…' : 'Procurar de novo'}
+          </button>
+        )}
         <button
           className="btn sm plain"
-          style={{ marginLeft: 'auto' }}
           disabled={!!busy}
-          title="Procura os clones de novo, pelo remoto do git"
-          onClick={() =>
-            run('rescan', api.rescanRepos, missing ? undefined : 'Todos os projetos têm clone local.')
-          }
+          title="Um repositório git da sua máquina, sem precisar do GitLab"
+          onClick={() => setAddingLocal(true)}
         >
-          {busy === 'rescan' ? 'Procurando…' : 'Procurar de novo'}
+          + Local
         </button>
       </div>
       {list.map((p) => {
@@ -814,7 +872,14 @@ function ReposTab() {
                 <IconRepo />
               </span>
               <div className="iss-b">
-                <div className="iss-t mono-t">{p.name}</div>
+                <div className="iss-t mono-t">
+                  {p.name}
+                  {p.local && (
+                    <span className="badge local" title={remoteLabel(p.remote)}>
+                      local{p.remote === 'github' ? ' · GitHub' : p.remote === 'gitlab' ? ' · GitLab' : ''}
+                    </span>
+                  )}
+                </div>
                 <div className="iss-m">
                   {c?.path ? (
                     <span className="mono" title={c.path}>
@@ -843,7 +908,7 @@ function ReposTab() {
                 </button>
               </div>
             </div>
-            {!c?.path && (
+            {!c?.path && !p.local && (
               <div className="act-btns" style={{ margin: '-2px 2px 8px 40px' }}>
                 <button
                   className="btn sm"
@@ -893,6 +958,24 @@ function ReposTab() {
                 </span>
               </label>
             )}
+            {p.local && (
+              <p className="lab" style={{ margin: '-4px 2px 10px 40px', fontSize: 12 }}>
+                Agentes partem de <code>{p.defaultBranch ?? 'HEAD'}</code> ·{' '}
+                <button
+                  className="link-btn"
+                  disabled={!!busy}
+                  onClick={() =>
+                    run(
+                      `rm-${p.id}`,
+                      () => api.removeLocalRepo(p.id),
+                      `${p.name} saiu do canvas (a pasta fica).`,
+                    )
+                  }
+                >
+                  Tirar do canvas
+                </button>
+              </p>
+            )}
           </div>
         );
       })}
@@ -906,6 +989,18 @@ function ReposTab() {
             const id = picking;
             setPicking(null);
             await run(`path-${id}`, () => api.setRepoPath(id, path));
+          }}
+        />
+      )}
+      {addingLocal && (
+        <FolderPicker
+          title="Repositório local"
+          mode="repo"
+          start={settings.reposDir}
+          onClose={() => setAddingLocal(false)}
+          onPick={async (path) => {
+            setAddingLocal(false);
+            await run('add-local', () => api.addLocalRepo(path), 'Repositório adicionado.');
           }}
         />
       )}
@@ -924,7 +1019,7 @@ function ReposTab() {
       <Leftovers />
       <p className="tip">
         <button className="link-btn" onClick={() => setSettingsOpen(true)}>
-          Escolher projetos
+          {settings.mode === 'local' ? 'Conectar ao GitLab' : 'Escolher projetos'}
         </button>
       </p>
     </>

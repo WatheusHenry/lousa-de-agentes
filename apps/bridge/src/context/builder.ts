@@ -15,7 +15,13 @@ export interface ContextSection {
 }
 
 export interface ContextInput {
-  repo: { pathWithNamespace: string; defaultBranch: string | null; branch: string } | null;
+  repo: {
+    pathWithNamespace: string;
+    defaultBranch: string | null;
+    branch: string;
+    /** Repositório local (sem GitLab): sem MR, a entrega é revisada e mergeada no canvas. */
+    local?: boolean;
+  } | null;
   sections: ContextSection[];
   /** Abrir o MR sozinho ao terminar (opção do agente) e o MR que ele já abriu. */
   mr?: { openOnFinish: boolean; current: MergeRequest | null; role?: AgentRole };
@@ -49,7 +55,21 @@ export function buildContext(c: ContextInput): string {
       `- Branch de trabalho: ${c.repo.branch}`,
       `- Branch padrão: ${c.repo.defaultBranch ?? 'desconhecido'}`,
     );
-  if (c.mr) {
+  if (c.mr && c.repo?.local) {
+    const m = c.mr.current;
+    parts.push(
+      '',
+      '## Entrega (repositório local)',
+      '',
+      '- Este repositório não está no GitLab do canvas: não há MR, pipeline nem discussão. Não faça `git push`.',
+      m
+        ? `- Você já entregou o branch (revisão #${m.iid}, ${m.state}). Novos commits entram nela chamando \`open_merge_request\` de novo.`
+        : c.mr.openOnFinish
+          ? '- Ao terminar, com tudo commitado e os testes passando, chame `open_merge_request`: o branch fica para o usuário revisar o diff no canvas.'
+          : '- Não entregue por conta própria: o usuário pede quando quiser.',
+      '- O merge (e o envio ao remoto) é sempre feito pelo usuário.',
+    );
+  } else if (c.mr) {
     const m = c.mr.current;
     parts.push(
       '',

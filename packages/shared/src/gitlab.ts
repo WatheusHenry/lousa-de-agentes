@@ -9,13 +9,22 @@ export const GitLabUser = z.object({
 });
 export type GitLabUser = z.infer<typeof GitLabUser>;
 
+/** Onde fica o remoto `origin` de um repositório local (para enviar o branch e abrir MR/PR). */
+export const RemoteKind = z.enum(['gitlab', 'github', 'other']);
+export type RemoteKind = z.infer<typeof RemoteKind>;
+
 export const GitLabProject = z.object({
+  /** Projeto do GitLab; negativo para repositório local (fora do GitLab do app). */
   id: z.number(),
   pathWithNamespace: z.string(),
   name: z.string(),
   description: z.string().nullable(),
   defaultBranch: z.string().nullable(),
   webUrl: z.string(),
+  /** Repositório local, escolhido pela pasta: sem issues nem MR pela API. */
+  local: z.boolean().optional(),
+  /** Remoto `origin` do repositório local, se houver. */
+  remote: RemoteKind.nullable().optional(),
 });
 export type GitLabProject = z.infer<typeof GitLabProject>;
 
@@ -58,11 +67,11 @@ export const IssueComment = z.object({
 export type IssueComment = z.infer<typeof IssueComment>;
 
 /** Referência estável de um MR: `<projectId>!<iid>`. */
-export const MrRef = z.string().regex(/^\d+!\d+$/, 'formato esperado: <projectId>!<iid>');
+export const MrRef = z.string().regex(/^-?\d+!\d+$/, 'formato esperado: <projectId>!<iid>');
 export type MrRef = z.infer<typeof MrRef>;
 export const mrRef = (projectId: number, iid: number): MrRef => `${projectId}!${iid}`;
 export function parseMrRef(ref: string): { projectId: number; iid: number } {
-  const m = /^(\d+)!(\d+)$/.exec(ref);
+  const m = /^(-?\d+)!(\d+)$/.exec(ref);
   if (!m) throw new Error(`referência de MR inválida: ${ref}`);
   return { projectId: Number(m[1]), iid: Number(m[2]) };
 }
@@ -98,8 +107,17 @@ export const MergeRequest = z.object({
   agentId: z.string().nullable(),
   issueRef: z.string().nullable(),
   updatedAt: z.string(),
+  /**
+   * Repositório local: o branch fica para revisão no canvas, sem MR no GitLab. Depois de
+   * "Enviar", `remoteUrl` aponta para o MR (GitLab) ou para a página de abrir o PR (GitHub).
+   */
+  remoteUrl: z.string().nullable().optional(),
+  publishedTo: RemoteKind.nullable().optional(),
 });
 export type MergeRequest = z.infer<typeof MergeRequest>;
+
+/** Repositório local (id negativo): a revisão e o merge acontecem no próprio clone. */
+export const isLocalProject = (projectId: number) => projectId < 0;
 
 export const MrDiffFile = z.object({
   oldPath: z.string(),

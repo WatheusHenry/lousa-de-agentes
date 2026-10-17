@@ -39,7 +39,13 @@ export class CliRunner implements AgentRunner {
   start(opts: RunnerStartOptions, h: RunnerHandlers): AgentProcess {
     const child = spawn(this.bin, claudeArgs(opts), {
       cwd: opts.cwd,
-      env: { ...cleanClaudeEnv(process.env), MCP_TOOL_TIMEOUT: MCP_TOOL_TIMEOUT_MS },
+      env: {
+        ...cleanClaudeEnv(process.env),
+        MCP_TOOL_TIMEOUT: MCP_TOOL_TIMEOUT_MS,
+        // versões novas do claude também abortam uma ferramenta parada há 5 min sem progresso,
+        // o que derrubava pedidos de permissão esperando o usuário
+        CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: MCP_TOOL_TIMEOUT_MS,
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let buf = '';
