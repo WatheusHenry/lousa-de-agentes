@@ -94,24 +94,6 @@ export function Sidebar() {
   // com busca, todas as seções abrem e as sem resultado somem
   const open = (id: Section) => !!q || !collapsed.includes(id);
 
-  // seção visível no topo da lista: destaca a aba correspondente
-  const [current, setCurrent] = useState<Section>('actions');
-  const onScroll = () => {
-    const el = body.current;
-    if (!el) return;
-    const top = el.getBoundingClientRect().top + 48;
-    let cur: Section = SECTIONS[0]!.id;
-    for (const sec of el.querySelectorAll<HTMLElement>('[data-sec]'))
-      if (sec.getBoundingClientRect().top <= top) cur = sec.dataset.sec as Section;
-    setCurrent(cur);
-  };
-  const alerts = useStore((s) => actionsCount(s));
-  const jump = (id: Section) => {
-    if (q) setQuery('');
-    setCollapsed((cur) => cur.filter((x) => x !== id));
-    useStore.getState().showSection(id);
-  };
-
   return (
     <aside className={`side${sideOpen ? ' open' : ''}`} id="side" aria-label="Barra lateral">
       <div className="side-h">
@@ -146,25 +128,8 @@ export function Sidebar() {
             </button>
           )}
         </div>
-        <nav className="side-tabs" aria-label="Seções">
-          {SECTIONS.map((t) => (
-            <button
-              key={t.id}
-              className="side-tab"
-              aria-current={!q && current === t.id ? 'true' : undefined}
-              title={t.label}
-              onClick={() => jump(t.id)}
-            >
-              <span className="side-tab-ic">
-                {t.icon}
-                {t.id === 'actions' && alerts > 0 && <i className="side-tab-dot" />}
-              </span>
-              <span className="side-tab-l">{t.label}</span>
-            </button>
-          ))}
-        </nav>
       </div>
-      <div className="side-b" ref={body} onScroll={onScroll}>
+      <div className="side-b" ref={body}>
         <ActionsSection q={q} open={open('actions')} onToggle={() => toggle('actions')} />
         <IssuesSection q={q} open={open('issues')} onToggle={() => toggle('issues')} />
         <ReposSection q={q} open={open('repos')} onToggle={() => toggle('repos')} />
