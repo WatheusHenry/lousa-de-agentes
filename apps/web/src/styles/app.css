@@ -4665,3 +4665,37 @@ button.diff-h:hover {
 .cl-err {
   color: var(--bad);
 }
+/* modo automático do agente (chip no campo de mensagem) */
+.auto-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.auto-chip:hover {
+  color: var(--fg);
+}
+.auto-chip.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.auto-chip kbd {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  opacity: 0.7;
+}
+.f-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}

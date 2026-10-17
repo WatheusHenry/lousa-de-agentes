@@ -34,6 +34,8 @@ export const Agent = z.object({
   depth: z.number(),
   maxDepth: z.number(),
   openMr: z.boolean(),
+  /** Modo automático: o que as travas de segurança não negam passa sem pedir permissão. */
+  autoMode: z.boolean(),
   inputTokens: z.number(),
   outputTokens: z.number(),
   /** Tamanho do contexto no último turno (entrada + cache). */

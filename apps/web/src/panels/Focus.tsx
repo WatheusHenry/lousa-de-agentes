@@ -27,6 +27,7 @@ import {
   PublishButton,
 } from '../mrs/mr-ui.tsx';
 import { AgentLines, useStickToBottom } from '../agents/AgentLines.tsx';
+import { AutoModeToggle, autoModeKey } from '../agents/AutoModeToggle.tsx';
 import { isBlank, reposText, roleLabel, statusLabel, statusTone, SUGGESTIONS } from '../agents/agent-ui.ts';
 
 const NO_PROJECTS: never[] = [];
@@ -1181,6 +1182,7 @@ function AgentDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
               t.style.height = Math.min(t.scrollHeight, 160) + 'px';
             }}
             onKeyDown={(e) => {
+              if (autoModeKey(e, agent)) return;
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 send(text);
@@ -1191,7 +1193,10 @@ function AgentDoc({ nodeId, onClose }: { nodeId: string; onClose(): void }) {
             ↑
           </button>
         </form>
-        <div className="f-hint">Enter envia · Shift + Enter quebra linha · Esc fecha</div>
+        <div className="f-hint f-hint-row">
+          <AutoModeToggle agent={agent} full />
+          <span>Enter envia · Shift + Enter quebra linha · Esc fecha</span>
+        </div>
       </div>
     </div>
   );

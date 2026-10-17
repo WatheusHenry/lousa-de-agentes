@@ -95,6 +95,8 @@ export const AgentSettings = z.object({
   treeTokenBudget: z.number().int().min(10_000).max(500_000_000),
   /** Tokens recomendados no contexto de um agente (medidor). */
   contextBudget: z.number().int().min(5_000).max(1_000_000),
+  /** Agentes novos começam no modo automático (sem pedir permissão a cada passo). */
+  autoMode: z.boolean(),
 });
 export type AgentSettings = z.infer<typeof AgentSettings>;
 /** PUT /api/settings/agents: só os campos enviados mudam; `null` volta ao padrão. */

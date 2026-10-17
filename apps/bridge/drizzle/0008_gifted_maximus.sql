@@ -1,0 +1,1 @@
+ALTER TABLE `agent` ADD `auto_mode` integer DEFAULT false NOT NULL;

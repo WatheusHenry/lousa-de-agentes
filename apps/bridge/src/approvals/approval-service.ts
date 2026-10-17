@@ -5,7 +5,7 @@ import { summarizeTool } from '../agents/stream-parser.ts';
 import type { Db } from '../db/index.ts';
 import { approval, policy } from '../db/schema.ts';
 import type { Hub } from '../hub.ts';
-import { defaultDeny, matchingRules, splitRules, suggestRule } from './rules.ts';
+import { autoDeny, defaultDeny, matchingRules, splitRules, suggestRule } from './rules.ts';
 import { trustedAllows } from './trust.ts';
 
 export type Decision =
@@ -47,6 +47,8 @@ export class ApprovalService {
   private orphans = new Set<string>();
   /** Projeto em modo confiança (configurado pelo servidor). */
   trusted: (repoId: number) => boolean = () => false;
+  /** Agente no modo automático (configurado pelo servidor). */
+  auto: (agentId: string) => boolean = () => false;
   /** Avisado quando um pedido fica pendente ou é decidido (o agente muda de status). */
   onChange: (agentId: string, a: Approval) => void = () => {};
 
@@ -87,6 +89,16 @@ export class ApprovalService {
     }
     if (matched) {
       this.record(req, 'allowed', `regra ${matched.join(', ')}`);
+      return { behavior: 'allow', updatedInput: req.input };
+    }
+    // modo automático: passa tudo o que as travas não negam
+    if (this.auto(req.agentId)) {
+      const blocked = autoDeny(req.toolName, req.input, req.worktree);
+      if (blocked) {
+        this.record(req, 'denied', 'trava do modo automático');
+        return { behavior: 'deny', message: blocked };
+      }
+      this.record(req, 'allowed', 'modo automático');
       return { behavior: 'allow', updatedInput: req.input };
     }
     // modo confiança: depois das negações padrão, o trabalho comum no worktree passa direto
@@ -170,6 +182,18 @@ export class ApprovalService {
       const used = matchingRules(this.rulesFor(w.req.repoId), w.req.toolName, w.req.input);
       if (!used) continue;
       this.finish(id, 'allow', `regra ${used.join(', ')}`);
+      w.resolve({ behavior: 'allow', updatedInput: w.req.input });
+    }
+  }
+
+  /**
+   * O agente entrou no modo automático: libera o que ele estava esperando, menos o que as
+   * travas negariam (isso continua com o usuário).
+   */
+  releaseAuto(agentId: string): void {
+    for (const [id, w] of [...this.waiting]) {
+      if (w.req.agentId !== agentId || autoDeny(w.req.toolName, w.req.input, w.req.worktree)) continue;
+      this.finish(id, 'allow', 'modo automático');
       w.resolve({ behavior: 'allow', updatedInput: w.req.input });
     }
   }

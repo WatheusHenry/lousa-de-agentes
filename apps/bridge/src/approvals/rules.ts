@@ -124,6 +124,35 @@ export function defaultDeny(
   return null;
 }
 
+/**
+ * Travas do modo automático: o resto passa sem perguntar, isto continua com o usuário (ou
+ * negado). Valem por cima das negações padrão.
+ *   - `git push`: o envio é pelo `open_merge_request` (ou pelo botão do canvas)
+ *   - `sudo`: nada de privilégio de administrador
+ *   - merge de MR/PR pela linha de comando (`gh pr merge`, `glab mr merge`): o merge é do usuário
+ *   - redirecionamento (`>`) para arquivo fora do worktree
+ */
+export function autoDeny(toolName: string, input: unknown, worktree: string | null): string | null {
+  if (toolName !== 'Bash') return null;
+  for (const part of splitCommand(fullCommand(input))) {
+    if (/^(?:\S+=\S+\s+)*git\s+push\b/.test(part))
+      return 'No modo automático, push só pelo open_merge_request: o canvas envia o branch.';
+    if (/(^|\s)sudo\s/.test(part) || part === 'sudo') return 'sudo nunca roda no modo automático.';
+    if (/^(gh\s+pr|glab\s+mr)\s+merge\b/.test(part)) return 'O merge é sempre feito pelo usuário.';
+    for (const m of part.matchAll(/(?:^|[^<&\d])\d?>>?\s*([^\s&|;]+)/g)) {
+      const target = m[1]!.replace(/^['"]|['"]$/g, '');
+      if (target === '/dev/null' || target.startsWith('&')) continue;
+      if (
+        target.startsWith('~') ||
+        target.includes('$') ||
+        (worktree && outside(worktree, resolve(worktree, target)))
+      )
+        return 'O agente só pode escrever arquivos dentro do próprio worktree.';
+    }
+  }
+  return null;
+}
+
 function outside(root: string, p: string): boolean {
   const rel = relative(resolve(root), resolve(p));
   return rel.startsWith('..') || isAbsolute(rel);

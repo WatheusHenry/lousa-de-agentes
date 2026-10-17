@@ -13,7 +13,12 @@ const THEMES: [ThemePref, string][] = [
   ['dark', 'Escuro'],
 ];
 /** Campos numéricos: chave, rótulo, unidade e o fator entre o valor guardado e o mostrado. */
-const FIELDS: { key: Exclude<keyof AgentSettings, 'model'>; label: string; unit: string; k: number }[] = [
+const FIELDS: {
+  key: Exclude<keyof AgentSettings, 'model' | 'autoMode'>;
+  label: string;
+  unit: string;
+  k: number;
+}[] = [
   { key: 'maxRunning', label: 'Agentes ao mesmo tempo', unit: 'agentes', k: 1 },
   { key: 'maxAgentMinutes', label: 'Tempo máximo de um agente', unit: 'min', k: 1 },
   { key: 'treeTokenBudget', label: 'Orçamento de uma árvore de agentes', unit: 'mil tokens', k: 1000 },
@@ -33,6 +38,7 @@ export function AgentSettingsForm() {
   const def = settings.agentDefaults;
   const [form, setForm] = useState(() => toForm(cur));
   const [model, setModel] = useState(cur.model ?? '');
+  const [autoMode, setAutoMode] = useState(cur.autoMode);
   const [saving, setSaving] = useState(false);
   const [notify, setNotify] = useState(
     () => notifyWanted() && notifySupported() && Notification.permission === 'granted',
@@ -47,6 +53,7 @@ export function AgentSettingsForm() {
     if (form[f.key] !== '' && Number.isFinite(v) && v !== cur[f.key]) patch[f.key] = v;
   }
   if ((model || null) !== cur.model) patch.model = model || null;
+  if (autoMode !== cur.autoMode) patch.autoMode = autoMode;
   const dirty = Object.keys(patch).length > 0;
 
   async function save(p: AgentSettingsInput) {
@@ -56,6 +63,7 @@ export function AgentSettingsForm() {
       useStore.getState().setSettings(view);
       setForm(toForm(view.agents));
       setModel(view.agents.model ?? '');
+      setAutoMode(view.agents.autoMode);
       useStore.getState().showToast('Configurações dos agentes salvas. Valem para os próximos turnos.', {
         label: 'Ok',
         run: () => {},
@@ -138,6 +146,23 @@ export function AgentSettingsForm() {
             ]}
           />
         </div>
+        <label className="cfg-row cfg-check">
+          <span>
+            Novos agentes no modo automático
+            <small>
+              Fazem tudo sem pedir permissão, menos push, sudo, merge e arquivos fora do worktree.
+            </small>
+          </span>
+          <span className="switch">
+            <input
+              type="checkbox"
+              checked={autoMode}
+              onChange={(e) => setAutoMode(e.target.checked)}
+              aria-label="Novos agentes no modo automático"
+            />
+            <i />
+          </span>
+        </label>
         {FIELDS.map((f) => (
           <label className="cfg-row" key={f.key}>
             <span>{f.label}</span>
@@ -173,6 +198,7 @@ export function AgentSettingsForm() {
                 maxAgentMinutes: null,
                 treeTokenBudget: null,
                 contextBudget: null,
+                autoMode: null,
               })
             }
           >

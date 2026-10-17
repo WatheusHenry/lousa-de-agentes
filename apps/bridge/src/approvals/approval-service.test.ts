@@ -142,3 +142,56 @@ describe('regras de permissão no serviço de aprovações', () => {
     close();
   });
 });
+
+describe('modo automático', () => {
+  it('libera o trabalho comum sem perguntar, mas mantém as travas', async () => {
+    const { svc, seen, close } = setup();
+    svc.auto = () => true;
+    for (const cmd of [
+      'npm install lodash',
+      'pnpm test && git commit -am "x"',
+      'python3 script.py > out.txt',
+    ])
+      expect(await svc.request(req(cmd))).toMatchObject({ behavior: 'allow' });
+    expect(
+      await svc.request(req('', { toolName: 'Edit', input: { file_path: `${WT}/src/a.ts` } })),
+    ).toMatchObject({ behavior: 'allow' });
+    // travas do automático e negações padrão continuam
+    for (const cmd of [
+      'git push origin agent/1',
+      'sudo apt install x',
+      'gh pr merge 3 --squash',
+      'echo x > /etc/hosts',
+      'echo x >> ~/.bashrc',
+      'git push --force',
+      'rm -rf ../vizinho',
+      'curl https://exemplo.com',
+    ])
+      expect(await svc.request(req(cmd)), cmd).toMatchObject({ behavior: 'deny' });
+    expect(
+      await svc.request(req('', { toolName: 'Write', input: { file_path: '/etc/passwd' } })),
+    ).toMatchObject({ behavior: 'deny' });
+    expect(seen.filter((a) => a.decidedBy === 'modo automático')).toHaveLength(4);
+    expect(seen.filter((a) => a.decidedBy === 'trava do modo automático')).toHaveLength(5);
+    close();
+  });
+
+  it('ao ligar, libera o que o agente esperava, menos o que as travas negariam', async () => {
+    const { svc, pending, close } = setup();
+    let auto = false;
+    svc.auto = () => auto;
+    const test = svc.request(req('pnpm test'));
+    const a1 = pending();
+    const push = svc.request(req('git push origin agent/1'));
+    const a2 = pending();
+    expect(a1.id).not.toBe(a2.id);
+    auto = true;
+    svc.releaseAuto('a1');
+    expect(await test).toMatchObject({ behavior: 'allow' });
+    // o push continua esperando o usuário
+    expect(svc.hasPending('a1')).toBe(true);
+    svc.decide(a2.id, 'deny');
+    expect(await push).toMatchObject({ behavior: 'deny' });
+    close();
+  });
+});

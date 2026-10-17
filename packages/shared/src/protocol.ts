@@ -124,6 +124,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
     y: Coord,
   }),
   /** Dá contexto a um agente em branco antes de começar: repositório e issue. */
+  /** Liga ou desliga o modo automático de um agente (Shift+Tab no terminal dele). */
+  z.object({ type: z.literal('agent.mode'), agentId: Id, auto: z.boolean() }),
   z.object({
     type: z.literal('agent.update'),
     agentId: Id,

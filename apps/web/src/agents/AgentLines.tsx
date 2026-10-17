@@ -147,6 +147,15 @@ function AgentLinesView({ agent, events }: { agent: Agent; events: AgentEvent[] 
                 >
                   Sempre permitir
                 </button>
+                {!agent.autoMode && (
+                  <button
+                    className="btn sm plain nodrag"
+                    title="Libera este pedido e os próximos deste agente (menos push, sudo, merge e arquivos fora do worktree)"
+                    onClick={() => useStore.getState().setAgentMode(agent.id, true)}
+                  >
+                    ⏵⏵ Modo automático
+                  </button>
+                )}
               </div>
             </div>
           ) : (

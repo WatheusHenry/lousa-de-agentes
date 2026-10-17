@@ -125,6 +125,8 @@ export interface CanvasState {
   }): { agentId: string; nodeId: string };
   updateAgent(agentId: string, patch: { repos?: number[]; issueRef?: string | null }): void;
   messageAgent(agentId: string, text: string): void;
+  /** Modo automático do agente (sem pedir permissão a cada passo). */
+  setAgentMode(agentId: string, auto: boolean): void;
   pauseAgent(agentId: string): void;
   resumeAgent(agentId: string): void;
   stopAgent(agentId: string): void;
@@ -540,6 +542,14 @@ export const useStore = create<CanvasState>()((set, get) => ({
   },
   updateAgent: (agentId, patch) => send({ type: 'agent.update', agentId, ...patch }),
   messageAgent: (agentId, text) => send({ type: 'agent.message', agentId, text }),
+  setAgentMode: (agentId, auto) => {
+    // otimista: o chip muda na hora; o agent.upsert do bridge confirma
+    set((s) => {
+      const a = s.agents[agentId];
+      return a ? { agents: { ...s.agents, [agentId]: { ...a, autoMode: auto } } } : {};
+    });
+    send({ type: 'agent.mode', agentId, auto });
+  },
   pauseAgent: (agentId) => send({ type: 'agent.pause', agentId }),
   resumeAgent: (agentId) => send({ type: 'agent.resume', agentId }),
   stopAgent: (agentId) => send({ type: 'agent.stop', agentId }),

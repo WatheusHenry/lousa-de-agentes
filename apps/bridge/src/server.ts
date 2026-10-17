@@ -70,6 +70,8 @@ export interface ServerDeps {
   /** Resumidor de itens pesados (o padrão roda `claude -p` com um modelo pequeno). */
   summarizer?: Summarizer;
   contextBudget?: number;
+  /** Agentes novos no modo automático (padrão: sim). */
+  autoMode?: boolean;
   limits?: Partial<SupervisorLimits>;
   /** Retomar sozinhos, com --resume, os agentes interrompidos por um reinício (padrão: sim). */
   autoResume?: boolean;
@@ -87,6 +89,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     ...deps.limits,
     model: deps.model ?? null,
     contextBudget: deps.contextBudget ?? DEFAULT_CONTEXT_BUDGET,
+    autoMode: deps.autoMode ?? true,
   });
   const hub = new Hub();
   const approvals = new ApprovalService(db, hub);
@@ -115,6 +118,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     questions,
     mrOfAgent: (id) => mrs.mrOfAgent(id),
   });
+  approvals.auto = (agentId) => !!supervisor.get(agentId)?.autoMode;
   supervisor.onPlanChanged = (childId) => context.changed(childId, ['plano do agente pai atualizado']);
   context.onChanged = (agentId, labels) => supervisor.contextChanged(agentId, labels);
   const automations = new AutomationService({ hub, store, settings, mrs, supervisor, context });

@@ -110,6 +110,8 @@ export const agent = sqliteTable('agent', {
   depth: integer('depth').notNull().default(0),
   maxDepth: integer('max_depth').notNull().default(0),
   openMr: integer('open_mr', { mode: 'boolean' }).notNull().default(false),
+  /** Os agentes de antes do modo automático continuam pedindo permissão. */
+  autoMode: integer('auto_mode', { mode: 'boolean' }).notNull().default(false),
   inputTokens: integer('input_tokens').notNull().default(0),
   outputTokens: integer('output_tokens').notNull().default(0),
   contextTokens: integer('context_tokens').notNull().default(0),
