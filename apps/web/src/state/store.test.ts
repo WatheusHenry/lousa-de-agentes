@@ -124,6 +124,27 @@ describe('store do canvas', () => {
     expect(useStore.getState().toast).toBeNull();
   });
 
+  it('seleção por área: marca vários, remove em lote e um desfazer devolve todos', () => {
+    const st = useStore.getState();
+    const a = st.placeIssue('101#142', { x: 0, y: 0 });
+    const { nodeId: b } = st.createNote({ x: 300, y: 0 });
+    st.select(a);
+    st.setMulti([a, b]);
+    expect(useStore.getState().selected).toBeNull();
+    expect(useStore.getState().multi).toEqual([a, b]);
+    st.removeNodes([a, b]);
+    const s = useStore.getState();
+    expect(s.nodes[a]).toBeUndefined();
+    expect(s.nodes[b]).toBeUndefined();
+    expect(s.multi).toEqual([]);
+    expect(s.toast?.msg).toBe('2 itens removidos do canvas');
+    s.undo();
+    expect(sent.filter((m) => m.type === 'node.restore')).toEqual([
+      { type: 'node.restore', nodeId: a },
+      { type: 'node.restore', nodeId: b },
+    ]);
+  });
+
   it('mover só envia quando a posição muda', () => {
     const st = useStore.getState();
     const id = st.placeIssue('101#142', { x: 0, y: 0 });

@@ -40,6 +40,7 @@ export function Canvas() {
   const storeNodes = useStore((s) => s.nodes);
   const storeEdges = useStore((s) => s.edges);
   const selected = useStore((s) => s.selected);
+  const multi = useStore((s) => s.multi);
   const [nodes, setNodes] = useState<FlowNode[]>([]);
   const [linking, setLinking] = useState<{ noteId: string; hover: string | null } | null>(null);
   const [dropping, setDropping] = useState(false);
@@ -50,9 +51,9 @@ export function Canvas() {
       const byId = new Map(prev.map((n) => [n.id, n]));
       return Object.values(storeNodes)
         .filter((n) => n.type in nodeTypes)
-        .map((n) => toFlowNode(n, selected === n.id, byId.get(n.id)));
+        .map((n) => toFlowNode(n, selected === n.id || multi.includes(n.id), byId.get(n.id)));
     });
-  }, [storeNodes, selected]);
+  }, [storeNodes, selected, multi]);
 
   const edges = useMemo(
     () =>
@@ -195,8 +196,15 @@ export function Canvas() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
-        onNodeClick={(_, n) => useStore.getState().select(n.id)}
+        onNodeClick={(e, n) => {
+          if (!e.shiftKey) useStore.getState().select(n.id);
+        }}
         onNodeDragStart={(_, n) => useStore.getState().select(n.id)}
+        onSelectionChange={({ nodes: sel }) => {
+          const st = useStore.getState();
+          if (sel.length > 1) st.setMulti(sel.map((n) => n.id));
+          else if (st.multi.length) st.setMulti([]);
+        }}
         onNodeDoubleClick={(e, n) => {
           if ((e.target as HTMLElement).closest('input,textarea,button,select')) return;
           useStore.getState().openFocus(n.id);
@@ -213,11 +221,14 @@ export function Canvas() {
         isValidConnection={() => false}
         connectionRadius={0}
         nodesConnectable
-        elementsSelectable={false}
+        elementsSelectable
+        selectNodesOnDrag={false}
+        selectionOnDrag
+        panOnDrag={[1, 2]}
+        panActivationKeyCode="Space"
         deleteKeyCode={null}
         disableKeyboardA11y
-        selectionKeyCode={null}
-        multiSelectionKeyCode={null}
+        multiSelectionKeyCode="Shift"
         zoomOnDoubleClick={false}
         zoomOnScroll={false}
         panOnScroll
@@ -234,7 +245,23 @@ export function Canvas() {
           bgColor="var(--bg)"
         />
       </ReactFlow>
+      {multi.length > 1 && <MultiBar count={multi.length} />}
       {nodes.length === 0 && <EmptyCanvas />}
+    </div>
+  );
+}
+
+/** Barra da seleção por área: quantos itens estão marcados e o que fazer com eles. */
+function MultiBar({ count }: { count: number }) {
+  return (
+    <div className="multibar" role="toolbar" aria-label="Itens selecionados">
+      <b>{count} itens selecionados</b>
+      <button className="btn sm danger" onClick={() => useStore.getState().removeNodes(useStore.getState().multi)}>
+        Remover
+      </button>
+      <button className="btn sm plain" onClick={() => useStore.getState().setMulti([])}>
+        Limpar
+      </button>
     </div>
   );
 }
